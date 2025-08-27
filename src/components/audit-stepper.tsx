@@ -174,15 +174,17 @@ export default function AuditStepper() {
           <CardDescription>Choose the CSV file from the FTP server to start the audit.</CardDescription>
         </CardHeader>
         <CardContent>
-          <FormLabel htmlFor="csv-select">CSV File</FormLabel>
-          <Select onValueChange={setSelectedCsv} value={selectedCsv}>
-            <SelectTrigger id="csv-select">
-              <SelectValue placeholder="Select a file..." />
-            </SelectTrigger>
-            <SelectContent>
-              {csvFiles.map(file => <SelectItem key={file} value={file}>{file}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <Form {...ftpForm}>
+            <FormLabel htmlFor="csv-select">CSV File</FormLabel>
+            <Select onValueChange={setSelectedCsv} value={selectedCsv}>
+              <SelectTrigger id="csv-select">
+                <SelectValue placeholder="Select a file..." />
+              </SelectTrigger>
+              <SelectContent>
+                {csvFiles.map(file => <SelectItem key={file} value={file}>{file}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Form>
         </CardContent>
         <CardFooter className="flex justify-between">
            <Button variant="outline" onClick={() => setStep('connect')}>Back</Button>
