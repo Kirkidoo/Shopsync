@@ -1,5 +1,6 @@
 import { ShoppingBasket } from 'lucide-react';
 import AuditStepper from '@/components/audit-stepper';
+import Footer from '@/components/footer';
 
 export default function Home() {
   return (
@@ -20,9 +21,7 @@ export default function Home() {
         <AuditStepper />
       </main>
       
-      <footer className="mt-8 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} ShopSync Auditor. All rights reserved.
-      </footer>
+      <Footer />
     </div>
   );
 }

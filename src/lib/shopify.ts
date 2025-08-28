@@ -3,18 +3,12 @@ import '@shopify/shopify-api/adapters/node';
 import 'dotenv/config';
 import { Product } from '@/lib/types';
 
-const shopify = shopifyApi({
-  apiKey: 'dummy', // Not actually used for private apps but required by the library
-  apiSecretKey: 'dummy', // Not actually used for private apps but required by the library
-  scopes: ['read_products'],
-  hostName: 'dummy.ngrok.io', // Not actually used for private apps but required by the library
-  apiVersion: LATEST_API_VERSION,
-  isEmbeddedApp: false,
-});
+// Helper function to introduce a delay
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const GET_ALL_PRODUCTS_QUERY = `
   query getAllProducts($cursor: String) {
-    products(first: 250, after: $cursor) {
+    products(first: 50, after: $cursor) {
       pageInfo {
         hasNextPage
         endCursor
@@ -41,6 +35,17 @@ export async function getAllShopifyProducts(): Promise<Product[]> {
     if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
         throw new Error("Shopify environment variables are not set. Please create a .env.local file.");
     }
+    
+    const shopify = shopifyApi({
+      apiKey: 'dummy', // Not actually used for private apps but required by the library
+      apiSecretKey: 'dummy', // Not actually used for private apps but required by the library
+      scopes: ['read_products'],
+      hostName: 'dummy.ngrok.io', // Not actually used for private apps but required by the library
+      apiVersion: LATEST_API_VERSION,
+      isEmbeddedApp: false,
+      //Retry on rate limits, but we will also add a delay
+      maxRetries: 3,
+    });
 
     const session = new Session({
       shop: process.env.SHOPIFY_SHOP_NAME!,
@@ -53,33 +58,62 @@ export async function getAllShopifyProducts(): Promise<Product[]> {
 
     const products: Product[] = [];
     let hasNextPage = true;
-    let cursor = null;
+    let cursor: string | null = null;
+    let requestCount = 0;
 
     while(hasNextPage) {
-        const response: any = await shopifyClient.query({
-            data: {
-                query: GET_ALL_PRODUCTS_QUERY,
-                variables: {
-                    cursor: cursor
+        try {
+            // Add a delay every 2 requests to respect the rate limit bucket restore rate
+            if (requestCount > 0 && requestCount % 2 === 0) {
+                await sleep(1000); 
+            }
+
+            const response: any = await shopifyClient.query({
+                data: {
+                    query: GET_ALL_PRODUCTS_QUERY,
+                    variables: {
+                        cursor: cursor
+                    }
+                }
+            });
+            requestCount++;
+            
+            if (response.body.errors) {
+              // Check for specific throttling errors
+              if (response.body.errors.some((e:any) => e.message.includes('Throttled'))) {
+                 console.log("Throttled by Shopify, waiting before retrying...");
+                 await sleep(5000); // Wait 5 seconds if we get a throttled error
+                 continue; // Retry the same request
+              }
+              throw new Error(`GraphQL Error: ${JSON.stringify(response.body.errors)}`);
+            }
+
+            const productEdges = response.body.data.products.edges;
+
+            for (const edge of productEdges) {
+                const variant = edge.node.variants.edges[0]?.node;
+                if(variant && variant.sku) {
+                    products.push({
+                        sku: variant.sku,
+                        name: edge.node.title,
+                        price: parseFloat(variant.price)
+                    });
                 }
             }
-        });
+            
+            hasNextPage = response.body.data.products.pageInfo.hasNextPage;
+            cursor = response.body.data.products.pageInfo.endCursor;
 
-        const productEdges = response.body.data.products.edges;
-
-        for (const edge of productEdges) {
-            const variant = edge.node.variants.edges[0]?.node;
-            if(variant && variant.sku) {
-                products.push({
-                    sku: variant.sku,
-                    name: edge.node.title,
-                    price: parseFloat(variant.price)
-                });
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('Throttled')) {
+                console.log("Throttled by Shopify, waiting before retrying...");
+                await sleep(5000); // Wait 5 seconds
+                // The loop will continue and retry
+            } else {
+                console.error("Error fetching Shopify products:", error);
+                throw error; // Re-throw other errors
             }
         }
-        
-        hasNextPage = response.body.data.products.pageInfo.hasNextPage;
-        cursor = response.body.data.products.pageInfo.endCursor;
     }
     
     return products;
