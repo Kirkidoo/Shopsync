@@ -26,6 +26,8 @@ const ftpSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+type FtpFormData = z.infer<typeof ftpSchema>;
+
 export default function AuditStepper() {
   const [step, setStep] = useState<Step>('connect');
   const [progress, setProgress] = useState(0);
@@ -36,12 +38,12 @@ export default function AuditStepper() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
-  const ftpForm = useForm<z.infer<typeof ftpSchema>>({
+  const ftpForm = useForm<FtpFormData>({
     resolver: zodResolver(ftpSchema),
     defaultValues: { host: 'ftp.example.com', username: 'user', password: 'password' },
   });
 
-  const handleConnect = (values: z.infer<typeof ftpSchema>) => {
+  const handleConnect = (values: FtpFormData) => {
     startTransition(async () => {
       try {
         const formData = new FormData();
@@ -51,7 +53,7 @@ export default function AuditStepper() {
 
         await connectToFtp(formData);
         toast({ title: "FTP Connection Successful", description: "Ready to select a file." });
-        const files = await listCsvFiles();
+        const files = await listCsvFiles(formData);
         setCsvFiles(files);
         if (files.length > 0) {
           setSelectedCsv(files[0]);
@@ -65,6 +67,15 @@ export default function AuditStepper() {
       }
     });
   };
+  
+  const getFtpFormData = () => {
+      const values = ftpForm.getValues();
+      const formData = new FormData();
+      formData.append('host', values.host);
+      formData.append('username', values.username);
+      formData.append('password', values.password);
+      return formData;
+  }
 
   const handleRunAudit = () => {
     if (!selectedCsv) {
@@ -80,7 +91,8 @@ export default function AuditStepper() {
 
     startTransition(async () => {
       try {
-        const result = await runAudit(selectedCsv);
+        const ftpData = getFtpFormData();
+        const result = await runAudit(selectedCsv, ftpData);
         setAuditData(result);
         clearInterval(interval);
         setProgress(100);
@@ -175,15 +187,21 @@ export default function AuditStepper() {
         </CardHeader>
         <CardContent>
           <Form {...ftpForm}>
-            <FormLabel htmlFor="csv-select">CSV File</FormLabel>
-            <Select onValueChange={setSelectedCsv} value={selectedCsv}>
-              <SelectTrigger id="csv-select">
-                <SelectValue placeholder="Select a file..." />
-              </SelectTrigger>
-              <SelectContent>
-                {csvFiles.map(file => <SelectItem key={file} value={file}>{file}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <form>
+              <FormItem>
+                <FormLabel htmlFor="csv-select">CSV File</FormLabel>
+                <Select onValueChange={setSelectedCsv} value={selectedCsv}>
+                  <FormControl>
+                    <SelectTrigger id="csv-select">
+                      <SelectValue placeholder="Select a file..." />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {csvFiles.map(file => <SelectItem key={file} value={file}>{file}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            </form>
           </Form>
         </CardContent>
         <CardFooter className="flex justify-between">
