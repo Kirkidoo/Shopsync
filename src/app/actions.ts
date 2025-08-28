@@ -63,12 +63,12 @@ async function parseCsvFromStream(stream: Readable): Promise<Product[]> {
     }));
 
     for await (const record of parser) {
-        // Assuming column names are 'sku', 'name', 'price'
-        const price = parseFloat(record.price || record.Price);
-        if (record.sku && record.name && !isNaN(price)) {
+        // Corrected to use 'SKU', 'Title', and 'Price' from the user's file
+        const price = parseFloat(record.Price);
+        if (record.SKU && record.Title && !isNaN(price)) {
             records.push({
-                sku: record.sku,
-                name: record.name,
+                sku: record.SKU,
+                name: record.Title,
                 price: price,
             });
         }
@@ -104,7 +104,9 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
     console.error("Failed to download or parse CSV from FTP", error);
     throw new Error(`Could not download or process file '${csvFileName}' from FTP.`);
   } finally {
-      client.close();
+      if (client.closed === false) {
+        client.close();
+      }
   }
   
   const csvProductMap = new Map(csvProducts.map(p => [p.sku, p]));
