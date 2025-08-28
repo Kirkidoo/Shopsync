@@ -28,6 +28,12 @@ const ftpSchema = z.object({
 
 type FtpFormData = z.infer<typeof ftpSchema>;
 
+const defaultFtpCredentials = {
+  host: 'ftp.gammapowersports.com',
+  username: 'ghs@gammasales.com',
+  password: 'GHSaccess368!',
+};
+
 export default function AuditStepper() {
   const [step, setStep] = useState<Step>('connect');
   const [progress, setProgress] = useState(0);
@@ -40,7 +46,7 @@ export default function AuditStepper() {
 
   const ftpForm = useForm<FtpFormData>({
     resolver: zodResolver(ftpSchema),
-    defaultValues: { host: 'ftp.example.com', username: 'user', password: 'password' },
+    defaultValues: defaultFtpCredentials,
   });
 
   const handleConnect = (values: FtpFormData) => {
@@ -113,7 +119,7 @@ export default function AuditStepper() {
     setSelectedCsv('');
     setAuditData(null);
     setErrorMessage('');
-    ftpForm.reset({ host: 'ftp.example.com', username: 'user', password: 'password' });
+    ftpForm.reset(defaultFtpCredentials);
   };
 
   if (step === 'connect') {
