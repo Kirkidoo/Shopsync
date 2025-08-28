@@ -14,10 +14,20 @@ async function getFtpClient(data: FormData) {
   const client = new Client();
   // client.ftp.verbose = true;
   try {
+    // First, try a secure connection
     await client.access({ host, user, password, secure: true });
-  } catch(err) {
-    console.error(err);
-    throw new Error('Invalid FTP credentials or failed to connect.');
+  } catch(secureErr) {
+    console.log("Secure FTP connection failed. Trying non-secure.", secureErr);
+    // If secure fails, close the potentially broken connection and try non-secure
+    client.close(); 
+    const nonSecureClient = new Client();
+    try {
+        await nonSecureClient.access({ host, user, password, secure: false });
+        return nonSecureClient;
+    } catch (nonSecureErr) {
+        console.error("Non-secure FTP connection also failed.", nonSecureErr);
+        throw new Error('Invalid FTP credentials or failed to connect.');
+    }
   }
   return client;
 }
@@ -69,7 +79,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   const client = await getFtpClient(ftpData);
   const csvStream = new Readable();
   try {
-    const ftpStream = await client.downloadTo(csvStream, csvFileName);
+    await client.downloadTo(csvStream, csvFileName);
   } catch (error) {
     client.close();
     console.error("Failed to download CSV from FTP", error);
