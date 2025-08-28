@@ -2,7 +2,7 @@
 
 import { Product, AuditResult } from '@/lib/types';
 import { Client } from 'basic-ftp';
-import { Readable } from 'stream';
+import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
 import { getAllShopifyProducts } from '@/lib/shopify';
 
@@ -80,19 +80,33 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   
   // 1. Fetch and parse CSV from FTP
   const client = await getFtpClient(ftpData);
-  const csvStream = new Readable();
+  let csvProducts: Product[] = [];
+
   try {
     await client.cd(FTP_DIRECTORY);
-    await client.downloadTo(csvStream, csvFileName);
+    
+    // Create a temporary in-memory writable stream
+    const chunks: any[] = [];
+    const writable = new Writable({
+        write(chunk, encoding, callback) {
+            chunks.push(chunk);
+            callback();
+        }
+    });
+
+    await client.downloadTo(writable, csvFileName);
+    
+    // Once download is complete, create a readable stream from the chunks
+    const readable = Readable.from(Buffer.concat(chunks));
+    csvProducts = await parseCsvFromStream(readable);
+
   } catch (error) {
-    client.close();
-    console.error("Failed to download CSV from FTP", error);
-    throw new Error(`Could not download file '${csvFileName}' from FTP.`);
+    console.error("Failed to download or parse CSV from FTP", error);
+    throw new Error(`Could not download or process file '${csvFileName}' from FTP.`);
   } finally {
       client.close();
   }
   
-  const csvProducts = await parseCsvFromStream(csvStream);
   const csvProductMap = new Map(csvProducts.map(p => [p.sku, p]));
 
   // 2. Fetch products from Shopify
