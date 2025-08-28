@@ -4,7 +4,7 @@ import { Product, AuditResult } from '@/lib/types';
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getAllShopifyProducts } from '@/lib/shopify';
+import { getShopifyProductsBySku } from '@/lib/shopify';
 
 const FTP_DIRECTORY = '/Gamma_Product_Files/Shopify_Files/';
 
@@ -129,19 +129,30 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
       }
   }
   
+  if (csvProducts.length === 0) {
+    console.log('No products found in the CSV file. Aborting audit.');
+    throw new Error('No products with valid SKU, Title, and Price found in the CSV file.');
+  }
+
   const csvProductMap = new Map(csvProducts.map(p => [p.sku, p]));
   console.log(`Created map with ${csvProductMap.size} products from CSV.`);
 
-  // 2. Fetch products from Shopify
-  console.log('Fetching products from Shopify...');
-  const shopifyProducts = await getAllShopifyProducts();
+  // 2. Fetch products from Shopify using the SKUs from the CSV
+  const skusFromCsv = Array.from(csvProductMap.keys());
+  console.log(`Fetching ${skusFromCsv.length} products from Shopify based on CSV SKUs...`);
+  const shopifyProducts = await getShopifyProductsBySku(skusFromCsv);
   const shopifyProductMap = new Map(shopifyProducts.map(p => [p.sku, p]));
   console.log(`Created map with ${shopifyProductMap.size} products from Shopify.`);
 
 
   // 3. Run audit logic
   console.log('Running audit comparison logic...');
-  const allSkus = new Set([...csvProductMap.keys(), ...shopifyProductMap.keys()]);
+  const allSkusInCsv = new Set(csvProductMap.keys());
+  const allSkusInShopify = new Set(shopifyProductMap.keys());
+
+  // Combine keys to ensure we audit everything found in either source.
+  const allSkus = new Set([...allSkusInCsv, ...allSkusInShopify]);
+  
   const report: AuditResult[] = [];
   const summary = { matched: 0, mismatched: 0, newInShopify: 0, onlyInCsv: 0 };
 
@@ -158,9 +169,11 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
         summary.mismatched++;
       }
     } else if (shopifyProduct) {
+      // This means the product (SKU) exists in Shopify but not in the CSV
       report.push({ sku, csvProduct: null, shopifyProduct, status: 'new_in_shopify' });
       summary.newInShopify++;
     } else if (csvProduct) {
+      // This means the product (SKU) exists in the CSV but not in Shopify
       report.push({ sku, csvProduct, shopifyProduct: null, status: 'only_in_csv' });
       summary.onlyInCsv++;
     }
