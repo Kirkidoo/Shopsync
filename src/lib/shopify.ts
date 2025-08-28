@@ -12,16 +12,6 @@ const shopify = shopifyApi({
   isEmbeddedApp: false,
 });
 
-const session = new Session({
-  shop: process.env.SHOPIFY_SHOP_NAME!,
-  accessToken: process.env.SHOPIFY_API_ACCESS_TOKEN!,
-  isOnline: false,
-  state: 'state',
-});
-
-const shopifyClient = new shopify.clients.Graphql({ session });
-
-
 const GET_ALL_PRODUCTS_QUERY = `
   query getAllProducts($cursor: String) {
     products(first: 250, after: $cursor) {
@@ -48,13 +38,22 @@ const GET_ALL_PRODUCTS_QUERY = `
 `;
 
 export async function getAllShopifyProducts(): Promise<Product[]> {
-    const products: Product[] = [];
-    let hasNextPage = true;
-    let cursor = null;
-
     if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
         throw new Error("Shopify environment variables are not set. Please create a .env.local file.");
     }
+
+    const session = new Session({
+      shop: process.env.SHOPIFY_SHOP_NAME!,
+      accessToken: process.env.SHOPIFY_API_ACCESS_TOKEN!,
+      isOnline: false,
+      state: 'state',
+    });
+
+    const shopifyClient = new shopify.clients.Graphql({ session });
+
+    const products: Product[] = [];
+    let hasNextPage = true;
+    let cursor = null;
 
     while(hasNextPage) {
         const response: any = await shopifyClient.query({
