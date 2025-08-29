@@ -92,16 +92,14 @@ async function parseCsvFromStream(stream: Readable): Promise<Product[]> {
     return records;
 }
 
-export async function runAudit(csvFileName: string, ftpData: FormData, onProgress: (message: string) => void): Promise<{ report: AuditResult[], summary: { matched: number, mismatched: number, not_in_csv: number, missing_in_shopify: number } }> {
+export async function runAudit(csvFileName: string, ftpData: FormData): Promise<{ report: AuditResult[], summary: { matched: number, mismatched: number, not_in_csv: number, missing_in_shopify: number } }> {
   console.log(`Starting audit for file: ${csvFileName}`);
   
   // 1. Fetch and parse CSV from FTP
-  onProgress('Connecting to FTP server...');
   const client = await getFtpClient(ftpData);
   let csvProducts: Product[] = [];
 
   try {
-    onProgress('Downloading CSV file...');
     console.log('Navigating to FTP directory:', FTP_DIRECTORY);
     await client.cd(FTP_DIRECTORY);
     console.log(`Downloading file: ${csvFileName}`);
@@ -120,7 +118,6 @@ export async function runAudit(csvFileName: string, ftpData: FormData, onProgres
     
     // Once download is complete, create a readable stream from the chunks
     const readable = Readable.from(Buffer.concat(chunks));
-    onProgress('Parsing CSV file...');
     csvProducts = await parseCsvFromStream(readable);
 
   } catch (error) {
@@ -143,7 +140,6 @@ export async function runAudit(csvFileName: string, ftpData: FormData, onProgres
 
   // 2. Fetch products from Shopify using the SKUs from the CSV
   const skusFromCsv = Array.from(csvProductMap.keys());
-  onProgress(`Fetching ${skusFromCsv.length} products from Shopify...`);
   console.log(`Fetching ${skusFromCsv.length} products from Shopify based on CSV SKUs...`);
   const shopifyProducts = await getShopifyProductsBySku(skusFromCsv);
   const shopifyProductMap = new Map(shopifyProducts.map(p => [p.sku, p]));
@@ -151,7 +147,6 @@ export async function runAudit(csvFileName: string, ftpData: FormData, onProgres
 
 
   // 3. Run audit logic
-  onProgress('Comparing products and generating report...');
   console.log('Running audit comparison logic...');
   const report: AuditResult[] = [];
   const summary = { matched: 0, mismatched: 0, not_in_csv: 0, missing_in_shopify: 0 };

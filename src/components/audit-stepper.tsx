@@ -90,14 +90,12 @@ export default function AuditStepper() {
     }
 
     setStep('auditing');
-    setProgressMessage('Starting audit...');
+    setProgressMessage('Starting audit... This may take a moment.');
     
     startTransition(async () => {
       try {
         const ftpData = getFtpFormData();
-        const result = await runAudit(selectedCsv, ftpData, (message) => {
-            setProgressMessage(message);
-        });
+        const result = await runAudit(selectedCsv, ftpData);
         setAuditData(result);
         setProgressMessage('Report generated!');
         setTimeout(() => setStep('report'), 500);
