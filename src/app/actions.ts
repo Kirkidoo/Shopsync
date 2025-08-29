@@ -321,47 +321,67 @@ export async function createInShopify(
 ) {
     console.log(`Attempting to create '${missingType}' for Handle: ${product.handle}`);
     try {
-        let createdProductData;
+        let createdProduct;
         const addClearanceTag = fileName.toLowerCase().includes('clearance');
-        
+
         if (missingType === 'product') {
-            // Pass all variants to the createProduct function
-            createdProductData = await createProduct(allVariantsForHandle, addClearanceTag);
+            createdProduct = await createProduct(allVariantsForHandle, addClearanceTag);
         } else {
-             // For adding a variant, we only need the specific variant's data
-             const { id, inventoryItemId } = await addProductVariant(product);
-             // We need the parent product GID for other tasks
-             createdProductData = { ...product, variantId: id, inventoryItemId, id: product.id };
+            // For adding a variant, we need the specific variant's data
+            const newVariant = await addProductVariant(product);
+             createdProduct = {
+                id: `gid://shopify/Product/${newVariant.product_id}`,
+                variants: [newVariant]
+             }
         }
         
         // --- Post-creation tasks ---
         // These tasks need to be done for each variant that was part of the creation.
-        const variantsToProcess = missingType === 'product' ? createdProductData.variants : [createdProductData];
+        const variantsToProcess = createdProduct.variants.map((v: any) => ({
+            sku: v.sku,
+            inventoryItemIdGid: `gid://shopify/InventoryItem/${v.inventory_item_id}`,
+            variantIdGid: `gid://shopify/ProductVariant/${v.id}`
+        }));
         
+        const locations = await getShopifyLocations();
+        const garageLocation = locations.find(l => l.name === 'Garage Harry Stanley');
+
         for(const variant of variantsToProcess) {
             const sourceVariant = allVariantsForHandle.find(p => p.sku === variant.sku);
             if (!sourceVariant) continue;
 
             // 1. Connect to Gamma Warehouse and set inventory
-            if (sourceVariant.inventory !== null && variant.inventoryItemId) {
-                console.log(`Connecting inventory item ${variant.inventoryItemId} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`);
-                await connectInventoryToLocation(variant.inventoryItemId, GAMMA_WAREHOUSE_LOCATION_ID);
+            if (sourceVariant.inventory !== null && variant.inventoryItemIdGid) {
+                console.log(`Connecting inventory item ${variant.inventoryItemIdGid} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`);
+                await connectInventoryToLocation(variant.inventoryItemIdGid, GAMMA_WAREHOUSE_LOCATION_ID);
                 
                 console.log('Setting inventory level...');
-                await updateInventoryLevel(variant.inventoryItemId, sourceVariant.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
+                await updateInventoryLevel(variant.inventoryItemIdGid, sourceVariant.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
 
                  // 2. Disconnect from 'Garage Harry Stanley' location if it exists
-                const locations = await getShopifyLocations();
-                const garageLocation = locations.find(l => l.name === 'Garage Harry Stanley');
                 if (garageLocation) {
                     console.log(`Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`);
-                    await disconnectInventoryFromLocation(variant.inventoryItemId, garageLocation.id);
+                    await disconnectInventoryFromLocation(variant.inventoryItemIdGid, garageLocation.id);
                 }
             }
         }
+
+        // 3. Link variant to image (This is a variant-level task)
+        const createdImagesBySrc = new Map(createdProduct.images.map((img: any) => [img.src, img.id]));
         
-        // 3. Link product to collection if category is specified (This is a product-level task)
-        const productGid = missingType === 'product' ? createdProductData.id : product.id;
+        for (const sourceVariant of allVariantsForHandle) {
+             const createdVariant = createdProduct.variants.find((v: any) => v.sku === sourceVariant.sku);
+             if (!createdVariant || !sourceVariant.mediaUrl) continue;
+
+             const imageId = createdImagesBySrc.get(sourceVariant.mediaUrl);
+             if (imageId) {
+                console.log(`Assigning image ${imageId} to variant ${createdVariant.id}...`);
+                await updateProductVariant(`gid://shopify/ProductVariant/${createdVariant.id}`, { imageId: `gid://shopify/ProductImage/${imageId}` });
+             }
+        }
+        
+        // 4. Link product to collection if category is specified (This is a product-level task)
+        const productGid = createdProduct.admin_graphql_api_id || createdProduct.id;
         if (product.category && productGid) {
             console.log(`Linking product to collection: '${product.category}'...`);
             const collectionId = await getCollectionIdByTitle(product.category);
@@ -372,12 +392,15 @@ export async function createInShopify(
             }
         }
 
+
         revalidatePath('/');
-        return { success: true, message: `Successfully created ${missingType} for ${product.sku}`, createdProductData };
+        return { success: true, message: `Successfully created ${missingType} for ${product.sku}`, createdProductData: createdProduct };
     } catch (error) {
         console.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         return { success: false, message };
     }
 }
+    
+
     

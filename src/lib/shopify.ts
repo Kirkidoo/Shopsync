@@ -247,7 +247,7 @@ export async function getShopifyLocations(): Promise<{id: number; name: string}[
 
 // --- Data Mutation Functions ---
 
-export async function createProduct(productVariants: Product[], addClearanceTag: boolean): Promise<{id: string, variants: {sku: string, inventoryItemId: string}[]}> {
+export async function createProduct(productVariants: Product[], addClearanceTag: boolean): Promise<any> {
     const shopifyClient = getShopifyRestClient();
     
     const firstVariant = productVariants[0];
@@ -255,7 +255,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
         ? firstVariant.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
         : '';
         
-    const isSingleDefaultVariant = productVariants.length === 1 && firstVariant.option1Name === 'Title' && firstVariant.option1Value === 'Default Title';
+    const isSingleDefaultVariant = productVariants.length === 1 && (!firstVariant.option1Name || firstVariant.option1Name === 'Title') && (!firstVariant.option1Value || firstVariant.option1Value === 'Default Title');
 
     const getOptionValue = (value: string | null | undefined, fallback: string) => (value?.trim() ? value.trim() : fallback);
 
@@ -276,15 +276,10 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
             inventory_management: 'shopify',
             inventory_policy: 'deny',
             requires_shipping: true,
-            weight: p.weight ? p.weight * 0.00220462 : null, // Convert grams to pounds
-            weight_unit: 'lb',
+            weight: p.weight, // Grams are sent directly, Shopify converts
+            weight_unit: 'g',
             cost: p.costPerItem,
         };
-        
-        // Connect variant to its image by src URL
-        if(p.mediaUrl) {
-            variantPayload.image_src = p.mediaUrl;
-        }
 
         if (isSingleDefaultVariant) {
             variantPayload.option1 = 'Default Title';
@@ -332,16 +327,9 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
             console.error("Incomplete REST creation response:", response.body);
             throw new Error('Product creation did not return the expected product data.');
         }
-        
-        const createdVariants = createdProduct.variants.map((v: any) => ({
-             sku: v.sku,
-             inventoryItemId: `gid://shopify/InventoryItem/${v.inventory_item_id}`
-        }));
 
-        return { 
-            id: `gid://shopify/Product/${createdProduct.id}`, 
-            variants: createdVariants,
-        };
+        return createdProduct;
+
     } catch(error: any) {
         console.error("Error creating product via REST:", error.response?.body || error);
         throw new Error(`Failed to create product. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
@@ -349,7 +337,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
 }
 
 
-export async function addProductVariant(product: Product): Promise<{id: string, inventoryItemId: string}> {
+export async function addProductVariant(product: Product): Promise<any> {
     const shopifyClient = getShopifyRestClient();
     const graphQLClient = getShopifyGraphQLClient();
 
@@ -373,11 +361,13 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
         compare_at_price: product.compareAtPrice,
         cost: product.costPerItem,
         barcode: product.barcode,
-        weight: product.weight ? product.weight * 0.00220462 : null, // Convert grams to pounds
-        weight_unit: 'lb',
+        weight: product.weight, // Grams are sent directly
+        weight_unit: 'g',
         inventory_management: 'shopify',
         inventory_policy: 'deny',
-        option1: product.option1Value || product.sku
+        option1: product.option1Value || product.sku,
+        option2: product.option2Value,
+        option3: product.option3Value
       }
     }
     
@@ -394,10 +384,8 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
             throw new Error('Variant creation did not return the expected variant data.');
         }
 
-        return { 
-            id: `gid://shopify/ProductVariant/${createdVariant.id}`, 
-            inventoryItemId: `gid://shopify/InventoryItem/${createdVariant.inventory_item_id}`,
-        };
+        return createdVariant;
+        
     } catch (error: any) {
          console.error("Error adding variant via REST:", error.response?.body || error);
          throw new Error(`Failed to add variant. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
@@ -422,12 +410,21 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
     return response.body.data?.productUpdate?.product;
 }
 
-export async function updateProductVariant(id: string, input: { price?: number }) {
+export async function updateProductVariant(id: string, input: { price?: number, imageId?: string }) {
     const shopifyClient = getShopifyGraphQLClient();
+    
+    const variables: { input: { id: string, price?: number, imageId?: string } } = { input: { id, ...input } };
+    if(input.price) {
+        variables.input.price = input.price;
+    }
+    if(input.imageId) {
+        variables.input.imageId = input.imageId;
+    }
+
     const response: any = await shopifyClient.query({
         data: {
             query: UPDATE_PRODUCT_VARIANT_MUTATION,
-            variables: { input: { id, ...input } },
+            variables,
         },
     });
 
@@ -501,8 +498,11 @@ export async function updateInventoryLevel(inventoryItemId: string, quantity: nu
         });
         console.log(`Successfully set inventory for item ${inventoryItemId} at location ${locationId} to ${quantity}.`);
     } catch (error: any) {
-        console.error("Error updating inventory via REST:", error.response?.body || error);
-        throw new Error(`Failed to update inventory: ${JSON.stringify(error.response?.body?.errors || error.message)}`);
+         if (error.response?.body) {
+            console.error("Error updating inventory via REST:", error.response.body);
+            throw new Error(`Failed to update inventory: ${JSON.stringify(error.response.body.errors || error.message)}`);
+        }
+        throw error;
     }
 }
 
@@ -545,4 +545,6 @@ export async function linkProductToCollection(productGid: string, collectionGid:
         // Don't throw, just warn, as this is a post-creation task.
     }
 }
+    
+
     
