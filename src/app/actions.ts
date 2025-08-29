@@ -224,7 +224,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
         report.push({ sku: csvProduct.sku, csvProduct, shopifyProduct, status: 'mismatched', mismatches });
         summary.mismatched++;
       } else {
-        report.push({ sku: csvProduct.sku, csvProduct, shopifyProduct, status: 'matched', mismatches: [] });
+        // Matched, do nothing with the report, just count it.
         summary.matched++;
       }
       // Remove from Shopify map to find what's left

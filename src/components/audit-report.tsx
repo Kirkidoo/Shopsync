@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 
 
-type FilterType = 'all' | AuditStatus;
+type FilterType = 'all' | 'mismatched' | 'missing_in_shopify' | 'not_in_csv';
 
 const statusConfig: { [key in AuditStatus]: { icon: React.ElementType, text: string, badgeClass: string } } = {
   matched: { icon: CheckCircle2, text: 'Matched', badgeClass: 'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
@@ -204,25 +204,27 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                   updatedItem.mismatches = updatedItem.mismatches.filter(m => m.field !== fixType);
 
                   if (updatedItem.mismatches.length === 0) {
-                      updatedItem.status = 'matched';
+                      // Item is now matched, so remove it from the report
+                      newData.splice(itemIndex, 1);
                       setReportSummary(prev => ({
                           ...prev,
                           mismatched: prev.mismatched - 1,
-                          matched: prev.matched + 1,
+                          matched: prev.matched + 1, // Still count it for the summary even if not shown
                       }));
-                  }
-                  
-                  if (fixType === 'h1_tag' && updatedItem.shopifyProduct) {
-                      updatedItem.shopifyProduct.descriptionHtml = updatedItem.shopifyProduct.descriptionHtml?.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>') ?? null;
-                  } else if (updatedItem.shopifyProduct && updatedItem.csvProduct) {
-                     switch(fixType) {
-                        case 'name': updatedItem.shopifyProduct.name = updatedItem.csvProduct.name; break;
-                        case 'price': updatedItem.shopifyProduct.price = updatedItem.csvProduct.price; break;
-                        case 'inventory': updatedItem.shopifyProduct.inventory = updatedItem.csvProduct.inventory; break;
+                  } else {
+                     // Still mismatched, but update the shopify product data for instant UI feedback
+                     if (fixType === 'h1_tag' && updatedItem.shopifyProduct) {
+                         updatedItem.shopifyProduct.descriptionHtml = updatedItem.shopifyProduct.descriptionHtml?.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>') ?? null;
+                     } else if (updatedItem.shopifyProduct && updatedItem.csvProduct) {
+                        switch(fixType) {
+                           case 'name': updatedItem.shopifyProduct.name = updatedItem.csvProduct.name; break;
+                           case 'price': updatedItem.shopifyProduct.price = updatedItem.csvProduct.price; break;
+                           case 'inventory': updatedItem.shopifyProduct.inventory = updatedItem.csvProduct.inventory; break;
+                        }
                      }
+                      newData[itemIndex] = updatedItem;
                   }
 
-                  newData[itemIndex] = updatedItem;
                   setReportData(newData);
                   setShowRefresh(true);
               }
@@ -259,30 +261,17 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             toast({ title: 'Success!', description: result.message });
             
             // --- Optimistic UI Update ---
-            const newData = [...reportData];
-            
-            // Find all items with the same handle and mark them as matched
             const handleToUpdate = productToCreate.handle;
             let itemsUpdatedCount = 0;
 
-            const updatedData = newData.map(d => {
-                if (d.csvProduct?.handle === handleToUpdate && d.status === 'missing_in_shopify') {
+            const updatedData = reportData.filter(d => {
+                const shouldRemove = d.csvProduct?.handle === handleToUpdate && d.status === 'missing_in_shopify';
+                if(shouldRemove) {
                     itemsUpdatedCount++;
-                    return {
-                        ...d,
-                        status: 'matched' as AuditStatus,
-                        mismatches: [],
-                        shopifyProduct: { // Create a basic representation
-                           ...d.csvProduct!,
-                           id: result.createdProductData?.id || '',
-                           variantId: '', // These would need to be mapped from the response if we need them
-                           inventoryItemId: '',
-                        }
-                    };
                 }
-                return d;
+                return !shouldRemove;
             });
-
+            
             setReportData(updatedData);
 
             setReportSummary(prev => ({
@@ -371,14 +360,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                 </AlertDescription>
             </Alert>
         )}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
-                <CheckCircle2 className="w-6 h-6 text-green-500 shrink-0" />
-                <div>
-                    <div className="text-xl font-bold">{reportSummary.matched}</div>
-                    <div className="text-xs text-muted-foreground">SKUs Matched</div>
-                </div>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
                 <AlertTriangle className="w-6 h-6 text-yellow-500 shrink-0" />
                 <div>
@@ -405,7 +387,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       <CardContent>
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
           <div className="flex flex-wrap gap-2">
-            {(['all', 'matched', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => (
+            {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => (
                 <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)} disabled={isFixing}>
                     {f === 'all' ? `All (${reportData.length})` : `${statusConfig[f].text} (${(reportSummary as any)[f]})`}
                 </Button>
