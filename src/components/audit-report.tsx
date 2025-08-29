@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fixMismatch, createInShopify } from '@/app/actions';
@@ -386,14 +386,21 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                                                     </TableCell>
                                                      <TableCell>
                                                        {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
-                                                       {item.status === 'missing_in_shopify' && (
-                                                        <div className="flex items-center justify-between">
-                                                            <p className="text-sm text-muted-foreground">
-                                                              This SKU is in your CSV but is a{' '}
-                                                              <span className="font-semibold text-foreground">
-                                                                {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
-                                                              </span>.
-                                                            </p>
+                                                       {item.status === 'missing_in_shopify' && item.csvProduct && (
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="flex flex-col gap-2">
+                                                                <p className="text-sm text-muted-foreground">
+                                                                  This SKU is in your CSV but is a{' '}
+                                                                  <span className="font-semibold text-foreground">
+                                                                    {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
+                                                                  </span>.
+                                                                </p>
+                                                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                                                    <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" /> Price: <span className="font-medium text-foreground">${item.csvProduct.price.toFixed(2)}</span></span>
+                                                                    <span className="flex items-center gap-1.5"><List className="h-3.5 w-3.5" /> Stock: <span className="font-medium text-foreground">{item.csvProduct.inventory ?? 'N/A'}</span></span>
+                                                                    <span className="flex items-center gap-1.5"><Weight className="h-3.5 w-3.5" /> Weight: <span className="font-medium text-foreground">{item.csvProduct.weight ?? 'N/A'}g</span></span>
+                                                                </div>
+                                                            </div>
                                                             <Button size="sm" onClick={() => handleCreate(item)} disabled={isFixing}>
                                                                 <PlusCircle className="mr-2 h-4 w-4" />
                                                                 Create
