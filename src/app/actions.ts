@@ -99,6 +99,10 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
 
         const weight = record['Variant Grams'] ? parseFloat(record['Variant Grams']) : null;
         
+        const tags = record.tag || null;
+        const tagArray = tags ? tags.split(',').map((t: string) => t.trim()) : [];
+        const productType = tagArray.length >= 3 ? tagArray[2] : null;
+        
         if (record.Handle && sku && record.Title && !isNaN(price)) {
             records.push({
                 handle: record.Handle,
@@ -107,8 +111,9 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 price: price,
                 inventory: inventory,
                 descriptionHtml: record['Body (HTML)'] || null,
-                productType: record.Type || null,
+                productType: productType,
                 vendor: record.Vendor || null,
+                tags: tags,
                 compareAtPrice: compareAtPrice,
                 costPerItem: costPerItem,
                 barcode: record['Variant Barcode'] || null,
@@ -253,7 +258,8 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
       summary.not_in_csv++;
   }
   
-  report.sort((a, b) => {
+  const finalReport = report.filter(item => item.status !== 'matched');
+  finalReport.sort((a, b) => {
     const handleA = a.csvProduct?.handle || a.shopifyProduct?.handle || '';
     const handleB = b.csvProduct?.handle || b.shopifyProduct?.handle || '';
     if (handleA !== handleB) {
@@ -263,7 +269,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   });
   console.log('Audit comparison complete. Summary:', summary);
 
-  return { report, summary, duplicates: duplicateSkus };
+  return { report: finalReport, summary, duplicates: duplicateSkus };
 }
 
 

@@ -230,7 +230,8 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             inventory: variant.inventoryQuantity,
                             descriptionHtml: productEdge.node.bodyHtml,
                             productType: null,
-                            vendor: null, 
+                            vendor: null,
+                            tags: null, 
                             compareAtPrice: null,
                             costPerItem: null,
                             barcode: null,
@@ -286,7 +287,8 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
         ? firstVariant.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
         : '';
         
-    const isSingleDefaultVariant = productVariants.length === 1 && (!firstVariant.option1Name || firstVariant.option1Name === 'Title') && (!firstVariant.option1Value || firstVariant.option1Value === 'Default Title');
+    const isSingleDefaultVariant = productVariants.length === 1 && 
+        (firstVariant.option1Name === 'Title' && firstVariant.option1Value === 'Default Title');
 
     const getOptionValue = (value: string | null | undefined, fallback: string) => (value?.trim() ? value.trim() : fallback);
 
@@ -312,9 +314,11 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
             cost: p.costPerItem,
         };
 
-        if (isSingleDefaultVariant) {
-            // No options needed for single default variant
-        } else {
+        if (p.mediaUrl) {
+            variantPayload.image_src = p.mediaUrl;
+        }
+
+        if (!isSingleDefaultVariant) {
             if (firstVariant.option1Name) variantPayload.option1 = getOptionValue(p.option1Value, p.sku);
             if (firstVariant.option2Name) variantPayload.option2 = getOptionValue(p.option2Value, p.sku);
             if (firstVariant.option3Name) variantPayload.option3 = getOptionValue(p.option3Value, p.sku);
@@ -326,7 +330,11 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
     const uniqueImageUrls = [...new Set(productVariants.map(p => p.mediaUrl).filter(Boolean))];
     const restImages = uniqueImageUrls.map(url => ({ src: url }));
 
-    const tags = addClearanceTag ? 'Clearance' : '';
+    let tags = firstVariant.tags || '';
+    if (addClearanceTag) {
+        tags = tags ? `Clearance, ${tags}` : 'Clearance';
+    }
+
 
     const productPayload: any = {
         product: {
@@ -388,6 +396,8 @@ export async function addProductVariant(product: Product): Promise<any> {
     }
     const productId = productGid.split('/').pop();
 
+    const getOptionValue = (value: string | null | undefined, fallback: string) => (value?.trim() ? value.trim() : fallback);
+
     const variantPayload: any = {
       variant: {
         price: product.price,
@@ -399,9 +409,9 @@ export async function addProductVariant(product: Product): Promise<any> {
         weight_unit: 'lb',
         inventory_management: 'shopify',
         inventory_policy: 'deny',
-        option1: product.option1Value || product.sku,
-        option2: product.option2Value,
-        option3: product.option3Value
+        option1: getOptionValue(product.option1Value, product.sku),
+        option2: getOptionValue(product.option2Value, null),
+        option3: getOptionValue(product.option3Value, null)
       }
     }
     
