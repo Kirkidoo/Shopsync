@@ -99,7 +99,7 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
 
         const weight = record['Variant Grams'] ? parseFloat(record['Variant Grams']) : null;
         
-        const tags = record.tag || null;
+        const tags = record.Tags || null;
         const tagArray = tags ? tags.split(',').map((t: string) => t.trim()) : [];
         const productType = tagArray.length >= 3 ? tagArray[2] : null;
         
@@ -417,4 +417,6 @@ export async function createInShopify(
         return { success: false, message };
     }
 }
+    
+
     
