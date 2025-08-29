@@ -415,5 +415,3 @@ export async function updateInventoryLevel(inventoryItemId: string, quantity: nu
     }
     return response.body.data?.inventorySetOnHandQuantities?.inventoryAdjustmentGroup;
 }
-
-    
