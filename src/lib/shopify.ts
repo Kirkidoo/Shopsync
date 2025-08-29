@@ -1,3 +1,4 @@
+
 'use server';
 
 import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
@@ -268,7 +269,7 @@ export async function createProduct(product: Product): Promise<{id: string, vari
             status: 'active',
             variants: [restVariant],
             options: [{ name: "Title", values: ["Default Title"] }],
-            images: product.mediaUrl ? [{ src: product.mediaUrl, alt: product.name }] : [],
+            images: product.mediaUrl ? [{ src: product.mediaUrl }] : [],
         }
     };
 
