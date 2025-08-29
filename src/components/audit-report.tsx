@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { AuditResult, AuditStatus, DuplicateSku, MismatchDetail, Product } from '@/lib/types';
+import { useState, useTransition, useEffect } from 'react';
+import { AuditResult, AuditStatus, DuplicateSku, MismatchDetail, Product, Summary } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fixMismatch } from '@/app/actions';
@@ -24,7 +24,7 @@ const statusConfig: { [key in AuditStatus]: { icon: React.ElementType, text: str
 
 const getHandle = (item: AuditResult) => item.csvProduct?.handle || item.shopifyProduct?.handle || `no-handle-${item.sku}`;
 
-const MismatchDetails = ({ mismatches, csvProduct, shopifyProduct, onFix, disabled }: { mismatches: MismatchDetail[], csvProduct: Product | null, shopifyProduct: Product | null, onFix: (fixType: MismatchDetail['field']) => void, disabled: boolean }) => {
+const MismatchDetails = ({ mismatches, onFix, disabled }: { mismatches: MismatchDetail[], onFix: (fixType: MismatchDetail['field']) => void, disabled: boolean }) => {
     return (
         <div className="flex flex-col gap-2 mt-2">
             {mismatches.map((mismatch, index) => (
@@ -53,12 +53,23 @@ const MismatchDetails = ({ mismatches, csvProduct, shopifyProduct, onFix, disabl
 };
 
 
-export default function AuditReport({ data, summary, duplicates, onReset, onRefresh }: { data: AuditResult[], summary: any, duplicates: DuplicateSku[], onReset: () => void, onRefresh: () => void }) {
+export default function AuditReport({ data, summary, duplicates, onReset, onRefresh }: { data: AuditResult[], summary: Summary, duplicates: DuplicateSku[], onReset: () => void, onRefresh: () => void }) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [isFixing, startTransition] = useTransition();
   const { toast } = useToast();
+  
+  const [reportData, setReportData] = useState<AuditResult[]>(data);
+  const [reportSummary, setReportSummary] = useState<Summary>(summary);
+  const [showRefresh, setShowRefresh] = useState(false);
 
-  const filteredData = data.filter(item => filter === 'all' || item.status === filter);
+  useEffect(() => {
+    setReportData(data);
+    setReportSummary(summary);
+    setShowRefresh(false);
+  }, [data, summary]);
+
+
+  const filteredData = reportData.filter(item => filter === 'all' || item.status === filter);
 
   const groupedByHandle = filteredData.reduce((acc, item) => {
     const handle = getHandle(item);
@@ -70,7 +81,7 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
   }, {} as Record<string, AuditResult[]>);
 
   const handleDownload = () => {
-    const csvData = data.map(item => ({
+    const csvData = reportData.map(item => ({
       Handle: getHandle(item),
       SKU: item.sku,
       Status: statusConfig[item.status].text,
@@ -95,20 +106,50 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
           return;
       }
       
-      // We need the shopify IDs for the update, so we merge them into the object we send to the action
       const fixPayload: Product = {
           ...productToFix,
           id: item.shopifyProduct.id,
           variantId: item.shopifyProduct.variantId,
           inventoryItemId: item.shopifyProduct.inventoryItemId,
-          descriptionHtml: item.shopifyProduct.descriptionHtml, // Ensure we have the latest description for H1 fix
+          descriptionHtml: item.shopifyProduct.descriptionHtml,
       };
 
       startTransition(async () => {
           const result = await fixMismatch(fixType, fixPayload);
           if (result.success) {
               toast({ title: 'Success!', description: result.message });
-              onRefresh(); // Re-run the audit to see the change
+              
+              // --- Optimistic UI Update ---
+              const newData = [...reportData];
+              const itemIndex = newData.findIndex(d => d.sku === item.sku);
+              if(itemIndex > -1) {
+                  const updatedItem = { ...newData[itemIndex] };
+                  updatedItem.mismatches = updatedItem.mismatches.filter(m => m.field !== fixType);
+
+                  if (updatedItem.mismatches.length === 0) {
+                      updatedItem.status = 'matched';
+                      setReportSummary(prev => ({
+                          ...prev,
+                          mismatched: prev.mismatched - 1,
+                          matched: prev.matched + 1,
+                      }));
+                  }
+                  
+                  if (fixType === 'h1_tag' && updatedItem.shopifyProduct) {
+                      updatedItem.shopifyProduct.descriptionHtml = updatedItem.shopifyProduct.descriptionHtml?.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>') ?? null;
+                  } else if (updatedItem.shopifyProduct && updatedItem.csvProduct) {
+                     switch(fixType) {
+                        case 'name': updatedItem.shopifyProduct.name = updatedItem.csvProduct.name; break;
+                        case 'price': updatedItem.shopifyProduct.price = updatedItem.csvProduct.price; break;
+                        case 'inventory': updatedItem.shopifyProduct.inventory = updatedItem.csvProduct.inventory; break;
+                     }
+                  }
+
+                  newData[itemIndex] = updatedItem;
+                  setReportData(newData);
+                  setShowRefresh(true);
+              }
+              // No full refresh here
           } else {
               toast({ title: 'Fix Failed', description: result.message, variant: 'destructive' });
           }
@@ -148,28 +189,28 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
                 <CheckCircle2 className="w-6 h-6 text-green-500 shrink-0" />
                 <div>
-                    <div className="text-xl font-bold">{summary.matched}</div>
+                    <div className="text-xl font-bold">{reportSummary.matched}</div>
                     <div className="text-xs text-muted-foreground">SKUs Matched</div>
                 </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
                 <AlertTriangle className="w-6 h-6 text-yellow-500 shrink-0" />
                 <div>
-                    <div className="text-xl font-bold">{summary.mismatched}</div>
+                    <div className="text-xl font-bold">{reportSummary.mismatched}</div>
                     <div className="text-xs text-muted-foreground">SKUs Mismatched</div>
                 </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
                 <XCircle className="w-6 h-6 text-red-500 shrink-0" />
                 <div>
-                    <div className="text-xl font-bold">{summary.missing_in_shopify}</div>
+                    <div className="text-xl font-bold">{reportSummary.missing_in_shopify}</div>
                     <div className="text-xs text-muted-foreground">SKUs Missing in Shopify</div>
                 </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm">
                 <PlusCircle className="w-6 h-6 text-blue-500 shrink-0" />
                 <div>
-                    <div className="text-xl font-bold">{summary.not_in_csv}</div>
+                    <div className="text-xl font-bold">{reportSummary.not_in_csv}</div>
                     <div className="text-xs text-muted-foreground">SKUs Not in CSV</div>
                 </div>
             </div>
@@ -180,12 +221,13 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
           <div className="flex flex-wrap gap-2">
             {(['all', 'matched', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => (
                 <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)} disabled={isFixing}>
-                    {f === 'all' ? `All (${data.length})` : `${statusConfig[f].text} (${summary[f]})`}
+                    {f === 'all' ? `All (${reportData.length})` : `${statusConfig[f].text} (${(reportSummary as any)[f]})`}
                 </Button>
             ))}
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onReset} disabled={isFixing}><ArrowLeft className="mr-2 h-4 w-4" />New Audit</Button>
+            {showRefresh && <Button variant="secondary" onClick={onRefresh} disabled={isFixing}><RefreshCw className="mr-2 h-4 w-4" />Refresh Data</Button>}
             <Button onClick={handleDownload} disabled={isFixing}><Download className="mr-2 h-4 w-4" />Download Report</Button>
           </div>
         </div>
@@ -246,7 +288,7 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                                                     </Badge>
                                                     </TableCell>
                                                      <TableCell>
-                                                       {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} csvProduct={item.csvProduct} shopifyProduct={item.shopifyProduct} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
+                                                       {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
                                                        {item.status === 'missing_in_shopify' && <p className="text-sm text-muted-foreground">This product is in your CSV but could not be found in Shopify.</p>}
                                                        {item.status === 'not_in_csv' && <p className="text-sm text-muted-foreground">This product exists in Shopify but not in your CSV file.</p>}
                                                        {item.status === 'matched' && <p className="text-sm text-muted-foreground">Product data matches between CSV and Shopify.</p>}

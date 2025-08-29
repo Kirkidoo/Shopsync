@@ -30,3 +30,10 @@ export interface DuplicateSku {
     sku: string;
     count: number;
 }
+
+export interface Summary {
+  matched: number;
+  mismatched: number;
+  not_in_csv: number;
+  missing_in_shopify: number;
+}
