@@ -240,36 +240,41 @@ export async function getShopifyLocations(): Promise<{id: number; name: string}[
 
 // --- Data Mutation Functions ---
 
-export async function createProduct(product: Product): Promise<{id: string, variantId: string, inventoryItemId: string}> {
+export async function createProduct(productVariants: Product[]): Promise<{id: string, variants: {sku: string, inventoryItemId: string}[]}> {
     const shopifyClient = getShopifyRestClient();
     
-    const sanitizedDescription = product.descriptionHtml
-        ? product.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
+    const firstVariant = productVariants[0];
+    const sanitizedDescription = firstVariant.descriptionHtml
+        ? firstVariant.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
         : '';
-        
-    const restVariant = {
-        price: product.price,
-        sku: product.sku,
-        compare_at_price: product.compareAtPrice,
-        cost: product.costPerItem,
-        barcode: product.barcode,
-        grams: product.weight,
+
+    const restVariants = productVariants.map(p => ({
+        price: p.price,
+        sku: p.sku,
+        compare_at_price: p.compareAtPrice,
+        cost: p.costPerItem,
+        barcode: p.barcode,
+        grams: p.weight,
         inventory_management: 'shopify',
         inventory_policy: 'deny',
-        option1: "Default Title"
-    };
+        option1: p.sku // Simplified option handling
+    }));
+
+    // Consolidate unique images
+    const uniqueImageUrls = [...new Set(productVariants.map(p => p.mediaUrl).filter(Boolean))];
+    const restImages = uniqueImageUrls.map(url => ({ src: url }));
 
     const productPayload: any = {
         product: {
-            title: product.name,
-            handle: product.handle,
+            title: firstVariant.name,
+            handle: firstVariant.handle,
             body_html: sanitizedDescription,
-            vendor: product.vendor,
-            product_type: product.productType,
+            vendor: firstVariant.vendor,
+            product_type: firstVariant.productType,
             status: 'active',
-            variants: [restVariant],
-            options: [{ name: "Title", values: ["Default Title"] }],
-            images: product.mediaUrl ? [{ src: product.mediaUrl }] : [],
+            variants: restVariants,
+            options: [{ name: "SKU" }], // Simplified option handling
+            images: restImages,
         }
     };
 
@@ -282,17 +287,20 @@ export async function createProduct(product: Product): Promise<{id: string, vari
         });
 
         const createdProduct = response.body.product;
-        const variant = createdProduct?.variants[0];
 
-        if (!createdProduct || !variant) {
+        if (!createdProduct || !createdProduct.variants) {
             console.error("Incomplete REST creation response:", response.body);
             throw new Error('Product creation did not return the expected product data.');
         }
         
+        const createdVariants = createdProduct.variants.map((v: any) => ({
+             sku: v.sku,
+             inventoryItemId: `gid://shopify/InventoryItem/${v.inventory_item_id}`
+        }));
+
         return { 
             id: createdProduct.admin_graphql_api_id, 
-            variantId: `gid://shopify/ProductVariant/${variant.id}`,
-            inventoryItemId: `gid://shopify/InventoryItem/${variant.inventory_item_id}`,
+            variants: createdVariants,
         };
     } catch(error: any) {
         console.error("Error creating product via REST:", error.response?.body || error);
@@ -497,5 +505,3 @@ export async function linkProductToCollection(productGid: string, collectionGid:
         // Don't throw, just warn, as this is a post-creation task.
     }
 }
-
-    

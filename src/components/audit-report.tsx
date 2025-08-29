@@ -166,38 +166,57 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
         toast({ title: 'Error', description: 'Cannot create item, missing product data.', variant: 'destructive' });
         return;
     }
+    
+    // Find all variants with the same handle from the original full data set
+    const allVariantsForHandle = data
+      .filter(d => d.csvProduct?.handle === productToCreate.handle && d.status === 'missing_in_shopify')
+      .map(d => d.csvProduct)
+      .filter((p): p is Product => p !== null);
+
+    if (allVariantsForHandle.length === 0) {
+        toast({ title: 'Error', description: 'Could not find any variants to create for this handle.', variant: 'destructive' });
+        return;
+    }
 
     startTransition(async () => {
-        const result = await createInShopify(productToCreate, missingType);
+        const result = await createInShopify(productToCreate, allVariantsForHandle, missingType);
         if (result.success) {
             toast({ title: 'Success!', description: result.message });
             
             // --- Optimistic UI Update ---
             const newData = [...reportData];
-            const itemIndex = newData.findIndex(d => d.sku === item.sku);
-            if (itemIndex > -1) {
-                const updatedItem = { ...newData[itemIndex] };
-                updatedItem.status = 'matched';
-                updatedItem.mismatches = [];
-                // Create a basic shopifyProduct representation for the UI
-                updatedItem.shopifyProduct = {
-                    ...productToCreate,
-                    id: result.createdProductData?.id || '',
-                    variantId: result.createdProductData?.variantId || '',
-                    inventoryItemId: result.createdProductData?.inventoryItemId || '',
-                    descriptionHtml: '', // Not returned from create
-                };
+            
+            // Find all items with the same handle and mark them as matched
+            const handleToUpdate = productToCreate.handle;
+            let itemsUpdatedCount = 0;
 
-                newData[itemIndex] = updatedItem;
-                setReportData(newData);
+            const updatedData = newData.map(d => {
+                if (d.csvProduct?.handle === handleToUpdate && d.status === 'missing_in_shopify') {
+                    itemsUpdatedCount++;
+                    return {
+                        ...d,
+                        status: 'matched' as AuditStatus,
+                        mismatches: [],
+                        shopifyProduct: { // Create a basic representation
+                           ...d.csvProduct!,
+                           id: result.createdProductData?.id || '',
+                           variantId: '', // These would need to be mapped from the response if we need them
+                           inventoryItemId: '',
+                        }
+                    };
+                }
+                return d;
+            });
 
-                setReportSummary(prev => ({
-                    ...prev,
-                    missing_in_shopify: prev.missing_in_shopify - 1,
-                    matched: prev.matched + 1,
-                }));
-                setShowRefresh(true);
-            }
+            setReportData(updatedData);
+
+            setReportSummary(prev => ({
+                ...prev,
+                missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
+                matched: prev.matched + itemsUpdatedCount,
+            }));
+            setShowRefresh(true);
+
         } else {
             toast({ title: 'Creation Failed', description: result.message, variant: 'destructive' });
         }
@@ -373,10 +392,11 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                                             <TableHead className="w-[150px]">SKU</TableHead>
                                             <TableHead className="w-[180px]">Status</TableHead>
                                             <TableHead>Details</TableHead>
+                                            {isMissing && <TableHead className="w-[120px] text-right">Actions</TableHead>}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {items.map(item => {
+                                        {items.map((item, index) => {
                                             const itemConfig = statusConfig[item.status];
                                             return (
                                                 <TableRow key={item.sku} className={
@@ -393,29 +413,34 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                                                      <TableCell>
                                                        {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
                                                        {item.status === 'missing_in_shopify' && item.csvProduct && (
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div className="flex flex-col gap-2">
+                                                            <>
                                                                 <p className="text-sm text-muted-foreground">
                                                                   This SKU is in your CSV but is a{' '}
                                                                   <span className="font-semibold text-foreground">
                                                                     {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
                                                                   </span>.
                                                                 </p>
-                                                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                                                <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
                                                                     <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" /> Price: <span className="font-medium text-foreground">${item.csvProduct.price.toFixed(2)}</span></span>
                                                                     <span className="flex items-center gap-1.5"><List className="h-3.5 w-3.5" /> Stock: <span className="font-medium text-foreground">{item.csvProduct.inventory ?? 'N/A'}</span></span>
                                                                     <span className="flex items-center gap-1.5"><Weight className="h-3.5 w-3.5" /> Weight: <span className="font-medium text-foreground">{gToLbs(item.csvProduct.weight)}</span></span>
                                                                 </div>
-                                                            </div>
-                                                            <Button size="sm" onClick={() => handleCreate(item)} disabled={isFixing}>
-                                                                <PlusCircle className="mr-2 h-4 w-4" />
-                                                                Create
-                                                            </Button>
-                                                        </div>
+                                                            </>
                                                         )}
                                                        {item.status === 'not_in_csv' && <p className="text-sm text-muted-foreground">This product exists in Shopify but not in your CSV file.</p>}
                                                        {item.status === 'matched' && <p className="text-sm text-muted-foreground">Product data matches between CSV and Shopify.</p>}
                                                     </TableCell>
+                                                    {isMissing && (
+                                                        <TableCell className="text-right">
+                                                            {/* Show the create button only on the first row of a missing product group */}
+                                                            {index === 0 && (
+                                                                <Button size="sm" onClick={() => handleCreate(item)} disabled={isFixing}>
+                                                                    <PlusCircle className="mr-2 h-4 w-4" />
+                                                                    Create Product
+                                                                </Button>
+                                                            )}
+                                                        </TableCell>
+                                                    )}
                                                 </TableRow>
                                             );
                                         })}

@@ -89,8 +89,13 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
         
         const price = parseFloat(record.Price);
         const inventory = record['Variant Inventory Qty'] ? parseInt(record['Variant Inventory Qty'], 10) : null;
-        const compareAtPrice = record['Variant Compare At Price'] ? parseFloat(record['Variant Compare At Price']) : null;
-        const costPerItem = record['Variant Cost'] ? parseFloat(record['Variant Cost']) : null;
+        
+        const compareAtPriceText = record['Compare At Price'];
+        const compareAtPrice = compareAtPriceText && !isNaN(parseFloat(compareAtPriceText)) ? parseFloat(compareAtPriceText) : null;
+
+        const costPerItemText = record['Cost Per Item'];
+        const costPerItem = costPerItemText && !isNaN(parseFloat(costPerItemText)) ? parseFloat(costPerItemText) : null;
+
         const weight = record['Variant Grams'] ? parseFloat(record['Variant Grams']) : null;
         
         if (record.Handle && sku && record.Title && !isNaN(price)) {
@@ -107,7 +112,7 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 costPerItem: costPerItem,
                 barcode: record['Variant Barcode'] || null,
                 weight: weight,
-                mediaUrl: record['Image Src'] || null,
+                mediaUrl: record['Variant Image'] || null,
                 category: record.Category || null,
                 id: '', // Shopify only
                 variantId: '', // Shopify only
@@ -303,43 +308,55 @@ export async function fixMismatch(
 
 export async function createInShopify(
     product: Product,
+    allVariantsForHandle: Product[],
     missingType: 'product' | 'variant'
 ) {
-    console.log(`Attempting to create '${missingType}' for SKU: ${product.sku}`);
+    console.log(`Attempting to create '${missingType}' for Handle: ${product.handle}`);
     try {
         let createdProductData;
         if (missingType === 'product') {
-            createdProductData = await createProduct(product);
+            // Pass all variants to the createProduct function
+            createdProductData = await createProduct(allVariantsForHandle);
         } else {
+             // For adding a variant, we only need the specific variant's data
              const { id, inventoryItemId } = await addProductVariant(product);
-             createdProductData = { ...product, variantId: id, inventoryItemId };
+             // We need the parent product GID for other tasks
+             createdProductData = { ...product, variantId: id, inventoryItemId, id: product.id };
         }
         
         // --- Post-creation tasks ---
+        // These tasks need to be done for each variant that was part of the creation.
+        const variantsToProcess = missingType === 'product' ? createdProductData.variants : [createdProductData];
+        
+        for(const variant of variantsToProcess) {
+            const sourceVariant = allVariantsForHandle.find(p => p.sku === variant.sku);
+            if (!sourceVariant) continue;
 
-        // 1. Connect to Gamma Warehouse and set inventory
-        if (product.inventory !== null && createdProductData.inventoryItemId) {
-            console.log(`Connecting inventory item ${createdProductData.inventoryItemId} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`);
-            await connectInventoryToLocation(createdProductData.inventoryItemId, GAMMA_WAREHOUSE_LOCATION_ID);
-            
-            console.log('Setting inventory level...');
-            await updateInventoryLevel(createdProductData.inventoryItemId, product.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
+            // 1. Connect to Gamma Warehouse and set inventory
+            if (sourceVariant.inventory !== null && variant.inventoryItemId) {
+                console.log(`Connecting inventory item ${variant.inventoryItemId} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`);
+                await connectInventoryToLocation(variant.inventoryItemId, GAMMA_WAREHOUSE_LOCATION_ID);
+                
+                console.log('Setting inventory level...');
+                await updateInventoryLevel(variant.inventoryItemId, sourceVariant.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
 
-             // 2. Disconnect from 'Garage Harry Stanley' location if it exists
-            const locations = await getShopifyLocations();
-            const garageLocation = locations.find(l => l.name === 'Garage Harry Stanley');
-            if (garageLocation) {
-                console.log(`Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`);
-                await disconnectInventoryFromLocation(createdProductData.inventoryItemId, garageLocation.id);
+                 // 2. Disconnect from 'Garage Harry Stanley' location if it exists
+                const locations = await getShopifyLocations();
+                const garageLocation = locations.find(l => l.name === 'Garage Harry Stanley');
+                if (garageLocation) {
+                    console.log(`Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`);
+                    await disconnectInventoryFromLocation(variant.inventoryItemId, garageLocation.id);
+                }
             }
         }
         
-        // 3. Link to collection if category is specified
-        if (product.category && createdProductData.id) {
+        // 3. Link product to collection if category is specified (This is a product-level task)
+        const productGid = missingType === 'product' ? createdProductData.id : product.id;
+        if (product.category && productGid) {
             console.log(`Linking product to collection: '${product.category}'...`);
             const collectionId = await getCollectionIdByTitle(product.category);
             if (collectionId) {
-                await linkProductToCollection(createdProductData.id, collectionId);
+                await linkProductToCollection(productGid, collectionId);
             } else {
                 console.warn(`Could not find collection with title '${product.category}'. Skipping linking.`);
             }
@@ -353,5 +370,3 @@ export async function createInShopify(
         return { success: false, message };
     }
 }
-
-    
