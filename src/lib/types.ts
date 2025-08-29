@@ -19,6 +19,10 @@ export interface Product {
   category: string | null; // For mapping to Shopify Collections
   option1Name: string | null;
   option1Value: string | null;
+  option2Name: string | null;
+  option2Value: string | null;
+  option3Name: string | null;
+  option3Value: string | null;
 }
 
 export type AuditStatus = 'matched' | 'mismatched' | 'not_in_csv' | 'missing_in_shopify';

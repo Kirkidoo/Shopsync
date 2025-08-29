@@ -207,6 +207,10 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             category: null,
                             option1Name: null,
                             option1Value: null,
+                            option2Name: null,
+                            option2Value: null,
+                            option3Name: null,
+                            option3Value: null,
                         });
                     }
                 }
@@ -254,6 +258,14 @@ export async function createProduct(productVariants: Product[]): Promise<{id: st
 
     const getOptionValue = (value: string | null | undefined, fallback: string) => (value?.trim() ? value.trim() : fallback);
 
+    // Prepare options
+    const optionNames: string[] = [];
+    if (firstVariant.option1Name && firstVariant.option1Name !== 'Title') optionNames.push(firstVariant.option1Name);
+    if (firstVariant.option2Name) optionNames.push(firstVariant.option2Name);
+    if (firstVariant.option3Name) optionNames.push(firstVariant.option3Name);
+    
+    const restOptions = optionNames.length > 0 ? optionNames.map(name => ({ name })) : [{ name: "Title" }];
+    
     const restVariants = productVariants.map(p => {
         const variantPayload: any = {
             price: p.price,
@@ -268,8 +280,16 @@ export async function createProduct(productVariants: Product[]): Promise<{id: st
             cost: p.costPerItem,
         };
 
-        if (!isSingleDefaultVariant) {
-             variantPayload.option1 = getOptionValue(p.option1Value, p.sku);
+        if (optionNames.length > 0) {
+            if (firstVariant.option1Name && firstVariant.option1Name !== 'Title') {
+                variantPayload.option1 = getOptionValue(p.option1Value, p.sku);
+            }
+            if (firstVariant.option2Name) {
+                variantPayload.option2 = getOptionValue(p.option2Value, '-');
+            }
+            if (firstVariant.option3Name) {
+                variantPayload.option3 = getOptionValue(p.option3Value, '-');
+            }
         } else {
              variantPayload.option1 = 'Default Title';
         }
@@ -289,13 +309,9 @@ export async function createProduct(productVariants: Product[]): Promise<{id: st
             status: 'active',
             variants: restVariants,
             images: restImages,
+            options: restOptions,
         }
     };
-    
-    if (!isSingleDefaultVariant && firstVariant.option1Name) {
-      productPayload.product.options = [{ name: firstVariant.option1Name }];
-    }
-
 
     console.log('Creating product with REST payload:', JSON.stringify(productPayload, null, 2));
 
@@ -523,5 +539,4 @@ export async function linkProductToCollection(productGid: string, collectionGid:
         // Don't throw, just warn, as this is a post-creation task.
     }
 }
-
     

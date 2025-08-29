@@ -117,6 +117,10 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 category: record.Category || null,
                 option1Name: record['Option1 Name'] || null,
                 option1Value: record['Option1 Value'] || null,
+                option2Name: record['Option2 Name'] || null,
+                option2Value: record['Option2 Value'] || null,
+                option3Name: record['Option3 Name'] || null,
+                option3Value: record['Option3 Value'] || null,
                 id: '', // Shopify only
                 variantId: '', // Shopify only
                 inventoryItemId: '', // Shopify only
