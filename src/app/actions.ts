@@ -366,7 +366,6 @@ export async function createInShopify(
              const imageId = createdImagesBySrc.get(sourceVariant.mediaUrl);
              if (imageId) {
                 console.log(`Phase 2: Assigning image ID ${imageId} to variant ID ${createdVariant.id}...`);
-                // Using REST ID for variant update is simpler here if the client supports it
                 await updateProductVariant(createdVariant.id.toString(), { imageId: imageId });
              } else {
                 console.warn(`Could not find a created image matching source URL: ${sourceVariant.mediaUrl} for SKU: ${sourceVariant.sku}`);

@@ -449,7 +449,7 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
 export async function updateProductVariant(id: string, input: { price?: number, imageId?: number }) {
     const shopifyClient = getShopifyRestClient();
     
-    const variantId = id.split('/').pop();
+    const variantId = id.toString().split('/').pop();
     const payload = { variant: { id: variantId, ...input }};
     
     console.log(`Phase 2: Updating variant with REST payload:`, JSON.stringify(payload, null, 2));
