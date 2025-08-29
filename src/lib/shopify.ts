@@ -75,22 +75,6 @@ const UPDATE_PRODUCT_VARIANT_MUTATION = `
     }
 `;
 
-const UPDATE_INVENTORY_LEVEL_MUTATION = `
-    mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
-        inventorySetOnHandQuantities(input: $input) {
-            inventoryAdjustmentGroup {
-                id
-            }
-            userErrors {
-                code
-                field
-                message
-            }
-        }
-    }
-`;
-
-
 function getShopifyGraphQLClient() {
      if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
         console.error("Shopify environment variables are not set.");
@@ -255,7 +239,9 @@ export async function createProduct(product: Product): Promise<{id: string, vari
                 grams: product.weight,
                 inventory_management: 'shopify',
                 inventory_policy: 'deny',
+                option1: "Default Title" // Required for products with no explicit options
             }],
+            options: [{ name: "Title" }], // Required for products with no explicit options
             images: product.mediaUrl ? [{ src: product.mediaUrl }] : [],
         }
     };
@@ -315,6 +301,8 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
         grams: product.weight,
         inventory_management: 'shopify',
         inventory_policy: 'deny',
+        // This is a simplification; real multi-option products need all options
+        option1: product.sku 
       }
     }
     
@@ -421,3 +409,5 @@ export async function updateInventoryLevel(inventoryItemId: string, quantity: nu
         throw new Error(`Failed to update inventory: ${JSON.stringify(error.response?.body?.errors || error.message)}`);
     }
 }
+
+    
