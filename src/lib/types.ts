@@ -8,6 +8,13 @@ export interface Product {
   price: number;
   inventory: number | null;
   descriptionHtml: string | null;
+  productType: string | null;
+  vendor: string | null;
+  compareAtPrice: number | null;
+  costPerItem: number | null;
+  barcode: string | null;
+  weight: number | null;
+  mediaUrl: string | null;
 }
 
 export type AuditStatus = 'matched' | 'mismatched' | 'not_in_csv' | 'missing_in_shopify';

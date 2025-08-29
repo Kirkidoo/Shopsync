@@ -87,6 +87,9 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
         
         const price = parseFloat(record.Price);
         const inventory = record['Variant Inventory Qty'] ? parseInt(record['Variant Inventory Qty'], 10) : null;
+        const compareAtPrice = record['Variant Compare At Price'] ? parseFloat(record['Variant Compare At Price']) : null;
+        const costPerItem = record['Variant Cost'] ? parseFloat(record['Variant Cost']) : null;
+        const weight = record['Variant Grams'] ? parseFloat(record['Variant Grams']) : null;
         
         if (record.Handle && sku && record.Title && !isNaN(price)) {
             records.push({
@@ -95,7 +98,14 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 name: record.Title,
                 price: price,
                 inventory: inventory,
-                descriptionHtml: null, // Not present in CSV
+                descriptionHtml: record['Body (HTML)'] || null,
+                productType: record.Type || null,
+                vendor: record.Vendor || null,
+                compareAtPrice: compareAtPrice,
+                costPerItem: costPerItem,
+                barcode: record['Variant Barcode'] || null,
+                weight: weight,
+                mediaUrl: record['Image Src'] || null,
                 id: '', // Shopify only
                 variantId: '', // Shopify only
                 inventoryItemId: '', // Shopify only

@@ -8,6 +8,9 @@ import { Product } from '@/lib/types';
 // Helper function to introduce a delay
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const GAMMA_WAREHOUSE_LOCATION_ID = 93998154045;
+const GAMMA_WAREHOUSE_LOCATION_GID = `gid://shopify/Location/${GAMMA_WAREHOUSE_LOCATION_ID}`;
+
 const GET_PRODUCTS_BY_SKU_QUERY = `
   query getProductsBySku($query: String!) {
     products(first: 250, query: $query) {
@@ -198,6 +201,13 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             price: parseFloat(variant.price),
                             inventory: variant.inventoryQuantity,
                             descriptionHtml: productEdge.node.bodyHtml,
+                            productType: null,
+                            vendor: null,
+                            compareAtPrice: null,
+                            costPerItem: null,
+                            barcode: null,
+                            weight: null,
+                            mediaUrl: null,
                         });
                     }
                 }
@@ -223,16 +233,25 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 export async function createProduct(product: Product): Promise<{id: string, variantId: string, inventoryItemId: string}> {
     const shopifyClient = getShopifyRestClient();
     
-    const productPayload = {
+    const productPayload: any = {
         product: {
             title: product.name,
             handle: product.handle,
+            body_html: product.descriptionHtml,
+            vendor: product.vendor,
+            product_type: product.productType,
             status: 'active',
             variants: [{
                 price: product.price,
                 sku: product.sku,
+                compare_at_price: product.compareAtPrice,
+                cost: product.costPerItem,
+                barcode: product.barcode,
+                grams: product.weight,
                 inventory_management: product.inventory === null ? null : 'shopify',
+                inventory_policy: 'deny',
             }],
+            images: product.mediaUrl ? [{ src: product.mediaUrl }] : [],
         }
     };
 
@@ -258,7 +277,7 @@ export async function createProduct(product: Product): Promise<{id: string, vari
             inventoryItemId: `gid://shopify/InventoryItem/${variant.inventory_item_id}`,
         };
     } catch(error: any) {
-        console.error("Error creating product via REST:", error);
+        console.error("Error creating product via REST:", error.response?.body || error);
         throw new Error(`Failed to create product. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
     }
 }
@@ -281,11 +300,16 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
     }
     const productId = productGid.split('/').pop();
 
-    const variantPayload = {
+    const variantPayload: any = {
       variant: {
         price: product.price,
         sku: product.sku,
+        compare_at_price: product.compareAtPrice,
+        cost: product.costPerItem,
+        barcode: product.barcode,
+        grams: product.weight,
         inventory_management: product.inventory === null ? null : 'shopify',
+        inventory_policy: 'deny',
       }
     }
     
@@ -307,7 +331,7 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
             inventoryItemId: `gid://shopify/InventoryItem/${createdVariant.inventory_item_id}`,
         };
     } catch (error: any) {
-         console.error("Error adding variant via REST:", error);
+         console.error("Error adding variant via REST:", error.response?.body || error);
          throw new Error(`Failed to add variant. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
     }
 }
@@ -349,24 +373,6 @@ export async function updateProductVariant(id: string, input: { price?: number }
 
 export async function updateInventoryLevel(inventoryItemId: string, quantity: number) {
     const shopifyClient = getShopifyGraphQLClient();
-    // To update inventory, we first need to find the inventory level ID for a specific location.
-    // For this app, we'll assume the first available location.
-    const locationsResponse: any = await shopifyClient.query({
-        data: `{
-            locations(first: 1) {
-                edges {
-                    node {
-                        id
-                    }
-                }
-            }
-        }`
-    });
-    
-    const locationId = locationsResponse.body.data?.locations?.edges[0]?.node?.id;
-    if (!locationId) {
-        throw new Error("Could not find a location to update inventory for.");
-    }
     
     const response: any = await shopifyClient.query({
         data: {
@@ -377,7 +383,7 @@ export async function updateInventoryLevel(inventoryItemId: string, quantity: nu
                     setQuantities: [
                         {
                             inventoryItemId: inventoryItemId,
-                            locationId: locationId,
+                            locationId: GAMMA_WAREHOUSE_LOCATION_GID,
                             quantity: quantity
                         }
                     ]
@@ -393,5 +399,3 @@ export async function updateInventoryLevel(inventoryItemId: string, quantity: nu
     }
     return response.body.data?.inventorySetOnHandQuantities?.inventoryAdjustmentGroup;
 }
-
-    
