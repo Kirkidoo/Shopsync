@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string; // Shopify Product GID
   variantId: string; // Shopify Variant GID
@@ -16,6 +17,8 @@ export interface Product {
   weight: number | null;
   mediaUrl: string | null;
   category: string | null; // For mapping to Shopify Collections
+  option1Name: string | null;
+  option1Value: string | null;
 }
 
 export type AuditStatus = 'matched' | 'mismatched' | 'not_in_csv' | 'missing_in_shopify';

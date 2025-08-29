@@ -115,6 +115,8 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 weight: weight,
                 mediaUrl: record['Variant Image'] || null,
                 category: record.Category || null,
+                option1Name: record['Option1 Name'] || null,
+                option1Value: record['Option1 Value'] || null,
                 id: '', // Shopify only
                 variantId: '', // Shopify only
                 inventoryItemId: '', // Shopify only
@@ -371,5 +373,4 @@ export async function createInShopify(
         return { success: false, message };
     }
 }
-
     

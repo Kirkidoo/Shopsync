@@ -205,6 +205,8 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             weight: null,
                             mediaUrl: null,
                             category: null,
+                            option1Name: null,
+                            option1Value: null,
                         });
                     }
                 }
@@ -248,21 +250,32 @@ export async function createProduct(productVariants: Product[]): Promise<{id: st
         ? firstVariant.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
         : '';
         
-    const isSingleVariantProduct = productVariants.length === 1 && firstVariant.name.includes('Default Title');
+    const isSingleDefaultVariant = productVariants.length === 1 && firstVariant.option1Name === 'Title' && firstVariant.option1Value === 'Default Title';
 
-    const restVariants = productVariants.map(p => ({
-        price: p.price,
-        sku: p.sku,
-        compare_at_price: p.compareAtPrice,
-        cost: p.costPerItem,
-        barcode: p.barcode,
-        grams: p.weight,
-        inventory_management: 'shopify',
-        inventory_policy: 'deny',
-        option1: isSingleVariantProduct ? 'Default Title' : p.sku
-    }));
+    const getOptionValue = (value: string | null | undefined, fallback: string) => (value?.trim() ? value.trim() : fallback);
 
-    // Consolidate unique images
+    const restVariants = productVariants.map(p => {
+        const variantPayload: any = {
+            price: p.price,
+            sku: p.sku,
+            barcode: p.barcode,
+            compare_at_price: p.compareAtPrice,
+            inventory_management: 'shopify',
+            inventory_policy: 'deny',
+            requires_shipping: true,
+            weight: p.weight,
+            weight_unit: 'g', // Send as grams
+            cost: p.costPerItem,
+        };
+
+        if (!isSingleDefaultVariant) {
+             variantPayload.option1 = getOptionValue(p.option1Value, p.sku);
+        } else {
+             variantPayload.option1 = 'Default Title';
+        }
+        return variantPayload;
+    });
+
     const uniqueImageUrls = [...new Set(productVariants.map(p => p.mediaUrl).filter(Boolean))];
     const restImages = uniqueImageUrls.map(url => ({ src: url }));
 
@@ -279,9 +292,8 @@ export async function createProduct(productVariants: Product[]): Promise<{id: st
         }
     };
     
-    // Only add options if it's NOT a single-variant product with a default title
-    if (!isSingleVariantProduct) {
-      productPayload.product.options = [{ name: "SKU" }];
+    if (!isSingleDefaultVariant && firstVariant.option1Name) {
+      productPayload.product.options = [{ name: firstVariant.option1Name }];
     }
 
 
@@ -343,8 +355,7 @@ export async function addProductVariant(product: Product): Promise<{id: string, 
         grams: product.weight,
         inventory_management: 'shopify',
         inventory_policy: 'deny',
-        // This is a simplification; real multi-option products need all options
-        option1: product.sku 
+        option1: product.option1Value || product.sku
       }
     }
     
