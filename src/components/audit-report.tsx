@@ -7,11 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fixMismatch } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 type FilterType = 'all' | AuditStatus;
 
@@ -156,6 +158,36 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
       });
   };
 
+  const mismatchIcons: Record<MismatchDetail['field'], React.ReactElement> = {
+    name: <TooltipContent>Name</TooltipContent>,
+    price: <TooltipContent>Price</TooltipContent>,
+    inventory: <TooltipContent>Inventory</TooltipContent>,
+    h1_tag: <TooltipContent>H1 Tag</TooltipContent>,
+  };
+
+  const MismatchIcon = ({field}: {field: MismatchDetail['field']}) => {
+    const icons = {
+      name: <Text className="h-4 w-4" />,
+      price: <DollarSign className="h-4 w-4" />,
+      inventory: <List className="h-4 w-4" />,
+      h1_tag: <span className="text-xs font-bold">H1</span>,
+    }
+    return (
+        <TooltipProvider>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <div className="p-1.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-md">
+                      {icons[field]}
+                  </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                  <p className="capitalize">{field.replace('_', ' ')} Mismatch</p>
+              </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+    )
+  }
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -240,6 +272,15 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                          const isMissing = items.every(i => i.status === 'missing_in_shopify');
                          const notInCsv = items.every(i => i.status === 'not_in_csv');
                          
+                         const uniqueMismatchTypes = new Set<MismatchDetail['field']>();
+                         if(hasMismatch) {
+                             items.forEach(item => {
+                                 item.mismatches.forEach(mismatch => {
+                                     uniqueMismatchTypes.add(mismatch.field);
+                                 });
+                             });
+                         }
+
                          const overallStatus = hasMismatch ? 'mismatched' 
                              : isMissing ? 'missing_in_shopify'
                              : notInCsv ? 'not_in_csv'
@@ -260,6 +301,13 @@ export default function AuditReport({ data, summary, duplicates, onReset, onRefr
                                         <p className="font-semibold">{productTitle}</p>
                                         <p className="text-sm text-muted-foreground">{handle}</p>
                                     </div>
+                                    {hasMismatch && (
+                                        <div className="flex items-center gap-1.5 text-yellow-600">
+                                            {Array.from(uniqueMismatchTypes).map(field => (
+                                                <MismatchIcon key={field} field={field} />
+                                            ))}
+                                        </div>
+                                    )}
                                     <Badge variant="outline" className="mr-4">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
                                 </div>
                             </AccordionTrigger>
