@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useTransition, useEffect, useMemo } from 'react';
-import { AuditResult, AuditStatus, DuplicateSku, MismatchDetail, Product, Summary } from '@/lib/types';
+import { AuditResult, AuditStatus, DuplicateSku, MismatchDetail, Product, Summary, ShopifyProductImage } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, deleteFromShopify, deleteVariantFromShopify } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -201,6 +201,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [editingMissingMedia, setEditingMissingMedia] = useState<string | null>(null);
   const [selectedHandles, setSelectedHandles] = useState<Set<string>>(new Set());
   const [fixedMismatches, setFixedMismatches] = useState<Set<string>>(new Set());
+  const [imageCounts, setImageCounts] = useState<Record<string, number>>({});
+  const [loadingImageCounts, setLoadingImageCounts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setReportData(data);
@@ -209,6 +211,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setCurrentPage(1);
     setSelectedHandles(new Set());
     setFixedMismatches(getFixedMismatches());
+    setImageCounts({});
+    setLoadingImageCounts(new Set());
   }, [data, summary]);
 
   const uniqueVendors = useMemo(() => {
@@ -487,30 +491,37 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         });
     };
 
-  const MismatchIcon = ({field}: {field: MismatchDetail['field']}) => {
-    const icons: { [key in MismatchDetail['field']]: React.ReactNode } = {
-      name: <Text className="h-4 w-4" />,
-      price: <DollarSign className="h-4 w-4" />,
-      inventory: <List className="h-4 w-4" />,
-      h1_tag: <span className="text-xs font-bold">H1</span>,
-      duplicate_sku: <FileWarning className="h-4 w-4" />,
-      missing_in_shopify: <XCircle className="h-4 w-4" />,
-    };
-    return (
-        <TooltipProvider>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <div className="p-1.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-md">
-                      {icons[field]}
-                  </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                  <p className="capitalize">{field.replace(/_/g, ' ')}</p>
-              </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-    )
-  }
+    const MismatchIcons = ({mismatches}: {mismatches: MismatchDetail[]}) => {
+        const uniqueFields = [...new Set(mismatches.map(m => m.field))];
+        
+        const icons: { [key in MismatchDetail['field']]: React.ReactElement } = {
+            name: <Text className="h-4 w-4" />,
+            price: <DollarSign className="h-4 w-4" />,
+            inventory: <List className="h-4 w-4" />,
+            h1_tag: <span className="text-xs font-bold leading-none">H1</span>,
+            duplicate_sku: <FileWarning className="h-4 w-4" />,
+            missing_in_shopify: <XCircle className="h-4 w-4" />,
+        };
+
+        return (
+            <div className="flex items-center gap-1.5">
+                {uniqueFields.map(field => (
+                    <TooltipProvider key={field}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="p-1.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded-md">
+                                    {icons[field]}
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p className="capitalize">{field.replace(/_/g, ' ')}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ))}
+            </div>
+        )
+    }
 
   const handleFilterChange = (newFilter: FilterType) => {
     setFilter(newFilter);
@@ -549,7 +560,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const handleClearFixedMismatches = () => {
     clearFixedMismatches();
     setFixedMismatches(new Set());
-    toast({ title: "Cleared 'Remembered' Fixes", description: "The report is now showing all original mismatches. Run a new bulk audit for the latest data." });
+    toast({ title: "Cleared 'Remembered' Fixes", description: "The report is now showing all original mismatches. Run a new non-cached audit for the latest data." });
   }
   
   const handleMarkAsFixed = (sku: string, field: MismatchDetail['field']) => {
@@ -574,6 +585,30 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           return acc;
       }, { mismatched: 0, missing_in_shopify: 0, not_in_csv: 0 });
   }, [filteredData]);
+  
+  const handleAccordionChange = async (handle: string) => {
+    if (imageCounts[handle] !== undefined || loadingImageCounts.has(handle)) return;
+
+    const item = groupedByHandle[handle]?.[0];
+    const productId = item?.shopifyProduct?.id;
+
+    if (productId) {
+      setLoadingImageCounts(prev => new Set(prev).add(handle));
+      try {
+        const { images } = await getProductWithImages(productId);
+        setImageCounts(prev => ({ ...prev, [handle]: images.length }));
+      } catch (error) {
+        console.error("Failed to fetch image count for handle", handle, error);
+        setImageCounts(prev => ({ ...prev, [handle]: 0 }));
+      } finally {
+        setLoadingImageCounts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(handle);
+          return newSet;
+        });
+      }
+    }
+  };
 
   return (
     <>
@@ -728,24 +763,17 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
         <div className="rounded-md border">
             {paginatedHandleKeys.length > 0 ? (
-                <Accordion type="multiple" className="w-full">
+                <Accordion type="single" collapsible className="w-full" onValueChange={handleAccordionChange}>
                     {paginatedHandleKeys.map((handle) => {
                          const items = groupedByHandle[handle];
                          const productTitle = items[0].csvProduct?.name || items[0].shopifyProduct?.name || handle;
-                         const hasMismatch = items.some(i => i.status === 'mismatched' && i.mismatches.some(m => m.field !== 'duplicate_sku'));
+                         const hasMismatch = items.some(i => i.status === 'mismatched' && i.mismatches.length > 0);
                          const isMissing = items.every(i => i.status === 'missing_in_shopify');
                          const notInCsv = items.every(i => i.status === 'not_in_csv');
                          
-                         const uniqueMismatchTypes = new Set<MismatchDetail['field']>();
-                         if(hasMismatch) {
-                             items.forEach(item => {
-                                 item.mismatches.forEach(mismatch => {
-                                     uniqueMismatchTypes.add(mismatch.field);
-                                 });
-                             });
-                         }
-
-                         const overallStatus: AuditStatus | 'matched' = items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) ? 'mismatched' 
+                         const allMismatches = items.flatMap(i => i.mismatches);
+                         
+                         const overallStatus: AuditStatus | 'matched' = hasMismatch ? 'mismatched' 
                              : isMissing ? 'missing_in_shopify'
                              : notInCsv ? 'not_in_csv'
                              : 'matched';
@@ -761,9 +789,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
-                            <div className="grid grid-cols-[auto_1fr_auto] items-center">
+                             <div className="flex items-center">
                                  {filter === 'mismatched' && (
-                                    <div className="p-4">
+                                    <div className="px-4">
                                          <Checkbox
                                             checked={selectedHandles.has(handle)}
                                             onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
@@ -771,7 +799,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         />
                                     </div>
                                 )}
-                                <AccordionTrigger className={`grid grid-cols-[auto_1fr] items-center gap-4 py-3 text-left hover:no-underline ${filter !== 'mismatched' ? 'px-4' : ''}`} disabled={isFixing}>
+                                <AccordionTrigger className={`flex-grow grid grid-cols-[auto_1fr_auto] items-center gap-4 py-3 text-left hover:no-underline ${filter !== 'mismatched' ? 'pl-4' : ''}`} disabled={isFixing}>
                                     <config.icon className={`w-5 h-5 shrink-0 ${
                                         overallStatus === 'mismatched' ? 'text-yellow-500' 
                                         : overallStatus === 'missing_in_shopify' ? 'text-red-500'
@@ -781,9 +809,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         <p className="font-semibold">{productTitle}</p>
                                         <p className="text-sm text-muted-foreground">{handle}</p>
                                     </div>
+                                    {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
                                 </AccordionTrigger>
-
-                                <div className="flex items-center justify-end gap-2 px-4">
+                            </div>
+                            <AccordionContent>
+                                <div className="flex justify-end items-center gap-2 px-4 py-2 border-b bg-muted/30">
                                      {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
                                         <Button size="sm" onClick={() => handleBulkFix(items.filter(i => i.status === 'mismatched'))} disabled={isFixing}>
                                             <Bot className="mr-2 h-4 w-4" />
@@ -796,11 +826,19 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         <Dialog>
                                             <DialogTrigger asChild>
                                                 <Button size="sm" variant="outline" className="w-[160px]">
-                                                    <ImageIcon className="mr-2 h-4 w-4" />
-                                                    Manage Media
+                                                    {loadingImageCounts.has(handle) ? (
+                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <ImageIcon className="mr-2 h-4 w-4" />
+                                                    )}
+                                                    Manage Media {imageCounts[handle] !== undefined && `(${imageCounts[handle]})`}
                                                 </Button>
                                             </DialogTrigger>
-                                            <MediaManager productId={items[0].shopifyProduct!.id} />
+                                            <MediaManager 
+                                                productId={items[0].shopifyProduct!.id}
+                                                onImageCountChange={(count) => setImageCounts(prev => ({...prev, [handle]: count}))}
+                                                initialImageCount={imageCounts[handle]}
+                                            />
                                         </Dialog>
                                     )}
                                     {isMissing && (
@@ -810,8 +848,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         </Button>
                                     )}
                                 </div>
-                            </div>
-                            <AccordionContent>
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
@@ -984,9 +1020,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
-
-    
-
-    
-
-    

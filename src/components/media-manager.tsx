@@ -18,9 +18,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 interface MediaManagerProps {
     productId: string;
+    onImageCountChange: (count: number) => void;
+    initialImageCount?: number;
 }
 
-export function MediaManager({ productId }: MediaManagerProps) {
+export function MediaManager({ productId, onImageCountChange, initialImageCount }: MediaManagerProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [variants, setVariants] = useState<Partial<Product>[]>([]);
@@ -44,6 +46,7 @@ export function MediaManager({ productId }: MediaManagerProps) {
             const data = await getProductWithImages(productId);
             setVariants(data.variants);
             setImages(data.images);
+            onImageCountChange(data.images.length);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load media data.');
         } finally {
@@ -52,8 +55,17 @@ export function MediaManager({ productId }: MediaManagerProps) {
     };
 
     useEffect(() => {
-        fetchMediaData();
+        if(initialImageCount === undefined) {
+          fetchMediaData();
+        } else {
+            // Data might already be loaded by parent, but let's re-verify
+            fetchMediaData();
+        }
     }, [productId]);
+    
+    useEffect(() => {
+        onImageCountChange(images.length);
+    }, [images, onImageCountChange]);
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
         const newSet = new Set(selectedImageIds);
@@ -99,6 +111,8 @@ export function MediaManager({ productId }: MediaManagerProps) {
             const result = await assignImageToVariant(variantId, imageId!);
             if(result.success) {
                 toast({ title: 'Success!', description: 'Image assigned to variant.' });
+                 // Refetch to confirm variant_ids on images
+                fetchMediaData();
             } else {
                  setVariants(originalVariants);
                  toast({ title: 'Error', description: result.message, variant: 'destructive' });
@@ -107,8 +121,8 @@ export function MediaManager({ productId }: MediaManagerProps) {
     }
     
     const handleDeleteImage = (imageId: number) => {
-        const isAssigned = variants.some(v => v.imageId === imageId);
-        if (isAssigned) {
+        const imageToDelete = images.find(img => img.id === imageId);
+        if (imageToDelete && imageToDelete.variant_ids.length > 0) {
             toast({ title: 'Cannot Delete', description: 'This image is currently assigned to one or more variants. Please unassign it first.', variant: 'destructive' });
             return;
         }
@@ -124,7 +138,11 @@ export function MediaManager({ productId }: MediaManagerProps) {
     }
 
     const handleBulkDelete = () => {
-        const assignedImages = Array.from(selectedImageIds).filter(id => variants.some(v => v.imageId === id));
+         const assignedImages = Array.from(selectedImageIds).filter(id => {
+            const image = images.find(img => img.id === id);
+            return image && image.variant_ids.length > 0;
+        });
+
         if (assignedImages.length > 0) {
              toast({ title: 'Cannot Delete', description: `Some selected images are assigned to variants and cannot be deleted. Please unassign them first.`, variant: 'destructive' });
              return;
@@ -150,16 +168,6 @@ export function MediaManager({ productId }: MediaManagerProps) {
         if (variants.length === 0) {
             return options;
         }
-
-        const firstVariant = variants[0];
-        const optionKeys: { key: keyof Product; name: string | null }[] = [
-            { key: 'option1Value', name: 'Color' }, // Hardcoded for now
-            { key: 'option2Value', name: 'Size' },
-            { key: 'option3Value', name: 'Material' },
-        ];
-        
-        // This logic is simplified based on the assumption that option names are consistent.
-        // And we'll use hardcoded names as a fallback.
         
         const optionNames = {
             option1: variants.find(v => v.option1Name)?.option1Name || 'Option1',
@@ -239,6 +247,7 @@ export function MediaManager({ productId }: MediaManagerProps) {
             setBulkAssignImageId('');
             setBulkAssignOption('');
             setBulkAssignValue('');
+            fetchMediaData();
         });
     }
 
@@ -398,7 +407,7 @@ export function MediaManager({ productId }: MediaManagerProps) {
                     </div>
                     {/* Right side: Variant Assignments */}
                     <div className="flex flex-col gap-4 overflow-y-auto pr-2">
-                        <h3 className="font-semibold text-lg border-b pb-2">Variant Assignments</h3>
+                        <h3 className="font-semibold text-lg border-b pb-2">Variant Assignments ({variants.length})</h3>
                         <Table>
                             <TableHeader>
                                 <TableRow>
@@ -446,5 +455,3 @@ export function MediaManager({ productId }: MediaManagerProps) {
         </DialogContent>
     );
 }
-
-    
