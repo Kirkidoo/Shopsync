@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useTransition, useMemo } from 'react';
+import { useState, useEffect, useTransition, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Trash2, UploadCloud, X, AlertTriangle, Blocks, CheckSquare, Square } from 'lucide-react';
+import { Loader2, Trash2, UploadCloud, X, AlertTriangle, Blocks, CheckSquare, Square, Link } from 'lucide-react';
 import { getProductWithImages, addImageFromUrl, assignImageToVariant, deleteImage } from '@/app/actions';
 import { Product, ShopifyProductImage } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface MediaManagerProps {
     productId: string;
@@ -38,7 +39,7 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
     const [bulkAssignValue, setBulkAssignValue] = useState<string>('');
     const [isBulkAssignDialogOpen, setIsBulkAssignDialogOpen] = useState(false);
 
-    const fetchMediaData = async () => {
+    const fetchMediaData = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         setSelectedImageIds(new Set());
@@ -51,18 +52,18 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [productId]);
 
     useEffect(() => {
         fetchMediaData();
-    }, [productId]);
+    }, [fetchMediaData]);
     
     useEffect(() => {
         // Only call the callback if the image count has actually changed
         if (initialImageCount !== images.length) {
             onImageCountChange(images.length);
         }
-    }, [images, onImageCountChange, initialImageCount]);
+    }, [images.length, onImageCountChange, initialImageCount]);
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
         const newSet = new Set(selectedImageIds);
@@ -366,24 +367,41 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
                         </div>
                         
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            {images.map(image => (
-                                <div key={image.id} className="relative group border rounded-md overflow-hidden">
-                                     <Image
-                                        src={image.src}
-                                        alt={`Product image ${image.id}`}
-                                        width={150}
-                                        height={150}
-                                        className="object-cover w-full aspect-square"
-                                    />
-                                    <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-start p-1.5">
-                                      <Checkbox
-                                        className="bg-white/80 data-[state=checked]:bg-primary"
-                                        checked={selectedImageIds.has(image.id)}
-                                        onCheckedChange={(checked) => handleImageSelection(image.id, !!checked)}
-                                      />
+                            {images.map(image => {
+                                const isAssigned = image.variant_ids && image.variant_ids.length > 0;
+                                return (
+                                    <div key={image.id} className="relative group border rounded-md overflow-hidden">
+                                        <Image
+                                            src={image.src}
+                                            alt={`Product image ${image.id}`}
+                                            width={150}
+                                            height={150}
+                                            className="object-cover w-full aspect-square"
+                                        />
+                                        <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5">
+                                            <Checkbox
+                                                className="bg-white/80 data-[state=checked]:bg-primary"
+                                                checked={selectedImageIds.has(image.id)}
+                                                onCheckedChange={(checked) => handleImageSelection(image.id, !!checked)}
+                                            />
+                                            {isAssigned && (
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className="h-6 w-6 inline-flex items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground">
+                                                                <Link className="h-3.5 w-3.5" />
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                            <p>Assigned to {image.variant_ids.length} variant(s)</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                          <div className="p-4 border rounded-md mt-auto bg-muted/20">
                             <Label htmlFor="new-image-url" className="text-base font-medium">Add New Image</Label>
