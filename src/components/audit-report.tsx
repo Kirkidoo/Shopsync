@@ -224,46 +224,46 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           descriptionHtml: item.shopifyProduct.descriptionHtml,
       };
 
+      // Optimistic UI Update
+      setShowRefresh(true);
+      const originalData = [...reportData];
+      
+      const newData = [...reportData];
+      const itemIndex = newData.findIndex(d => d.sku === item.sku);
+      if(itemIndex > -1) {
+          const updatedItem = { ...newData[itemIndex] };
+          updatedItem.mismatches = updatedItem.mismatches.filter(m => m.field !== fixType);
+
+          if (updatedItem.mismatches.length === 0) {
+              newData.splice(itemIndex, 1);
+              setReportSummary(prev => ({
+                  ...prev,
+                  mismatched: prev.mismatched - 1,
+                  matched: (prev.matched ?? 0) + 1,
+              }));
+          } else {
+              if (fixType === 'h1_tag' && updatedItem.shopifyProduct) {
+                  updatedItem.shopifyProduct.descriptionHtml = updatedItem.shopifyProduct.descriptionHtml?.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>') ?? null;
+              } else if (updatedItem.shopifyProduct && updatedItem.csvProduct) {
+                switch(fixType) {
+                    case 'name': updatedItem.shopifyProduct.name = updatedItem.csvProduct.name; break;
+                    case 'price': updatedItem.shopifyProduct.price = updatedItem.csvProduct.price; break;
+                    case 'inventory': updatedItem.shopifyProduct.inventory = updatedItem.csvProduct.inventory; break;
+                }
+              }
+              newData[itemIndex] = updatedItem;
+          }
+          setReportData(newData);
+      }
+      
       startTransition(async () => {
           const result = await fixMismatch(fixType, fixPayload);
           if (result.success) {
               toast({ title: 'Success!', description: result.message });
-              
-              // --- Optimistic UI Update ---
-              const newData = [...reportData];
-              const itemIndex = newData.findIndex(d => d.sku === item.sku);
-              if(itemIndex > -1) {
-                  const updatedItem = { ...newData[itemIndex] };
-                  updatedItem.mismatches = updatedItem.mismatches.filter(m => m.field !== fixType);
-
-                  if (updatedItem.mismatches.length === 0) {
-                      // Item is now matched, so remove it from the report
-                      newData.splice(itemIndex, 1);
-                      setReportSummary(prev => ({
-                          ...prev,
-                          mismatched: prev.mismatched - 1,
-                          matched: (prev.matched ?? 0) + 1,
-                      }));
-                  } else {
-                     // Still mismatched, but update the shopify product data for instant UI feedback
-                     if (fixType === 'h1_tag' && updatedItem.shopifyProduct) {
-                         updatedItem.shopifyProduct.descriptionHtml = updatedItem.shopifyProduct.descriptionHtml?.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>') ?? null;
-                     } else if (updatedItem.shopifyProduct && updatedItem.csvProduct) {
-                        switch(fixType) {
-                           case 'name': updatedItem.shopifyProduct.name = updatedItem.csvProduct.name; break;
-                           case 'price': updatedItem.shopifyProduct.price = updatedItem.csvProduct.price; break;
-                           case 'inventory': updatedItem.shopifyProduct.inventory = updatedItem.csvProduct.inventory; break;
-                        }
-                     }
-                      newData[itemIndex] = updatedItem;
-                  }
-
-                  setReportData(newData);
-                  setShowRefresh(true);
-              }
-              // No full refresh here
           } else {
               toast({ title: 'Fix Failed', description: result.message, variant: 'destructive' });
+              // Revert on failure
+              setReportData(originalData);
           }
       });
   };
@@ -287,35 +287,38 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         toast({ title: 'Error', description: 'Could not find any variants to create for this handle.', variant: 'destructive' });
         return;
     }
+    
+    // Optimistic UI Update
+    setShowRefresh(true);
+    const originalData = [...reportData];
+    const handleToUpdate = productToCreate.handle;
+    let itemsUpdatedCount = 0;
+
+    const updatedData = reportData.filter(d => {
+        const shouldRemove = d.csvProduct?.handle === handleToUpdate && d.status === 'missing_in_shopify';
+        if(shouldRemove) {
+            itemsUpdatedCount++;
+        }
+        return !shouldRemove;
+    });
+    
+    setReportData(updatedData);
+
+    setReportSummary(prev => ({
+        ...prev,
+        missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
+        matched: (prev.matched ?? 0) + itemsUpdatedCount,
+    }));
+
 
     startTransition(async () => {
         const result = await createInShopify(productToCreate, allVariantsForHandle, missingType, fileName);
         if (result.success) {
             toast({ title: 'Success!', description: result.message });
-            
-            // --- Optimistic UI Update ---
-            const handleToUpdate = productToCreate.handle;
-            let itemsUpdatedCount = 0;
-
-            const updatedData = reportData.filter(d => {
-                const shouldRemove = d.csvProduct?.handle === handleToUpdate && d.status === 'missing_in_shopify';
-                if(shouldRemove) {
-                    itemsUpdatedCount++;
-                }
-                return !shouldRemove;
-            });
-            
-            setReportData(updatedData);
-
-            setReportSummary(prev => ({
-                ...prev,
-                missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
-                matched: (prev.matched ?? 0) + itemsUpdatedCount,
-            }));
-            setShowRefresh(true);
-
         } else {
             toast({ title: 'Creation Failed', description: result.message, variant: 'destructive' });
+            setReportData(originalData); // Revert on failure
+            setReportSummary(summary); // Revert summary
         }
     });
   };
@@ -327,20 +330,26 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           return;
       }
 
+      // Optimistic UI Update
+      setShowRefresh(true);
+      const originalData = [...reportData];
+      const itemsInHandle = reportData.filter(d => d.shopifyProduct?.handle === productToDelete.handle).length;
+      const newData = reportData.filter(d => d.shopifyProduct?.handle !== productToDelete.handle);
+      setReportData(newData);
+      setReportSummary(prev => ({
+          ...prev,
+          not_in_csv: prev.not_in_csv - itemsInHandle,
+      }));
+
+
       startTransition(async () => {
           const result = await deleteFromShopify(productToDelete.id);
           if (result.success) {
               toast({ title: 'Success!', description: result.message });
-              // Optimistic UI update
-              const newData = reportData.filter(d => d.shopifyProduct?.id !== productToDelete.id);
-              setReportData(newData);
-              setReportSummary(prev => ({
-                  ...prev,
-                  not_in_csv: prev.not_in_csv - 1, // This needs adjustment if deleting multiple variants
-              }));
-              setShowRefresh(true);
           } else {
               toast({ title: 'Delete Failed', description: result.message, variant: 'destructive' });
+              setReportData(originalData); // Revert on failure
+              setReportSummary(summary);
           }
       });
   };
@@ -351,21 +360,25 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           toast({ title: 'Error', description: 'Cannot delete variant, missing ID.', variant: 'destructive' });
           return;
       }
+      
+      // Optimistic UI Update
+      setShowRefresh(true);
+      const originalData = [...reportData];
+      const newData = reportData.filter(d => d.sku !== item.sku);
+      setReportData(newData);
+      setReportSummary(prev => ({
+          ...prev,
+          not_in_csv: prev.not_in_csv - 1,
+      }));
 
       startTransition(async () => {
           const result = await deleteVariantFromShopify(variantToDelete.id, variantToDelete.variantId);
           if (result.success) {
               toast({ title: 'Success!', description: result.message });
-              // Optimistic UI update
-              const newData = reportData.filter(d => d.sku !== item.sku);
-              setReportData(newData);
-              setReportSummary(prev => ({
-                  ...prev,
-                  not_in_csv: prev.not_in_csv - 1,
-              }));
-              setShowRefresh(true);
           } else {
               toast({ title: 'Delete Failed', description: result.message, variant: 'destructive' });
+              setReportData(originalData); // Revert on failure
+              setReportSummary(summary);
           }
       });
   };
@@ -698,5 +711,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </Card>
   );
 }
-
-    
