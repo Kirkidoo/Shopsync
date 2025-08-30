@@ -108,15 +108,15 @@ export function PreCreationMediaManager({ variants, onSave, onCancel }: PreCreat
             };
 
             for (const [key, name] of Object.entries(optionNames)) {
-                if (name && name !== 'Title') {
+                if (name) {
                     options.set(name, new Set());
                 }
             }
 
             variants.forEach(variant => {
-                if (optionNames.option1 && variant.option1Value) options.get(optionNames.option1)?.add(variant.option1Value);
-                if (optionNames.option2 && variant.option2Value) options.get(optionNames.option2)?.add(variant.option2Value);
-                if (optionNames.option3 && variant.option3Value) options.get(optionNames.option3)?.add(variant.option3Value);
+                if (optionNames.option1 && variant.option1Value && options.has(optionNames.option1)) options.get(optionNames.option1)?.add(variant.option1Value);
+                if (optionNames.option2 && variant.option2Value && options.has(optionNames.option2)) options.get(optionNames.option2)?.add(variant.option2Value);
+                if (optionNames.option3 && variant.option3Value && options.has(optionNames.option3)) options.get(optionNames.option3)?.add(variant.option3Value);
             });
         }
         return options;
@@ -358,5 +358,7 @@ export function PreCreationMediaManager({ variants, onSave, onCancel }: PreCreat
         </DialogContent>
     );
 }
+
+    
 
     
