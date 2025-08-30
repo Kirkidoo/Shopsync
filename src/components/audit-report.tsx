@@ -654,23 +654,21 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                          const isOnlyVariantNotInCsv = notInCsv && allVariantsForHandleInShopify.length === items.length;
 
                         return (
-                        <AccordionItem value={handle} key={handle}>
-                             <div className="flex items-center group">
-                                <AccordionTrigger className="flex-1 py-3 px-4" disabled={isFixing}>
-                                    <div className="flex items-center gap-4 w-full">
-                                        <config.icon className={`w-5 h-5 shrink-0 ${
-                                                overallStatus === 'mismatched' ? 'text-yellow-500' 
-                                                : overallStatus === 'missing_in_shopify' ? 'text-red-500'
-                                                : 'text-blue-500'
-                                        }`} />
-                                        <div className="flex-grow text-left">
-                                            <p className="font-semibold">{productTitle}</p>
-                                            <p className="text-sm text-muted-foreground">{handle}</p>
-                                        </div>
+                        <AccordionItem value={handle} key={handle} className="border-b">
+                            <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center">
+                                <AccordionTrigger className="col-span-2 grid grid-cols-[auto_1fr] items-center gap-4 py-3 px-4 text-left" disabled={isFixing}>
+                                    <config.icon className={`w-5 h-5 shrink-0 ${
+                                        overallStatus === 'mismatched' ? 'text-yellow-500' 
+                                        : overallStatus === 'missing_in_shopify' ? 'text-red-500'
+                                        : 'text-blue-500'
+                                    }`} />
+                                    <div className="flex-grow">
+                                        <p className="font-semibold">{productTitle}</p>
+                                        <p className="text-sm text-muted-foreground">{handle}</p>
                                     </div>
                                 </AccordionTrigger>
 
-                                <div className="flex items-center gap-2 px-4">
+                                <div className="flex items-center justify-end gap-2 px-4">
                                      {hasMismatch && (
                                         <div className="flex items-center gap-1.5 text-yellow-600">
                                             {Array.from(uniqueMismatchTypes).map(field => (
@@ -678,12 +676,15 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             ))}
                                         </div>
                                     )}
-                                    <Badge variant="outline">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
-                                    
+                                </div>
+                                <div className="px-4">
+                                    <Badge variant="outline" className="w-[80px] justify-center">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
+                                </div>
+                                <div className="px-4 w-[160px]">
                                     {items[0].shopifyProduct?.id && (
                                         <Dialog>
                                             <DialogTrigger asChild>
-                                                <Button size="sm" variant="outline">
+                                                <Button size="sm" variant="outline" className="w-full">
                                                     <ImageIcon className="mr-2 h-4 w-4" />
                                                     Manage Media
                                                 </Button>
