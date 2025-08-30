@@ -752,30 +752,38 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
 export async function checkBulkOperationStatus(id: string): Promise<{ id: string, status: string, resultUrl?: string }> {
     const shopifyClient = getShopifyGraphQLClient();
     
-    // First, try to get the current operation. This is faster if only one operation is running.
+    // This query fetches the current operation, which is the most efficient way to poll.
     const currentOpResponse: any = await shopifyClient.query({
         data: { query: GET_CURRENT_BULK_OPERATION_QUERY },
     });
 
     const operation = currentOpResponse.body.data?.currentBulkOperation;
     
-    // If the current operation is the one we're looking for, great!
+    // Case 1: An operation is running and its ID matches the one we're waiting for.
     if (operation && operation.id === id) {
         return { id: operation.id, status: operation.status, resultUrl: operation.url };
     }
     
-    // If there's another operation running, or no operation, we assume ours is still in the queue or just finished.
-    // Shopify's `currentBulkOperation` can sometimes lag. We'll return a status that keeps polling.
-    // This is a simplified handling. A more robust solution might involve querying nodes by ID if the API supported it well.
+    // Case 2: An operation is running, but it's a different one. This means ours is still queued.
+    // We'll tell the client to keep waiting.
     if (operation && operation.id !== id && (operation.status === 'RUNNING' || operation.status === 'CREATED')) {
          console.warn(`Polling for operation ${id}, but a different operation ${operation.id} is currently running. Will keep polling.`);
-         return { id: id, status: 'RUNNING' };
+         return { id: id, status: 'RUNNING' }; // Continue polling
     }
     
-    // If no current operation, ours might be completed but not showing up yet.
-    // Or it failed. The `RUNNING` status will force another poll.
-    console.log(`currentBulkOperation did not return the expected operation ${id}. Current is:`, operation);
-    return { id: id, status: 'RUNNING' };
+    // Case 3: No operation is currently running. Ours might be completed or failed.
+    // The `currentBulkOperation` field becomes null shortly after completion.
+    // In this scenario, we must assume the job we started has finished and tell the client to stop polling by returning a non-RUNNING status.
+    // The calling function will then try to get the result URL, which is the ultimate confirmation.
+    // If we returned 'RUNNING' here, we could get stuck in an infinite loop.
+    if (!operation) {
+        console.log(`currentBulkOperation returned null. Assuming operation ${id} is complete and transitioning to download phase.`);
+        return { id: id, status: 'COMPLETED' };
+    }
+
+    // Fallback: If the operation ID doesn't match and it's not running, assume our operation is done.
+    console.log(`Polling for ${id}, but current operation is ${operation.id} with status ${operation.status}. Assuming our operation is complete.`);
+    return { id: id, status: 'COMPLETED' };
 }
 
 export async function getBulkOperationResult(url: string): Promise<string> {
@@ -843,6 +851,8 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
     console.log(`Parsed ${products.length} products from bulk operation result.`);
     return products;
 }
+    
+
     
 
     
