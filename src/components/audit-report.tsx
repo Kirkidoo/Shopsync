@@ -793,7 +793,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
-                             <AccordionHeader className="flex items-center p-3 text-left">
+                            <AccordionHeader className="items-center p-3 text-left">
                                 {filter === 'mismatched' && (
                                     <div className="px-1">
                                         <Checkbox
