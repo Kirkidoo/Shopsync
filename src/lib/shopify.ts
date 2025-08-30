@@ -5,13 +5,14 @@
 import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import { Product } from '@/lib/types';
+import { Readable } from 'stream';
 
 // Helper function to introduce a delay
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const GAMMA_WAREHOUSE_LOCATION_ID = 93998154045;
 
-// --- GraphQL Queries ---
+// --- GraphQL Queries & Mutations ---
 
 const GET_PRODUCTS_BY_SKU_QUERY = `
   query getProductsBySku($query: String!) {
@@ -115,19 +116,55 @@ const UPDATE_PRODUCT_MUTATION = `
     }
 `;
 
-const UPDATE_PRODUCT_VARIANT_MUTATION = `
-    mutation productVariantUpdate($input: ProductVariantInput!) {
-        productVariantUpdate(input: $input) {
-            productVariant {
-                id
-            }
-            userErrors {
-                field
-                message
-            }
+const STAGED_UPLOADS_CREATE_MUTATION = `
+  mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+    stagedUploadsCreate(input: $input) {
+      stagedTargets {
+        url
+        resourceUrl
+        parameters {
+          name
+          value
         }
+      }
+      userErrors {
+        field
+        message
+      }
     }
+  }
 `;
+
+const BULK_PRODUCT_CREATE_MUTATION = `
+  mutation productBulkCreate($productInputs: [ProductInput!]!) {
+    productBulkCreate(products: $productInputs) {
+      products {
+        id
+        title
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+const BULK_OPERATION_RUN_MUTATION = `
+  mutation bulkOperationRunMutation($mutation: String!, $stagedUploadPath: String!) {
+    bulkOperationRunMutation(mutation: $mutation, stagedUploadPath: $stagedUploadPath) {
+      bulkOperation {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 
 // --- Client Initialization ---
 
@@ -672,5 +709,86 @@ export async function publishProductToSalesChannels(productGid: string): Promise
         console.error(`Error during publishProductToSalesChannels for product ${productGid}:`, error);
         // Don't throw, just warn
     }
+}
+
+
+// --- BULK OPERATIONS ---
+
+export async function prepareBulkImport(filename: string): Promise<{ uploadUrl: string; parameters: any[]; remoteKey: string; }> {
+    const shopifyClient = getShopifyGraphQLClient();
+    const response: any = await shopifyClient.query({
+        data: {
+            query: STAGED_UPLOADS_CREATE_MUTATION,
+            variables: {
+                input: [{
+                    filename: filename,
+                    mimeType: "text/csv",
+                    httpMethod: "POST",
+                    resource: "BULK_MUTATION_VARIABLES"
+                }]
+            }
+        }
+    });
+
+    const userErrors = response.body.data?.stagedUploadsCreate?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+        console.error("Error preparing staged upload:", userErrors);
+        throw new Error(`Failed to prepare staged upload: ${userErrors[0].message}`);
+    }
+
+    const stagedTarget = response.body.data?.stagedUploadsCreate?.stagedTargets[0];
+    if (!stagedTarget) {
+        throw new Error("Could not get a staged upload target from Shopify.");
+    }
+    
+    // The resourceUrl is the key we use to start the mutation.
+    const remoteKey = stagedTarget.resourceUrl; 
+
+    return { uploadUrl: stagedTarget.url, parameters: stagedTarget.parameters, remoteKey };
+}
+
+export async function startBulkImport(stagedUploadKey: string): Promise<void> {
+    const shopifyClient = getShopifyGraphQLClient();
+
+    // Note: The mutation string itself is a variable. Shopify's bulk operation
+    // will execute this mutation for each line in the uploaded file.
+    const mutation = `
+        mutation productCreate($input: ProductInput!) {
+            productCreate(input: $input) {
+                product {
+                    id
+                    title
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    const response: any = await shopifyClient.query({
+        data: {
+            query: BULK_OPERATION_RUN_MUTATION,
+            variables: {
+                mutation: mutation,
+                stagedUploadPath: stagedUploadKey
+            }
+        }
+    });
+
+    const userErrors = response.body.data?.bulkOperationRunMutation?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+        console.error("Error starting bulk import:", userErrors);
+        throw new Error(`Failed to start bulk import: ${userErrors[0].message}`);
+    }
+
+    const bulkOperation = response.body.data?.bulkOperationRunMutation?.bulkOperation;
+    if (!bulkOperation || bulkOperation.status !== 'CREATED') {
+        console.error("Bulk operation was not created successfully:", bulkOperation);
+        throw new Error("Failed to create the bulk operation job on Shopify.");
+    }
+
+    console.log(`Bulk operation created with ID: ${bulkOperation.id} and status: ${bulkOperation.status}`);
 }
     

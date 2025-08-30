@@ -5,9 +5,9 @@ import { useState, useTransition } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Frown, Loader2, LogIn, Server, FileText } from 'lucide-react';
+import { Frown, Loader2, LogIn, Server, FileText, UploadCloud } from 'lucide-react';
 
-import { connectToFtp, listCsvFiles, runAudit } from '@/app/actions';
+import { connectToFtp, listCsvFiles, runAudit, runBulkImport } from '@/app/actions';
 import { AuditResult, DuplicateSku } from '@/lib/types';
 import AuditReport from '@/components/audit-report';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,8 @@ const defaultFtpCredentials = {
   username: 'ghs@gammasales.com',
   password: 'GHSaccess368!',
 };
+
+const BULK_IMPORT_FILENAME = 'ShopifyProductImport.csv';
 
 export default function AuditStepper() {
   const [step, setStep] = useState<Step>('connect');
@@ -83,12 +85,41 @@ export default function AuditStepper() {
       return formData;
   }
 
-  const handleRunAudit = () => {
+  const handleStartProcess = () => {
     if (!selectedCsv) {
-      toast({ title: 'No File Selected', description: 'Please select a CSV file to start the audit.', variant: 'destructive' });
-      return;
+        toast({ title: 'No File Selected', description: 'Please select a CSV file to start.', variant: 'destructive' });
+        return;
     }
 
+    if (selectedCsv === BULK_IMPORT_FILENAME) {
+        handleRunBulkImport();
+    } else {
+        handleRunAudit();
+    }
+  };
+
+  const handleRunBulkImport = () => {
+      setStep('auditing');
+      setProgressMessage('Starting bulk import... This may take several minutes.');
+      startTransition(async () => {
+          try {
+              const ftpData = getFtpFormData();
+              const result = await runBulkImport(selectedCsv, ftpData);
+              if (result.success) {
+                  toast({ title: "Bulk Import Started", description: result.message, duration: 10000 });
+                  handleReset();
+              } else {
+                  throw new Error(result.message);
+              }
+          } catch (error) {
+              const message = error instanceof Error ? error.message : "An unknown error occurred during the bulk import.";
+              setErrorMessage(message);
+              setStep('error');
+          }
+      });
+  };
+
+  const handleRunAudit = () => {
     setStep('auditing');
     setProgressMessage('Starting audit... This may take a moment.');
     
@@ -187,6 +218,15 @@ export default function AuditStepper() {
           <CardDescription>Choose the CSV file from the FTP server to start the audit.</CardDescription>
         </CardHeader>
         <CardContent>
+           {selectedCsv === BULK_IMPORT_FILENAME && (
+                <Alert variant="default" className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-900/30">
+                    <UploadCloud className="h-4 w-4 !text-blue-500" />
+                    <AlertTitle className="text-blue-700 dark:text-blue-300">Bulk Import Mode</AlertTitle>
+                    <AlertDescription className="text-blue-600 dark:text-blue-400">
+                        This large file will be imported directly into Shopify. No audit report will be generated.
+                    </AlertDescription>
+                </Alert>
+            )}
           <Form {...ftpForm}>
             <form>
               <FormItem>
@@ -207,9 +247,9 @@ export default function AuditStepper() {
         </CardContent>
         <CardFooter className="flex justify-between">
            <Button variant="outline" onClick={() => setStep('connect')}>Back</Button>
-          <Button onClick={handleRunAudit} disabled={isPending || !selectedCsv}>
+          <Button onClick={handleStartProcess} disabled={isPending || !selectedCsv}>
             {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Run Audit
+             {selectedCsv === BULK_IMPORT_FILENAME ? 'Start Bulk Import' : 'Run Audit'}
           </Button>
         </CardFooter>
       </Card>
@@ -220,8 +260,8 @@ export default function AuditStepper() {
     return (
         <Card className="w-full max-w-md mx-auto">
             <CardHeader>
-                <CardTitle>Audit in Progress</CardTitle>
-                <CardDescription>Please wait while we sync with Shopify and generate your report.</CardDescription>
+                <CardTitle>Processing File</CardTitle>
+                <CardDescription>Please wait while we process your file.</CardDescription>
             </CardHeader>
             <CardContent className="text-center space-y-4 pt-6">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />

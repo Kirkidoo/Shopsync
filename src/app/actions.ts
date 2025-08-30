@@ -5,7 +5,7 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail } from '@/lib/types'
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant } from '@/lib/shopify';
+import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant, prepareBulkImport, startBulkImport } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
 
 const FTP_DIRECTORY = '/Gamma_Product_Files/Shopify_Files/';
@@ -70,6 +70,28 @@ export async function listCsvFiles(data: FormData) {
     }
   }
 }
+
+async function getCsvStreamFromFtp(csvFileName: string, ftpData: FormData): Promise<Readable> {
+    const client = await getFtpClient(ftpData);
+    console.log('Navigating to FTP directory:', FTP_DIRECTORY);
+    await client.cd(FTP_DIRECTORY);
+    console.log(`Downloading file: ${csvFileName}`);
+
+    const chunks: any[] = [];
+    const writable = new Writable({
+        write(chunk, encoding, callback) {
+            chunks.push(chunk);
+            callback();
+        }
+    });
+
+    await client.downloadTo(writable, csvFileName);
+    console.log('File downloaded successfully.');
+    client.close();
+
+    return Readable.from(Buffer.concat(chunks));
+}
+
 
 async function parseCsvFromStream(stream: Readable): Promise<{products: Product[], duplicates: DuplicateSku[]}> {
     console.log('Parsing CSV from stream...');
@@ -149,39 +171,17 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   console.log(`Starting audit for file: ${csvFileName}`);
   
   // 1. Fetch and parse CSV from FTP
-  const client = await getFtpClient(ftpData);
   let csvProducts: Product[] = [];
   let duplicateSkus: DuplicateSku[] = [];
 
   try {
-    console.log('Navigating to FTP directory:', FTP_DIRECTORY);
-    await client.cd(FTP_DIRECTORY);
-    console.log(`Downloading file: ${csvFileName}`);
-    
-    const chunks: any[] = [];
-    const writable = new Writable({
-        write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
-        }
-    });
-
-    await client.downloadTo(writable, csvFileName);
-    console.log('File downloaded successfully.');
-    
-    const readable = Readable.from(Buffer.concat(chunks));
-    const parsedData = await parseCsvFromStream(readable);
+    const readableStream = await getCsvStreamFromFtp(csvFileName, ftpData);
+    const parsedData = await parseCsvFromStream(readableStream);
     csvProducts = parsedData.products;
     duplicateSkus = parsedData.duplicates;
-
   } catch (error) {
     console.error("Failed to download or parse CSV from FTP", error);
     throw new Error(`Could not download or process file '${csvFileName}' from FTP.`);
-  } finally {
-      if (!client.closed) {
-        client.close();
-        console.log('FTP client closed.');
-      }
   }
   
   if (csvProducts.length === 0) {
@@ -272,6 +272,63 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   const finalReport = report.filter(item => item.status !== 'matched');
 
   return { report: finalReport, summary: {...summary, matched: matchedCount }, duplicates: duplicateSkus };
+}
+
+
+// --- BULK IMPORT ACTION ---
+export async function runBulkImport(csvFileName: string, ftpData: FormData) {
+    console.log(`Starting BULK IMPORT for file: ${csvFileName}`);
+    try {
+        // 1. Get CSV file as a string buffer from FTP
+        const client = await getFtpClient(ftpData);
+        await client.cd(FTP_DIRECTORY);
+        const writable = new Writable();
+        const chunks: any[] = [];
+        writable._write = (chunk, encoding, next) => {
+            chunks.push(chunk);
+            next();
+        };
+        await client.downloadTo(writable, csvFileName);
+        const fileContent = Buffer.concat(chunks).toString('utf-8');
+        client.close();
+        console.log(`Successfully downloaded ${csvFileName} for bulk import.`);
+
+        // 2. Prepare the file for upload to Shopify
+        console.log('Preparing file for Shopify staged upload...');
+        const { uploadUrl, parameters, remoteKey } = await prepareBulkImport(csvFileName);
+
+        // 3. Upload the file to the Shopify-provided URL
+        console.log('Uploading file to Shopify...');
+        const formData = new FormData();
+        parameters.forEach(({ name, value }: { name: string, value: string }) => {
+            formData.append(name, value);
+        });
+        formData.append('file', new Blob([fileContent], { type: 'text/csv' }), csvFileName);
+        
+        const uploadResponse = await fetch(uploadUrl, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error('Shopify file upload failed:', errorText);
+            throw new Error(`Failed to upload file to Shopify. Status: ${uploadResponse.status}`);
+        }
+        console.log('File uploaded to Shopify successfully.');
+
+        // 4. Start the bulk mutation job
+        console.log('Starting bulk product create mutation...');
+        await startBulkImport(remoteKey);
+        console.log('Bulk import job started successfully.');
+
+        return { success: true, message: `Successfully started bulk product import for ${csvFileName}. Check your Shopify admin for progress.` };
+
+    } catch (error) {
+        console.error(`Failed to run bulk import for ${csvFileName}:`, error);
+        const message = error instanceof Error ? error.message : 'An unknown error occurred during bulk import.';
+        return { success: false, message };
+    }
 }
 
 
