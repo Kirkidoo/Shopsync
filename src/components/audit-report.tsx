@@ -485,15 +485,17 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => {
                 const config = statusConfig[f as keyof typeof statusConfig];
                  const count = f === 'all' 
-                    ? filteredData.length 
+                    ? reportData.length 
                     : (reportSummary as any)[f];
+                
+                 const handleCount = f === 'all' ? handleKeys.length : Object.keys(groupedByHandle).length
 
                 // Don't render filter button if there are no items for that status
                 if (count === 0 && f !== 'all') return null;
 
                 return (
                     <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => handleFilterChange(f)} disabled={isFixing}>
-                       {f === 'all' ? 'All' : config.text} ({f === 'all' ? handleKeys.length : count})
+                       {f === 'all' ? 'All' : config.text} ({f === 'all' ? handleKeys.length : handleCount})
                     </Button>
                 )
              })}
@@ -711,3 +713,5 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </Card>
   );
 }
+
+    
