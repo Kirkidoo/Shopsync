@@ -19,8 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 
 type FilterType = 'all' | 'mismatched' | 'missing_in_shopify' | 'not_in_csv';
 
-const statusConfig: { [key in AuditStatus]: { icon: React.ElementType, text: string, badgeClass: string } } = {
-  matched: { icon: CheckCircle2, text: 'Matched', badgeClass: 'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
+const statusConfig: { [key in Exclude<AuditStatus, 'matched'>]: { icon: React.ElementType, text: string, badgeClass: string } } = {
   mismatched: { icon: AlertTriangle, text: 'Mismatched', badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700' },
   not_in_csv: { icon: PlusCircle, text: 'Not in CSV', badgeClass: 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
   missing_in_shopify: { icon: XCircle, text: 'Missing in Shopify', badgeClass: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700' },
@@ -63,7 +62,7 @@ const MissingProductDetailsDialog = ({ product }: { product: Product }) => {
         { label: "Shopify Product Handle", value: product.handle, notes: "From 'Handle' column" },
         { label: "Product Description", value: product.descriptionHtml || 'N/A', notes: "From 'Body (HTML)' column. H1 tags will be converted to H2." },
         { label: "Vendor", value: product.vendor, notes: "From 'Vendor' column" },
-        { label: "Product Type", value: product.productType, notes: "From 'Type' column" },
+        { label: "Product Type", value: product.productType, notes: "From 'Tags' column (3rd tag)" },
         { label: "Collection", value: product.category, notes: "From 'Category' column. Will be linked to a collection with this title." },
         { label: "Tags", value: 'N/A', notes: "'Clearance' tag added if filename contains 'clearance'" },
         
@@ -129,6 +128,28 @@ const MissingProductDetailsDialog = ({ product }: { product: Product }) => {
     );
 };
 
+const gToLbs = (grams: number | null | undefined): string => {
+    if (grams === null || grams === undefined) return 'N/A';
+    const lbs = grams * 0.00220462;
+    return `${lbs.toFixed(2)} lbs`;
+};
+
+const ProductDetails = ({ product }: { product: Product | null }) => {
+    if (!product) return null;
+    return (
+        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
+            <span className="flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5" /> Price: <span className="font-medium text-foreground">${product.price.toFixed(2)}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+                <List className="h-3.5 w-3.5" /> Stock: <span className="font-medium text-foreground">{product.inventory ?? 'N/A'}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+                <Weight className="h-3.5 w-3.5" /> Weight: <span className="font-medium text-foreground">{gToLbs(product.weight)}</span>
+            </span>
+        </div>
+    );
+}
 
 export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: Summary, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
   const [filter, setFilter] = useState<FilterType>('all');
@@ -161,7 +182,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     const csvData = reportData.map(item => ({
       Handle: getHandle(item),
       SKU: item.sku,
-      Status: statusConfig[item.status].text,
+      Status: item.status,
       Mismatched_Fields: item.mismatches.map(m => m.field).join(', '),
       CSV_Product_Name: item.csvProduct?.name || 'N/A',
       Shopify_Product_Name: item.shopifyProduct?.name || 'N/A',
@@ -320,12 +341,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     )
   }
 
-  const gToLbs = (grams: number | null | undefined): string => {
-    if (grams === null || grams === undefined) return 'N/A';
-    const lbs = grams * 0.00220462;
-    return `${lbs.toFixed(2)} lbs`;
-  };
-
   return (
     <Card className="w-full">
       <CardHeader>
@@ -387,11 +402,15 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       <CardContent>
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
           <div className="flex flex-wrap gap-2">
-            {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => (
-                <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)} disabled={isFixing}>
-                    {f === 'all' ? `All (${reportData.length})` : `${statusConfig[f].text} (${(reportSummary as any)[f]})`}
-                </Button>
-            ))}
+            {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => {
+                const config = statusConfig[f as keyof typeof statusConfig];
+                if (!config) return null; // Should only happen for 'all'
+                return (
+                    <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)} disabled={isFixing}>
+                        {f === 'all' ? `All (${reportData.length})` : `${config.text} (${(reportSummary as any)[f]})`}
+                    </Button>
+                )
+             })}
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onReset} disabled={isFixing}><ArrowLeft className="mr-2 h-4 w-4" />New Audit</Button>
@@ -417,10 +436,15 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                              });
                          }
 
-                         const overallStatus = hasMismatch ? 'mismatched' 
+                         const overallStatus: AuditStatus = hasMismatch ? 'mismatched' 
                              : isMissing ? 'missing_in_shopify'
                              : notInCsv ? 'not_in_csv'
-                             : 'matched';
+                             : 'mismatched'; // Fallback, should not happen with current filter
+                         
+                         if (overallStatus === 'mismatched' && !hasMismatch && !isMissing && !notInCsv) {
+                             return null;
+                         }
+
                          const config = statusConfig[overallStatus];
 
                         return (
@@ -428,8 +452,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                             <AccordionTrigger className="px-4 hover:no-underline" disabled={isFixing}>
                                 <div className="flex items-center gap-4 w-full">
                                     <config.icon className={`w-5 h-5 shrink-0 ${
-                                            overallStatus === 'matched' ? 'text-green-500' 
-                                            : overallStatus === 'mismatched' ? 'text-yellow-500' 
+                                            overallStatus === 'mismatched' ? 'text-yellow-500' 
                                             : overallStatus === 'missing_in_shopify' ? 'text-red-500'
                                             : 'text-blue-500'
                                     }`} />
@@ -460,6 +483,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                     <TableBody>
                                         {items.map((item, index) => {
                                             const itemConfig = statusConfig[item.status];
+                                            const productForDetails = item.csvProduct || item.shopifyProduct;
                                             return (
                                                 <TableRow key={item.sku} className={
                                                     item.status === 'mismatched' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' :
@@ -473,24 +497,19 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                     </Badge>
                                                     </TableCell>
                                                      <TableCell>
-                                                       {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
-                                                       {item.status === 'missing_in_shopify' && item.csvProduct && (
-                                                            <>
+                                                        <div>
+                                                            {item.status === 'mismatched' && <MismatchDetails mismatches={item.mismatches} onFix={(fixType) => handleFix(fixType, item)} disabled={isFixing}/>}
+                                                            {item.status === 'missing_in_shopify' && item.csvProduct && (
                                                                 <p className="text-sm text-muted-foreground">
-                                                                  This SKU is in your CSV but is a{' '}
-                                                                  <span className="font-semibold text-foreground">
-                                                                    {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
-                                                                  </span>.
+                                                                    This SKU is in your CSV but is a{' '}
+                                                                    <span className="font-semibold text-foreground">
+                                                                        {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
+                                                                    </span>.
                                                                 </p>
-                                                                <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                                                                    <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" /> Price: <span className="font-medium text-foreground">${item.csvProduct.price.toFixed(2)}</span></span>
-                                                                    <span className="flex items-center gap-1.5"><List className="h-3.5 w-3.5" /> Stock: <span className="font-medium text-foreground">{item.csvProduct.inventory ?? 'N/A'}</span></span>
-                                                                    <span className="flex items-center gap-1.5"><Weight className="h-3.5 w-3.5" /> Weight: <span className="font-medium text-foreground">{gToLbs(item.csvProduct.weight)}</span></span>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                       {item.status === 'not_in_csv' && <p className="text-sm text-muted-foreground">This product exists in Shopify but not in your CSV file.</p>}
-                                                       {item.status === 'matched' && <p className="text-sm text-muted-foreground">Product data matches between CSV and Shopify.</p>}
+                                                            )}
+                                                            {item.status === 'not_in_csv' && <p className="text-sm text-muted-foreground">This product exists in Shopify but not in your CSV file.</p>}
+                                                            <ProductDetails product={productForDetails} />
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end items-center gap-2">
@@ -524,3 +543,4 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </Card>
   );
 }
+

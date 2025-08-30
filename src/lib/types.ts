@@ -26,7 +26,7 @@ export interface Product {
   option3Value: string | null;
 }
 
-export type AuditStatus = 'mismatched' | 'not_in_csv' | 'missing_in_shopify';
+export type AuditStatus = 'mismatched' | 'not_in_csv' | 'missing_in_shopify' | 'matched';
 
 export interface MismatchDetail {
   field: 'name' | 'price' | 'inventory' | 'h1_tag' | 'missing_in_shopify';
