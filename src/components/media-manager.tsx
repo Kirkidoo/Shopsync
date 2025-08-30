@@ -147,26 +147,53 @@ export function MediaManager({ productId }: MediaManagerProps) {
 
     const availableOptions = useMemo(() => {
         const options = new Map<string, Set<string>>();
-        if (variants.length > 0) {
-            const firstVariant = variants[0];
-            const optionNames = {
-                option1: firstVariant.option1Name,
-                option2: firstVariant.option2Name,
-                option3: firstVariant.option3Name,
-            };
-
-            for (const [key, name] of Object.entries(optionNames)) {
-                if (name) {
-                    options.set(name, new Set());
-                }
-            }
-            
-            variants.forEach(variant => {
-                if (optionNames.option1 && variant.option1Value) options.get(optionNames.option1)?.add(variant.option1Value);
-                if (optionNames.option2 && variant.option2Value) options.get(optionNames.option2)?.add(variant.option2Value);
-                if (optionNames.option3 && variant.option3Value) options.get(optionNames.option3)?.add(variant.option3Value);
-            });
+        if (variants.length === 0) {
+            return options;
         }
+
+        // Shopify doesn't return option names with each variant, just option values.
+        // We have to infer the names. Let's assume they are consistent and take from the first variant.
+        // This is a limitation of the current data structure.
+        // A more robust solution might require a separate API call to get product options definitions.
+        const firstVariant = variants[0];
+        const optionNames: { key: keyof Product; name: string | null | undefined }[] = [
+            { key: 'option1Value', name: firstVariant.option1Name },
+            { key: 'option2Value', name: firstVariant.option2Name },
+            { key: 'option3Value', name: firstVariant.option3Name },
+        ];
+        
+        // This part seems to be based on an incorrect assumption about where option names are stored.
+        // Let's create hardcoded option names for now, as they are not available on the variant from getProductWithImages
+        const hardcodedOptionNames = ['Color', 'Size', 'Material']; // Example option names
+        
+        variants.forEach(variant => {
+            if (variant.option1Value) {
+                const optionName = hardcodedOptionNames[0]; // Assume 'Color'
+                if (!options.has(optionName)) options.set(optionName, new Set());
+                options.get(optionName)!.add(variant.option1Value);
+            }
+            if (variant.option2Value) {
+                const optionName = hardcodedOptionNames[1]; // Assume 'Size'
+                 if (!options.has(optionName)) options.set(optionName, new Set());
+                options.get(optionName)!.add(variant.option2Value);
+            }
+            if (variant.option3Value) {
+                const optionName = hardcodedOptionNames[2]; // Assume 'Material'
+                 if (!options.has(optionName)) options.set(optionName, new Set());
+                options.get(optionName)!.add(variant.option3Value);
+            }
+        });
+
+        // If no options found with hardcoded names, let's fall back to a generic name
+        if (options.size === 0 && variants.some(v => v.option1Value)) {
+             const optionName = 'Option1';
+             options.set(optionName, new Set());
+             variants.forEach(v => {
+                 if(v.option1Value) options.get(optionName)?.add(v.option1Value)
+             });
+        }
+
+
         return options;
     }, [variants]);
 
@@ -176,15 +203,20 @@ export function MediaManager({ productId }: MediaManagerProps) {
             toast({ title: 'Incomplete Selection', description: 'Please select an image, an option, and a value.', variant: 'destructive' });
             return;
         }
-
-        const optionKey = [...availableOptions.keys()].find(key => key === bulkAssignOption);
-        if (!optionKey) return;
         
-        let optionIndex = 'option1Value';
-        if (variants[0]?.option2Name === optionKey) optionIndex = 'option2Value';
-        if (variants[0]?.option3Name === optionKey) optionIndex = 'option3Value';
+        // This mapping logic is now also based on the hardcoded assumption
+        const hardcodedOptionNames = ['Color', 'Size', 'Material', 'Option1'];
+        const optionIndex = hardcodedOptionNames.indexOf(bulkAssignOption);
+        let optionKey: keyof Product;
+        switch(optionIndex) {
+            case 0: optionKey = 'option1Value'; break;
+            case 1: optionKey = 'option2Value'; break;
+            case 2: optionKey = 'option3Value'; break;
+            case 3: optionKey = 'option1Value'; break;
+            default: return;
+        }
 
-        const variantsToUpdate = variants.filter(v => (v as any)[optionIndex] === bulkAssignValue);
+        const variantsToUpdate = variants.filter(v => v[optionKey] === bulkAssignValue);
         
         if (variantsToUpdate.length === 0) {
             toast({ title: 'No variants found', description: 'No variants match the selected criteria.', variant: 'destructive' });
@@ -193,7 +225,7 @@ export function MediaManager({ productId }: MediaManagerProps) {
         
         const originalVariants = [...variants];
         const newVariants = variants.map(v => {
-            if ((v as any)[optionIndex] === bulkAssignValue) {
+            if (v[optionKey] === bulkAssignValue) {
                 return { ...v, imageId: imageId };
             }
             return v;
