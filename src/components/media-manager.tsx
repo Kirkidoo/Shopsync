@@ -151,48 +151,36 @@ export function MediaManager({ productId }: MediaManagerProps) {
             return options;
         }
 
-        // Shopify doesn't return option names with each variant, just option values.
-        // We have to infer the names. Let's assume they are consistent and take from the first variant.
-        // This is a limitation of the current data structure.
-        // A more robust solution might require a separate API call to get product options definitions.
         const firstVariant = variants[0];
-        const optionNames: { key: keyof Product; name: string | null | undefined }[] = [
-            { key: 'option1Value', name: firstVariant.option1Name },
-            { key: 'option2Value', name: firstVariant.option2Name },
-            { key: 'option3Value', name: firstVariant.option3Name },
+        const optionKeys: { key: keyof Product; name: string | null }[] = [
+            { key: 'option1Value', name: 'Color' }, // Hardcoded for now
+            { key: 'option2Value', name: 'Size' },
+            { key: 'option3Value', name: 'Material' },
         ];
         
-        // This part seems to be based on an incorrect assumption about where option names are stored.
-        // Let's create hardcoded option names for now, as they are not available on the variant from getProductWithImages
-        const hardcodedOptionNames = ['Color', 'Size', 'Material']; // Example option names
+        // This logic is simplified based on the assumption that option names are consistent.
+        // And we'll use hardcoded names as a fallback.
         
+        const optionNames = {
+            option1: variants.find(v => v.option1Name)?.option1Name || 'Option1',
+            option2: variants.find(v => v.option2Name)?.option2Name || 'Option2',
+            option3: variants.find(v => v.option3Name)?.option3Name || 'Option3',
+        };
+
         variants.forEach(variant => {
             if (variant.option1Value) {
-                const optionName = hardcodedOptionNames[0]; // Assume 'Color'
-                if (!options.has(optionName)) options.set(optionName, new Set());
-                options.get(optionName)!.add(variant.option1Value);
+                if (!options.has(optionNames.option1)) options.set(optionNames.option1, new Set());
+                options.get(optionNames.option1)!.add(variant.option1Value);
             }
             if (variant.option2Value) {
-                const optionName = hardcodedOptionNames[1]; // Assume 'Size'
-                 if (!options.has(optionName)) options.set(optionName, new Set());
-                options.get(optionName)!.add(variant.option2Value);
+                if (!options.has(optionNames.option2)) options.set(optionNames.option2, new Set());
+                options.get(optionNames.option2)!.add(variant.option2Value);
             }
             if (variant.option3Value) {
-                const optionName = hardcodedOptionNames[2]; // Assume 'Material'
-                 if (!options.has(optionName)) options.set(optionName, new Set());
-                options.get(optionName)!.add(variant.option3Value);
+                 if (!options.has(optionNames.option3)) options.set(optionNames.option3, new Set());
+                options.get(optionNames.option3)!.add(variant.option3Value);
             }
         });
-
-        // If no options found with hardcoded names, let's fall back to a generic name
-        if (options.size === 0 && variants.some(v => v.option1Value)) {
-             const optionName = 'Option1';
-             options.set(optionName, new Set());
-             variants.forEach(v => {
-                 if(v.option1Value) options.get(optionName)?.add(v.option1Value)
-             });
-        }
-
 
         return options;
     }, [variants]);
@@ -204,19 +192,21 @@ export function MediaManager({ productId }: MediaManagerProps) {
             return;
         }
         
-        // This mapping logic is now also based on the hardcoded assumption
-        const hardcodedOptionNames = ['Color', 'Size', 'Material', 'Option1'];
-        const optionIndex = hardcodedOptionNames.indexOf(bulkAssignOption);
-        let optionKey: keyof Product;
-        switch(optionIndex) {
-            case 0: optionKey = 'option1Value'; break;
-            case 1: optionKey = 'option2Value'; break;
-            case 2: optionKey = 'option3Value'; break;
-            case 3: optionKey = 'option1Value'; break;
-            default: return;
+        let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
+        const firstVariantWithOptions = variants.find(v => v.option1Name || v.option2Name || v.option3Name);
+        if(firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
+        else if(firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
+        else if(firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
+        else if (bulkAssignOption === 'Option1') optionKeyToMatch = 'option1Value';
+        else if (bulkAssignOption === 'Option2') optionKeyToMatch = 'option2Value';
+        else if (bulkAssignOption === 'Option3') optionKeyToMatch = 'option3Value';
+
+        if (!optionKeyToMatch) {
+            toast({ title: 'Option matching error', description: 'Could not determine which option to match on.', variant: 'destructive' });
+            return;
         }
 
-        const variantsToUpdate = variants.filter(v => v[optionKey] === bulkAssignValue);
+        const variantsToUpdate = variants.filter(v => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue);
         
         if (variantsToUpdate.length === 0) {
             toast({ title: 'No variants found', description: 'No variants match the selected criteria.', variant: 'destructive' });
@@ -225,7 +215,7 @@ export function MediaManager({ productId }: MediaManagerProps) {
         
         const originalVariants = [...variants];
         const newVariants = variants.map(v => {
-            if (v[optionKey] === bulkAssignValue) {
+            if (v[optionKeyToMatch as keyof typeof v] === bulkAssignValue) {
                 return { ...v, imageId: imageId };
             }
             return v;
