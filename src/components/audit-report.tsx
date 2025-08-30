@@ -678,7 +678,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         { (items[0].shopifyProduct?.id) &&
                                         <Dialog>
                                             <DialogTrigger asChild>
-                                                <Button size="sm" variant="outline" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Button size="sm" variant="outline">
                                                     <ImageIcon className="mr-2 h-4 w-4" />
                                                     Manage Media
                                                 </Button>
