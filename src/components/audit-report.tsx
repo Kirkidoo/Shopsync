@@ -818,13 +818,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             <p className="font-semibold">{productTitle}</p>
                                             <p className="text-sm text-muted-foreground">{handle}</p>
                                         </div>
-                                        {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
                                     </div>
                                 </AccordionTrigger>
-                            </AccordionHeader>
+                                {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
 
-                            <AccordionContent>
-                                <div className="flex justify-end items-center gap-2 px-4 py-2 border-b bg-muted/30">
+                                <div className="flex items-center gap-2 px-4">
                                      {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
                                         <Button size="sm" onClick={() => handleBulkFix(items.filter(i => i.status === 'mismatched'))} disabled={isFixing}>
                                             <Bot className="mr-2 h-4 w-4" />
@@ -859,6 +857,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         </Button>
                                     )}
                                 </div>
+                            </AccordionHeader>
+
+                            <AccordionContent>
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
