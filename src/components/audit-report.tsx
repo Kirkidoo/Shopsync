@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useTransition, useEffect, useMemo } from 'react';
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv, markMismatchAsFixed, getFixedMismatches, clearFixedMismatches } from '@/lib/utils';
 import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight, FileText, Eye, Trash2, Search, Image as ImageIcon, FileWarning, Bot, Eraser, Check } from 'lucide-react';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { fixMultipleMismatches, createInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages } from '@/app/actions';
@@ -792,9 +793,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
-                            <AccordionTrigger className="flex w-full items-center gap-4 p-3 text-left hover:no-underline" disabled={isFixing}>
+                             <AccordionHeader className="flex items-center p-3 text-left">
                                 {filter === 'mismatched' && (
-                                    <div className="px-1" onClick={(e) => e.stopPropagation()}>
+                                    <div className="px-1">
                                         <Checkbox
                                             checked={selectedHandles.has(handle)}
                                             onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
@@ -802,17 +803,22 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         />
                                     </div>
                                 )}
-                                <config.icon className={`w-5 h-5 shrink-0 ${
-                                    overallStatus === 'mismatched' ? 'text-yellow-500' 
-                                    : overallStatus === 'missing_in_shopify' ? 'text-red-500'
-                                    : 'text-blue-500'
-                                }`} />
-                                <div className="flex-grow">
-                                    <p className="font-semibold">{productTitle}</p>
-                                    <p className="text-sm text-muted-foreground">{handle}</p>
-                                </div>
-                                {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
-                            </AccordionTrigger>
+                                <AccordionTrigger className="w-full" disabled={isFixing}>
+                                    <div className="flex items-center gap-4 flex-grow">
+                                        <config.icon className={`w-5 h-5 shrink-0 ${
+                                            overallStatus === 'mismatched' ? 'text-yellow-500' 
+                                            : overallStatus === 'missing_in_shopify' ? 'text-red-500'
+                                            : 'text-blue-500'
+                                        }`} />
+                                        <div className="flex-grow text-left">
+                                            <p className="font-semibold">{productTitle}</p>
+                                            <p className="text-sm text-muted-foreground">{handle}</p>
+                                        </div>
+                                        {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
+                                    </div>
+                                </AccordionTrigger>
+                            </AccordionHeader>
+
                             <AccordionContent>
                                 <div className="flex justify-end items-center gap-2 px-4 py-2 border-b bg-muted/30">
                                      {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
