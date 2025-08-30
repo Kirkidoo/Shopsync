@@ -586,7 +586,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       }, { mismatched: 0, missing_in_shopify: 0, not_in_csv: 0 });
   }, [filteredData]);
   
-  const handleAccordionChange = async (handle: string) => {
+  const handleAccordionChange = async (value: string) => {
+    // If no value, it means all were closed, do nothing.
+    if (!value) return;
+
+    const handle = value;
     if (imageCounts[handle] !== undefined || loadingImageCounts.has(handle)) return;
 
     const item = groupedByHandle[handle]?.[0];
@@ -599,7 +603,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         setImageCounts(prev => ({ ...prev, [handle]: images.length }));
       } catch (error) {
         console.error("Failed to fetch image count for handle", handle, error);
-        setImageCounts(prev => ({ ...prev, [handle]: 0 }));
+        setImageCounts(prev => ({ ...prev, [handle]: 0 })); // Set to 0 on error
       } finally {
         setLoadingImageCounts(prev => {
           const newSet = new Set(prev);
