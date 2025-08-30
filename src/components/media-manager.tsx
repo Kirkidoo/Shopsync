@@ -58,12 +58,12 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         fetchMediaData();
     }, [fetchMediaData]);
     
-    useEffect(() => {
-        // Only call the callback if the image count has actually changed
+     useEffect(() => {
         if (initialImageCount !== images.length) {
             onImageCountChange(images.length);
         }
     }, [images.length, onImageCountChange, initialImageCount]);
+
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
         const newSet = new Set(selectedImageIds);
@@ -371,16 +371,19 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
                                 const isAssigned = image.variant_ids && image.variant_ids.length > 0;
                                 return (
                                     <div key={image.id} className="relative group border rounded-md overflow-hidden">
-                                        <Image
-                                            src={image.src}
-                                            alt={`Product image ${image.id}`}
-                                            width={150}
-                                            height={150}
-                                            className="object-cover w-full aspect-square"
-                                        />
-                                        <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5">
-                                            <Checkbox
-                                                className="bg-white/80 data-[state=checked]:bg-primary"
+                                        <Label htmlFor={`image-select-${image.id}`} className="cursor-pointer">
+                                            <Image
+                                                src={image.src}
+                                                alt={`Product image ${image.id}`}
+                                                width={150}
+                                                height={150}
+                                                className="object-cover w-full aspect-square"
+                                            />
+                                        </Label>
+                                        <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5 pointer-events-none">
+                                             <Checkbox
+                                                id={`image-select-${image.id}`}
+                                                className="bg-white/80 data-[state=checked]:bg-primary pointer-events-auto"
                                                 checked={selectedImageIds.has(image.id)}
                                                 onCheckedChange={(checked) => handleImageSelection(image.id, !!checked)}
                                             />
@@ -388,7 +391,7 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
                                                 <TooltipProvider>
                                                     <Tooltip>
                                                         <TooltipTrigger asChild>
-                                                            <div className="h-6 w-6 inline-flex items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground">
+                                                            <div className="h-6 w-6 inline-flex items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground pointer-events-auto">
                                                                 <Link className="h-3.5 w-3.5" />
                                                             </div>
                                                         </TooltipTrigger>

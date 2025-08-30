@@ -272,22 +272,25 @@ export function PreCreationMediaManager({ variants, onSave, onCancel }: PreCreat
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {imageUrls.map(url => (
+                        {imageUrls.map((url, i) => (
                             <div key={url} className="relative group border rounded-md overflow-hidden">
-                                 <Image
-                                    src={url}
-                                    alt={`Product image`}
-                                    width={150}
-                                    height={150}
-                                    className="object-cover w-full aspect-square"
-                                />
-                                <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5">
+                                <Label htmlFor={`pre-image-select-${i}`} className="cursor-pointer">
+                                    <Image
+                                        src={url}
+                                        alt={`Product image`}
+                                        width={150}
+                                        height={150}
+                                        className="object-cover w-full aspect-square"
+                                    />
+                                </Label>
+                                <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5 pointer-events-none">
                                     <Checkbox
-                                        className="bg-white/80 data-[state=checked]:bg-primary"
+                                        id={`pre-image-select-${i}`}
+                                        className="bg-white/80 data-[state=checked]:bg-primary pointer-events-auto"
                                         checked={selectedImageUrls.has(url)}
                                         onCheckedChange={(checked) => handleImageSelection(url, !!checked)}
                                     />
-                                   <a href={url} target="_blank" rel="noopener noreferrer" className="h-6 w-6 inline-flex items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary">
+                                   <a href={url} target="_blank" rel="noopener noreferrer" className="h-6 w-6 inline-flex items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary pointer-events-auto">
                                       <Link className="h-3.5 w-3.5" />
                                    </a>
                                 </div>
@@ -360,7 +363,3 @@ export function PreCreationMediaManager({ variants, onSave, onCancel }: PreCreat
         </DialogContent>
     );
 }
-
-    
-
-    
