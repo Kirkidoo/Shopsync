@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MediaManager } from '@/components/media-manager';
+import { PreCreationMediaManager } from '@/components/pre-creation-media-manager';
 
 
 type FilterType = 'all' | 'mismatched' | 'missing_in_shopify' | 'not_in_csv';
@@ -174,6 +175,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [searchTerm, setSearchTerm] = useState('');
   const [mismatchFilters, setMismatchFilters] = useState<Set<MismatchDetail['field']>>(new Set());
   const [selectedVendor, setSelectedVendor] = useState<string>('all');
+  const [editingMissingMedia, setEditingMissingMedia] = useState<string | null>(null);
 
   useEffect(() => {
     setReportData(data);
@@ -333,7 +335,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         return;
     }
     
-    const allVariantsForHandle = data
+    // Use the potentially modified reportData to get the latest variants
+    const allVariantsForHandle = reportData
       .filter(d => d.csvProduct?.handle === productToCreate.handle && d.status === 'missing_in_shopify')
       .map(d => d.csvProduct)
       .filter((p): p is Product => p !== null);
@@ -435,6 +438,33 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       });
   };
 
+    const handleSavePreCreationMedia = (updatedVariants: Product[]) => {
+        setReportData(currentReportData => {
+            const newReportData = currentReportData.map(auditResult => {
+                // Find the matching variant in the updated list
+                const updatedVariant = updatedVariants.find(uv => uv.sku === auditResult.csvProduct?.sku);
+                // If this auditResult corresponds to one of the updated variants, update it
+                if (auditResult.csvProduct && updatedVariant) {
+                    return {
+                        ...auditResult,
+                        csvProduct: {
+                            ...auditResult.csvProduct,
+                            mediaUrl: updatedVariant.mediaUrl,
+                        },
+                    };
+                }
+                // Otherwise, return the original auditResult
+                return auditResult;
+            });
+            return newReportData;
+        });
+        setEditingMissingMedia(null);
+         toast({
+            title: "Media Saved",
+            description: "Image assignments have been updated. Click 'Create Product' to finalize.",
+        });
+    };
+
   const MismatchIcon = ({field}: {field: MismatchDetail['field']}) => {
     const icons: { [key in MismatchDetail['field']]: React.ReactNode } = {
       name: <Text className="h-4 w-4" />,
@@ -480,7 +510,16 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     });
   };
 
+  const editingMissingMediaVariants = useMemo(() => {
+    if (!editingMissingMedia) return [];
+    return reportData
+      .filter(d => d.csvProduct?.handle === editingMissingMedia && d.status === 'missing_in_shopify')
+      .map(d => d.csvProduct)
+      .filter((p): p is Product => p !== null);
+  }, [editingMissingMedia, reportData]);
+
   return (
+    <>
     <Card className="w-full">
       <CardHeader>
         <div className="flex justify-between items-start">
@@ -654,9 +693,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                          const isOnlyVariantNotInCsv = notInCsv && allVariantsForHandleInShopify.length === items.length;
 
                         return (
-                        <AccordionItem value={handle} key={handle} className="border-b">
-                            <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center">
-                                <AccordionTrigger className="col-span-2 grid grid-cols-[auto_1fr] items-center gap-4 py-3 px-4 text-left" disabled={isFixing}>
+                        <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
+                            <div className="grid grid-cols-[1fr_auto] items-center">
+                                <AccordionTrigger className="grid grid-cols-[auto_1fr] items-center gap-4 py-3 px-4 text-left hover:no-underline" disabled={isFixing}>
                                     <config.icon className={`w-5 h-5 shrink-0 ${
                                         overallStatus === 'mismatched' ? 'text-yellow-500' 
                                         : overallStatus === 'missing_in_shopify' ? 'text-red-500'
@@ -676,21 +715,24 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             ))}
                                         </div>
                                     )}
-                                </div>
-                                <div className="px-4">
                                     <Badge variant="outline" className="w-[80px] justify-center">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
-                                </div>
-                                <div className="px-4 w-[160px]">
+                                    
                                     {items[0].shopifyProduct?.id && (
                                         <Dialog>
                                             <DialogTrigger asChild>
-                                                <Button size="sm" variant="outline" className="w-full">
+                                                <Button size="sm" variant="outline" className="w-[160px]">
                                                     <ImageIcon className="mr-2 h-4 w-4" />
                                                     Manage Media
                                                 </Button>
                                             </DialogTrigger>
                                             <MediaManager productId={items[0].shopifyProduct!.id} />
                                         </Dialog>
+                                    )}
+                                    {isMissing && (
+                                        <Button size="sm" variant="outline" className="w-[160px]" onClick={() => setEditingMissingMedia(handle)}>
+                                            <ImageIcon className="mr-2 h-4 w-4" />
+                                            Manage Media
+                                        </Button>
                                     )}
                                 </div>
                             </div>
@@ -847,6 +889,15 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         )}
       </CardContent>
     </Card>
+      <Dialog open={!!editingMissingMedia} onOpenChange={(open) => !open && setEditingMissingMedia(null)}>
+        <PreCreationMediaManager
+            key={editingMissingMedia} 
+            variants={editingMissingMediaVariants}
+            onSave={handleSavePreCreationMedia}
+            onCancel={() => setEditingMissingMedia(null)}
+        />
+    </Dialog>
+    </>
   );
 }
 
