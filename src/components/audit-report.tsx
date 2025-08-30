@@ -586,8 +586,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       }, { mismatched: 0, missing_in_shopify: 0, not_in_csv: 0 });
   }, [filteredData]);
   
-  const handleAccordionChange = async (value: string) => {
-    // If no value, it means all were closed, do nothing.
+  const handleAccordionChange = async (value: string | undefined) => {
     if (!value) return;
 
     const handle = value;
@@ -613,6 +612,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       }
     }
   };
+
 
   return (
     <>
@@ -767,7 +767,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
         <div className="rounded-md border">
             {paginatedHandleKeys.length > 0 ? (
-                <Accordion type="single" collapsible className="w-full" onValueChange={handleAccordionChange}>
+                <Accordion type="single" collapsible className="w-full" onValueChange={(value) => handleAccordionChange(value)}>
                     {paginatedHandleKeys.map((handle) => {
                          const items = groupedByHandle[handle];
                          const productTitle = items[0].csvProduct?.name || items[0].shopifyProduct?.name || handle;
