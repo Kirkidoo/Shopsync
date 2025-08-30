@@ -5,7 +5,7 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail } from '@/lib/types'
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels } from '@/lib/shopify';
+import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
 
 const FTP_DIRECTORY = '/Gamma_Product_Files/Shopify_Files/';
@@ -204,7 +204,8 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   // 3. Run audit logic
   console.log('Running audit comparison logic...');
   const report: AuditResult[] = [];
-  const summary = { matched: 0, mismatched: 0, not_in_csv: 0, missing_in_shopify: 0 };
+  let matchedCount = 0;
+  const summary = { mismatched: 0, not_in_csv: 0, missing_in_shopify: 0 };
 
   // Iterate over the CSV products (source of truth)
   for (const csvProduct of csvProducts) {
@@ -229,8 +230,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
         report.push({ sku: csvProduct.sku, csvProduct, shopifyProduct, status: 'mismatched', mismatches });
         summary.mismatched++;
       } else {
-        // Matched, do nothing with the report, just count it.
-        summary.matched++;
+        matchedCount++;
       }
       // Remove from Shopify map to find what's left
       shopifyProductMap.delete(csvProduct.sku); 
@@ -258,8 +258,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
       summary.not_in_csv++;
   }
   
-  const finalReport = report.filter(item => item.status !== 'matched');
-  finalReport.sort((a, b) => {
+  report.sort((a, b) => {
     const handleA = a.csvProduct?.handle || a.shopifyProduct?.handle || '';
     const handleB = b.csvProduct?.handle || b.shopifyProduct?.handle || '';
     if (handleA !== handleB) {
@@ -267,9 +266,9 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
     }
     return a.sku.localeCompare(b.sku);
   });
-  console.log('Audit comparison complete. Summary:', summary);
+  console.log('Audit comparison complete. Matched:', matchedCount, 'Summary:', summary);
 
-  return { report: finalReport, summary, duplicates: duplicateSkus };
+  return { report, summary: {...summary, matched: matchedCount }, duplicates: duplicateSkus };
 }
 
 
@@ -291,8 +290,11 @@ export async function fixMismatch(
                 break;
             case 'price':
                  if (product.variantId) {
-                    await updateProductVariant(product.variantId, { price: product.price });
-                    console.log(`Successfully updated price for variant ID: ${product.variantId}`);
+                    const numericVariantId = parseInt(product.variantId.split('/').pop() || '0', 10);
+                    if (numericVariantId) {
+                       await updateProductVariant(numericVariantId, { price: product.price });
+                       console.log(`Successfully updated price for variant ID: ${numericVariantId}`);
+                    }
                 }
                 break;
             case 'inventory':
@@ -334,49 +336,50 @@ export async function createInShopify(
             // Phase 1: Create Product
             console.log(`Phase 1: Creating product for handle ${product.handle} with ${allVariantsForHandle.length} variants.`);
             createdProduct = await createProduct(allVariantsForHandle, addClearanceTag);
-        } else {
-            // For adding a variant, we need the specific variant's data
-            const newVariant = await addProductVariant(product);
-            // Re-fetch the whole product to ensure we have all variants and images for post-processing
-            const shopifyProduct = await getShopifyProductsBySku([newVariant.sku]);
-            createdProduct = shopifyProduct.length > 0 ? shopifyProduct[0] : null; 
-            
-            createdProduct = {
-                id: newVariant.product_id, // REST ID
-                admin_graphql_api_id: `gid://shopify/Product/${newVariant.product_id}`,
-                variants: [newVariant],
-                images: [], 
-             }
+        } else { // 'variant'
+             console.log(`Adding variant with SKU ${product.sku} to existing product.`);
+             createdProduct = await addProductVariant(product);
+             // The addProductVariant function now returns the full product, so we can treat it similarly
         }
         
-        if (!createdProduct) {
-            throw new Error("Product creation failed to return a result.");
+        if (!createdProduct || !createdProduct.id) {
+            throw new Error("Product creation or variant addition failed to return a valid result.");
         }
-
-        // --- Post-creation tasks ---
+        
         const productGid = `gid://shopify/Product/${createdProduct.id}`;
-        
-        // --- Phase 2: Link variant to image ---
-        const createdImagesBySrc = new Map(createdProduct.images.map((img: any) => [img.src, img.id]));
-        
-        for (const sourceVariant of allVariantsForHandle) {
-             const createdVariant = createdProduct.variants.find((v: any) => v.sku === sourceVariant.sku);
-             if (!createdVariant || !sourceVariant.mediaUrl) continue;
 
-             const imageId = createdImagesBySrc.get(sourceVariant.mediaUrl);
-             if (imageId) {
-                console.log(`Phase 2: Assigning image ID ${imageId} to variant ID ${createdVariant.id}...`);
-                await updateProductVariant(createdVariant.id.toString(), { image_id: imageId });
-             } else {
-                console.warn(`Could not find a created image matching source URL: ${sourceVariant.mediaUrl} for SKU: ${sourceVariant.sku}`);
-             }
+        // --- Phase 2: Post-creation/addition tasks ---
+
+        // 2a. Link variant to image
+        if (missingType === 'product') { // Only run for full product creation
+            console.log('Phase 2: Linking images to variants...');
+            const imageUrlToIdMap = new Map(createdProduct.images.map((img: any) => [img.src, img.id]));
+            
+            for (const sourceVariant of allVariantsForHandle) {
+                 const createdVariant = createdProduct.variants.find((v: any) => v.sku === sourceVariant.sku);
+                 if (!createdVariant || !sourceVariant.mediaUrl) continue;
+
+                 const imageId = imageUrlToIdMap.get(sourceVariant.mediaUrl);
+                 if (imageId) {
+                    console.log(` - Assigning image ID ${imageId} to variant ID ${createdVariant.id}...`);
+                    await updateProductVariant(createdVariant.id, { image_id: imageId });
+                 } else {
+                    console.warn(` - Could not find a created image matching source URL: ${sourceVariant.mediaUrl} for SKU: ${sourceVariant.sku}`);
+                 }
+            }
         }
 
-        // 1. Connect inventory & Set levels for each variant
+
+        // 2b. Connect inventory & Set levels for each variant
         const locations = await getShopifyLocations();
         const garageLocation = locations.find(l => l.name === 'Garage Harry Stanley');
+        
+        const variantsToProcess = missingType === 'product' 
+            ? createdProduct.variants 
+            : [createdProduct.variants.find((v:any) => v.sku === product.sku)];
 
-        for(const variant of createdProduct.variants) {
+        for(const variant of variantsToProcess) {
+             if (!variant) continue;
             const sourceVariant = allVariantsForHandle.find(p => p.sku === variant.sku);
             if (!sourceVariant) continue;
 
@@ -396,7 +399,7 @@ export async function createInShopify(
             }
         }
         
-        // 3. Link product to collection if category is specified
+        // 2c. Link product to collection if category is specified
         if (product.category && productGid) {
             console.log(`Linking product to collection: '${product.category}'...`);
             const collectionId = await getCollectionIdByTitle(product.category);
@@ -407,7 +410,7 @@ export async function createInShopify(
             }
         }
 
-        // 4. Publish to all sales channels
+        // 2d. Publish to all sales channels
         if (productGid) {
             console.log(`Publishing product ${productGid} to all sales channels...`);
             await publishProductToSalesChannels(productGid);
@@ -420,6 +423,19 @@ export async function createInShopify(
         return { success: true, message: `Successfully created ${missingType} for ${product.sku}`, createdProductData: createdProduct };
     } catch (error) {
         console.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
+        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+        return { success: false, message };
+    }
+}
+
+export async function deleteFromShopify(productId: string) {
+    console.log(`Attempting to delete product with GID: ${productId}`);
+    try {
+        await deleteProduct(productId);
+        revalidatePath('/');
+        return { success: true, message: `Successfully deleted product ${productId}`};
+    } catch (error) {
+        console.error(`Failed to delete product ${productId}:`, error);
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         return { success: false, message };
     }

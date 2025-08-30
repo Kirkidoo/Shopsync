@@ -8,10 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight, FileText, Eye } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight, FileText, Eye, Trash2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { fixMismatch, createInShopify } from '@/app/actions';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { fixMismatch, createInShopify, deleteFromShopify } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -230,7 +231,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                       setReportSummary(prev => ({
                           ...prev,
                           mismatched: prev.mismatched - 1,
-                          matched: prev.matched + 1, // Still count it for the summary even if not shown
+                          matched: (prev.matched ?? 0) + 1,
                       }));
                   } else {
                      // Still mismatched, but update the shopify product data for instant UI feedback
@@ -298,7 +299,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             setReportSummary(prev => ({
                 ...prev,
                 missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
-                matched: prev.matched + itemsUpdatedCount,
+                matched: (prev.matched ?? 0) + itemsUpdatedCount,
             }));
             setShowRefresh(true);
 
@@ -306,7 +307,32 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             toast({ title: 'Creation Failed', description: result.message, variant: 'destructive' });
         }
     });
-};
+  };
+
+  const handleDelete = (item: AuditResult) => {
+      const productToDelete = item.shopifyProduct;
+      if (!productToDelete || !productToDelete.id) {
+          toast({ title: 'Error', description: 'Cannot delete item, missing product ID.', variant: 'destructive' });
+          return;
+      }
+
+      startTransition(async () => {
+          const result = await deleteFromShopify(productToDelete.id);
+          if (result.success) {
+              toast({ title: 'Success!', description: result.message });
+              // Optimistic UI update
+              const newData = reportData.filter(d => d.shopifyProduct?.id !== productToDelete.id);
+              setReportData(newData);
+              setReportSummary(prev => ({
+                  ...prev,
+                  not_in_csv: prev.not_in_csv - 1,
+              }));
+              setShowRefresh(true);
+          } else {
+              toast({ title: 'Delete Failed', description: result.message, variant: 'destructive' });
+          }
+      });
+  };
 
 
   const mismatchIcons: Record<MismatchDetail['field'], React.ReactElement> = {
@@ -404,10 +430,16 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           <div className="flex flex-wrap gap-2">
             {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => {
                 const config = statusConfig[f as keyof typeof statusConfig];
-                if (!config) return null; // Should only happen for 'all'
+                 const count = f === 'all' 
+                    ? reportData.length 
+                    : (reportSummary as any)[f];
+
+                // Don't render filter button if there are no items for that status
+                if (count === 0 && f !== 'all') return null;
+
                 return (
                     <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)} disabled={isFixing}>
-                        {f === 'all' ? `All (${reportData.length})` : `${config.text} (${(reportSummary as any)[f]})`}
+                       {f === 'all' ? 'All' : config.text} ({count})
                     </Button>
                 )
              })}
@@ -487,7 +519,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             return (
                                                 <TableRow key={item.sku} className={
                                                     item.status === 'mismatched' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' :
-                                                    item.status === 'missing_in_shopify' ? 'bg-red-50/50 dark:bg-red-900/10' : ''
+                                                    item.status === 'missing_in_shopify' ? 'bg-red-50/50 dark:bg-red-900/10' :
+                                                    item.status === 'not_in_csv' ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
                                                 }>
                                                     <TableCell className="font-medium">{item.sku}</TableCell>
                                                     <TableCell>
@@ -521,6 +554,29 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                                     <PlusCircle className="mr-2 h-4 w-4" />
                                                                     Create Product
                                                                 </Button>
+                                                            )}
+                                                            {item.status === 'not_in_csv' && index === 0 && item.shopifyProduct?.id && (
+                                                                <AlertDialog>
+                                                                    <AlertDialogTrigger asChild>
+                                                                        <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Product
+                                                                        </Button>
+                                                                    </AlertDialogTrigger>
+                                                                    <AlertDialogContent>
+                                                                        <AlertDialogHeader>
+                                                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                                            <AlertDialogDescription>
+                                                                                This will permanently delete the product "{productTitle}" ({item.shopifyProduct.handle}) from Shopify. This action cannot be undone.
+                                                                            </AlertDialogDescription>
+                                                                        </AlertDialogHeader>
+                                                                        <AlertDialogFooter>
+                                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                            <AlertDialogAction onClick={() => handleDelete(item)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                                Yes, delete product
+                                                                            </AlertDialogAction>
+                                                                        </AlertDialogFooter>
+                                                                    </AlertDialogContent>
+                                                                </AlertDialog>
                                                             )}
                                                         </div>
                                                     </TableCell>

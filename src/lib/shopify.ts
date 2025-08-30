@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
@@ -446,17 +447,16 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
     return response.body.data?.productUpdate?.product;
 }
 
-export async function updateProductVariant(variantId: string, input: { price?: number, image_id?: number }) {
+export async function updateProductVariant(variantId: number, input: { price?: number, image_id?: number }) {
     const shopifyClient = getShopifyRestClient();
     
-    const numericVariantId = variantId.toString().split('/').pop();
-    const payload = { variant: { id: numericVariantId, ...input }};
+    const payload = { variant: { id: variantId, ...input }};
     
     console.log(`Phase 2: Updating variant with REST payload:`, JSON.stringify(payload, null, 2));
 
     try {
         const response: any = await shopifyClient.put({
-            path: `variants/${numericVariantId}`,
+            path: `variants/${variantId}`,
             data: payload,
         });
 
@@ -469,6 +469,22 @@ export async function updateProductVariant(variantId: string, input: { price?: n
     } catch (error: any) {
         console.error("Error during variant update:", error.response?.body || error);
         throw new Error(`Failed to update variant. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
+    }
+}
+
+export async function deleteProduct(productId: string): Promise<void> {
+    const shopifyClient = getShopifyRestClient();
+    const numericProductId = productId.split('/').pop();
+
+    console.log(`Attempting to delete product with ID: ${numericProductId}`);
+    try {
+        await shopifyClient.delete({
+            path: `products/${numericProductId}`,
+        });
+        console.log(`Successfully deleted product ID: ${numericProductId}`);
+    } catch (error: any) {
+        console.error(`Error deleting product ID ${numericProductId}:`, error.response?.body || error);
+        throw new Error(`Failed to delete product. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
     }
 }
 
