@@ -675,7 +675,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             </div>
                                         )}
                                         <Badge variant="outline">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
-                                        { (item.shopifyProduct?.id) &&
+                                        { (items[0].shopifyProduct?.id) &&
                                         <Dialog>
                                             <DialogTrigger asChild>
                                                 <Button size="sm" variant="outline" className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -844,4 +844,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </Card>
   );
 }
-
