@@ -586,7 +586,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       }, { mismatched: 0, missing_in_shopify: 0, not_in_csv: 0 });
   }, [filteredData]);
   
-  const handleAccordionChange = async (value: string | undefined) => {
+  const handleAccordionChange = (value: string) => {
     if (!value) return;
 
     const handle = value;
@@ -597,19 +597,18 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
     if (productId) {
       setLoadingImageCounts(prev => new Set(prev).add(handle));
-      try {
-        const { images } = await getProductWithImages(productId);
-        setImageCounts(prev => ({ ...prev, [handle]: images.length }));
-      } catch (error) {
+      getProductWithImages(productId).then(data => {
+        setImageCounts(prev => ({ ...prev, [handle]: data.images.length }));
+      }).catch(error => {
         console.error("Failed to fetch image count for handle", handle, error);
         setImageCounts(prev => ({ ...prev, [handle]: 0 })); // Set to 0 on error
-      } finally {
-        setLoadingImageCounts(prev => {
+      }).finally(() => {
+         setLoadingImageCounts(prev => {
           const newSet = new Set(prev);
           newSet.delete(handle);
           return newSet;
         });
-      }
+      });
     }
   };
 
@@ -793,29 +792,27 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
-                             <div className="flex items-center">
-                                 {filter === 'mismatched' && (
-                                    <div className="px-4">
-                                         <Checkbox
+                            <AccordionTrigger className="flex w-full items-center gap-4 p-3 text-left hover:no-underline" disabled={isFixing}>
+                                {filter === 'mismatched' && (
+                                    <div className="px-1" onClick={(e) => e.stopPropagation()}>
+                                        <Checkbox
                                             checked={selectedHandles.has(handle)}
                                             onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
                                             aria-label={`Select product ${handle}`}
                                         />
                                     </div>
                                 )}
-                                <AccordionTrigger className={`flex-grow grid grid-cols-[auto_1fr_auto] items-center gap-4 py-3 text-left hover:no-underline ${filter !== 'mismatched' ? 'pl-4' : ''}`} disabled={isFixing}>
-                                    <config.icon className={`w-5 h-5 shrink-0 ${
-                                        overallStatus === 'mismatched' ? 'text-yellow-500' 
-                                        : overallStatus === 'missing_in_shopify' ? 'text-red-500'
-                                        : 'text-blue-500'
-                                    }`} />
-                                    <div className="flex-grow">
-                                        <p className="font-semibold">{productTitle}</p>
-                                        <p className="text-sm text-muted-foreground">{handle}</p>
-                                    </div>
-                                    {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
-                                </AccordionTrigger>
-                            </div>
+                                <config.icon className={`w-5 h-5 shrink-0 ${
+                                    overallStatus === 'mismatched' ? 'text-yellow-500' 
+                                    : overallStatus === 'missing_in_shopify' ? 'text-red-500'
+                                    : 'text-blue-500'
+                                }`} />
+                                <div className="flex-grow">
+                                    <p className="font-semibold">{productTitle}</p>
+                                    <p className="text-sm text-muted-foreground">{handle}</p>
+                                </div>
+                                {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
+                            </AccordionTrigger>
                             <AccordionContent>
                                 <div className="flex justify-end items-center gap-2 px-4 py-2 border-b bg-muted/30">
                                      {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
