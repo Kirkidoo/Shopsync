@@ -467,16 +467,15 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
     return response.body.data?.productUpdate?.product;
 }
 
-export async function updateProductVariant(variantId: number, input: { price?: number, image_id?: number }) {
+export async function updateProductVariant(variantId: number, input: { image_id?: number, price?: number }) {
     const shopifyClient = getShopifyRestClient();
     
-    // The payload needs to be wrapped in a "variant" object
     const payload = { variant: { id: variantId, ...input }};
     
     console.log(`Phase 2: Updating variant with REST payload:`, JSON.stringify(payload, null, 2));
 
     try {
-        // Correct endpoint for updating a variant is /admin/api/{version}/variants/{variant_id}.json
+        // Use the generic /variants/{id}.json endpoint
         const response: any = await shopifyClient.put({
             path: `variants/${variantId}`,
             data: payload,
@@ -513,6 +512,21 @@ export async function deleteProduct(productId: string): Promise<void> {
         throw new Error(`Failed to delete product. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
     }
 }
+
+export async function deleteProductVariant(productId: number, variantId: number): Promise<void> {
+    const shopifyClient = getShopifyRestClient();
+    console.log(`Attempting to delete variant ${variantId} from product ${productId}`);
+    try {
+        await shopifyClient.delete({
+            path: `products/${productId}/variants/${variantId}`,
+        });
+        console.log(`Successfully deleted variant ID ${variantId} from product ID ${productId}`);
+    } catch (error: any) {
+        console.error(`Error deleting variant ID ${variantId}:`, error.response?.body || error);
+        throw new Error(`Failed to delete variant. Status: ${error.response?.statusCode} Body: ${JSON.stringify(error.response?.body)}`);
+    }
+}
+
 
 // --- Inventory and Collection Functions ---
 

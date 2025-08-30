@@ -5,7 +5,7 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail } from '@/lib/types'
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct } from '@/lib/shopify';
+import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
 
 const FTP_DIRECTORY = '/Gamma_Product_Files/Shopify_Files/';
@@ -354,7 +354,7 @@ export async function createInShopify(
         // --- Phase 2: Post-creation/addition tasks ---
 
         // 2a. Link variant to image
-        if (missingType === 'product' && createdProduct.images && createdProduct.images.length > 0) {
+        if (createdProduct.images && createdProduct.images.length > 0) {
             console.log('Phase 2: Linking images to variants...');
             const imageUrlToIdMap = new Map(createdProduct.images.map((img: any) => [img.src, img.id]));
             
@@ -439,6 +439,26 @@ export async function deleteFromShopify(productId: string) {
         return { success: true, message: `Successfully deleted product ${productId}`};
     } catch (error) {
         console.error(`Failed to delete product ${productId}:`, error);
+        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+        return { success: false, message };
+    }
+}
+
+export async function deleteVariantFromShopify(productId: string, variantId: string) {
+    console.log(`Attempting to delete variant ${variantId} from product ${productId}`);
+    try {
+        const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
+        const numericVariantId = parseInt(variantId.split('/').pop() || '0', 10);
+
+        if (!numericProductId || !numericVariantId) {
+            throw new Error(`Invalid Product or Variant GID. Product: ${productId}, Variant: ${variantId}`);
+        }
+
+        await deleteProductVariant(numericProductId, numericVariantId);
+        revalidatePath('/');
+        return { success: true, message: `Successfully deleted variant ${variantId}`};
+    } catch (error) {
+        console.error(`Failed to delete variant ${variantId}:`, error);
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         return { success: false, message };
     }

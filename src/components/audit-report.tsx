@@ -12,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMismatch, createInShopify, deleteFromShopify } from '@/app/actions';
+import { fixMismatch, createInShopify, deleteFromShopify, deleteVariantFromShopify } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -309,10 +309,10 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     });
   };
 
-  const handleDelete = (item: AuditResult) => {
+  const handleDeleteProduct = (item: AuditResult) => {
       const productToDelete = item.shopifyProduct;
       if (!productToDelete || !productToDelete.id) {
-          toast({ title: 'Error', description: 'Cannot delete item, missing product ID.', variant: 'destructive' });
+          toast({ title: 'Error', description: 'Cannot delete product, missing product ID.', variant: 'destructive' });
           return;
       }
 
@@ -322,6 +322,31 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
               toast({ title: 'Success!', description: result.message });
               // Optimistic UI update
               const newData = reportData.filter(d => d.shopifyProduct?.id !== productToDelete.id);
+              setReportData(newData);
+              setReportSummary(prev => ({
+                  ...prev,
+                  not_in_csv: prev.not_in_csv - 1, // This needs adjustment if deleting multiple variants
+              }));
+              setShowRefresh(true);
+          } else {
+              toast({ title: 'Delete Failed', description: result.message, variant: 'destructive' });
+          }
+      });
+  };
+
+  const handleDeleteVariant = (item: AuditResult) => {
+      const variantToDelete = item.shopifyProduct;
+      if (!variantToDelete || !variantToDelete.id || !variantToDelete.variantId) {
+          toast({ title: 'Error', description: 'Cannot delete variant, missing ID.', variant: 'destructive' });
+          return;
+      }
+
+      startTransition(async () => {
+          const result = await deleteVariantFromShopify(variantToDelete.id, variantToDelete.variantId);
+          if (result.success) {
+              toast({ title: 'Success!', description: result.message });
+              // Optimistic UI update
+              const newData = reportData.filter(d => d.sku !== item.sku);
               setReportData(newData);
               setReportSummary(prev => ({
                   ...prev,
@@ -516,6 +541,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         {items.map((item, index) => {
                                             const itemConfig = statusConfig[item.status];
                                             const productForDetails = item.csvProduct || item.shopifyProduct;
+                                            const allVariantsForHandleInShopify = data.filter(d => d.shopifyProduct?.handle === handle);
+                                            const isOnlyVariantNotInCsv = notInCsv && allVariantsForHandleInShopify.length === items.length;
+
                                             return (
                                                 <TableRow key={item.sku} className={
                                                     item.status === 'mismatched' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' :
@@ -555,34 +583,63 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                                     Create Product
                                                                 </Button>
                                                             )}
-                                                            {item.status === 'not_in_csv' && index === 0 && item.shopifyProduct?.id && (
+                                                            
+                                                             {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
                                                                 <AlertDialog>
                                                                     <AlertDialogTrigger asChild>
                                                                         <Button size="sm" variant="destructive" disabled={isFixing}>
-                                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Product
+                                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Variant
                                                                         </Button>
                                                                     </AlertDialogTrigger>
                                                                     <AlertDialogContent>
                                                                         <AlertDialogHeader>
-                                                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                                            <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
                                                                             <AlertDialogDescription>
-                                                                                This will permanently delete the product "{productTitle}" ({item.shopifyProduct.handle}) from Shopify. This action cannot be undone.
+                                                                                This will permanently delete the variant with SKU "{item.sku}" from Shopify. This action cannot be undone.
                                                                             </AlertDialogDescription>
                                                                         </AlertDialogHeader>
                                                                         <AlertDialogFooter>
                                                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                            <AlertDialogAction onClick={() => handleDelete(item)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                                                                Yes, delete product
+                                                                            <AlertDialogAction onClick={() => handleDeleteVariant(item)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                                Yes, delete variant
                                                                             </AlertDialogAction>
                                                                         </AlertDialogFooter>
                                                                     </AlertDialogContent>
                                                                 </AlertDialog>
                                                             )}
+
                                                         </div>
                                                     </TableCell>
                                                 </TableRow>
                                             );
                                         })}
+                                         {notInCsv && isOnlyVariantNotInCsv && (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="text-right p-2">
+                                                         <AlertDialog>
+                                                            <AlertDialogTrigger asChild>
+                                                                <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Entire Product
+                                                                </Button>
+                                                            </AlertDialogTrigger>
+                                                            <AlertDialogContent>
+                                                                <AlertDialogHeader>
+                                                                    <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
+                                                                    <AlertDialogDescription>
+                                                                        All variants for "{productTitle}" are not in the CSV. This will permanently delete the entire product and its {items.length} variants from Shopify. This action cannot be undone.
+                                                                    </AlertDialogDescription>
+                                                                </AlertDialogHeader>
+                                                                <AlertDialogFooter>
+                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction onClick={() => handleDeleteProduct(items[0])} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                        Yes, delete product
+                                                                    </AlertDialogAction>
+                                                                </AlertDialogFooter>
+                                                            </AlertDialogContent>
+                                                        </AlertDialog>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
                                     </TableBody>
                                 </Table>
                             </AccordionContent>
@@ -599,4 +656,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </Card>
   );
 }
-
