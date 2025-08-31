@@ -297,10 +297,12 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
              if (!acc[item.sku]) {
                 acc[item.sku] = [];
             }
-            acc[item.sku].push(item);
+            // A single audit result for 'duplicate_in_shopify' contains all duplicated products.
+            // So we just need to assign it once.
+            acc[item.sku] = item.shopifyProducts;
         }
         return acc;
-      }, {} as Record<string, AuditResult[]>);
+      }, {} as Record<string, Product[]>);
   }, [filteredData, filter]);
 
 
@@ -887,11 +889,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const renderDuplicateReport = () => (
       <Accordion type="single" collapsible className="w-full">
           {paginatedHandleKeys.map((sku) => {
-              const items = groupedBySku[sku];
-              if (!items || items.length === 0) return null;
+              const products = groupedBySku[sku];
+              if (!products || products.length === 0) return null;
+              
+              const issueItem = filteredData.find(item => item.sku === sku && item.status === 'duplicate_in_shopify');
+              if(!issueItem) return null;
 
-              const issue = items[0]; // All items in this group share the same issue
-              const config = statusConfig[issue.status as Exclude<AuditStatus, 'matched'>];
+              const config = statusConfig.duplicate_in_shopify;
               
               return (
                   <AccordionItem value={sku} key={sku} className="border-b last:border-b-0">
@@ -900,7 +904,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                               <config.icon className="w-5 h-5 shrink-0 text-purple-500" />
                               <div className="flex-grow text-left">
                                   <p className="font-semibold">SKU: {sku}</p>
-                                  <p className="text-sm text-muted-foreground">This SKU is used in {issue.shopifyProducts.length} different products.</p>
+                                  <p className="text-sm text-muted-foreground">This SKU is used in {products.length} different products.</p>
                               </div>
                           </div>
                       </AccordionTrigger>
@@ -908,41 +912,62 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                           <Table>
                               <TableHeader>
                                   <TableRow>
-                                      <TableHead>Product Title</TableHead>
-                                      <TableHead>Product Handle</TableHead>
+                                      <TableHead>Product Title / Handle</TableHead>
+                                      <TableHead>Price</TableHead>
+                                      <TableHead>Stock</TableHead>
+                                      <TableHead>Status</TableHead>
                                       <TableHead className="text-right">Actions</TableHead>
                                   </TableRow>
                               </TableHeader>
                               <TableBody>
-                                  {issue.shopifyProducts.map(product => (
-                                      <TableRow key={product.id}>
-                                          <TableCell>{product.name}</TableCell>
-                                          <TableCell className="font-mono text-xs">{product.handle}</TableCell>
-                                          <TableCell className="text-right">
-                                               <AlertDialog>
-                                                  <AlertDialogTrigger asChild>
-                                                      <Button size="sm" variant="destructive" disabled={isFixing}>
-                                                          <Trash2 className="mr-2 h-4 w-4" /> Delete Product
-                                                      </Button>
-                                                  </AlertDialogTrigger>
-                                                  <AlertDialogContent>
-                                                      <AlertDialogHeader>
-                                                          <AlertDialogTitle>Delete this product?</AlertDialogTitle>
-                                                          <AlertDialogDescription>
-                                                              This will permanently delete the product "{product.name}" (handle: {product.handle}) from Shopify. This action cannot be undone.
-                                                          </AlertDialogDescription>
-                                                      </AlertDialogHeader>
-                                                      <AlertDialogFooter>
-                                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                          <AlertDialogAction onClick={() => handleDeleteProduct(issue, product)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                                              Yes, delete product
-                                                          </AlertDialogAction>
-                                                      </AlertDialogFooter>
-                                                  </AlertDialogContent>
-                                              </AlertDialog>
-                                          </TableCell>
-                                      </TableRow>
-                                  ))}
+                                  {products.map(product => {
+                                      const auditInfo = reportData.find(r => r.shopifyProducts.some(p => p.id === product.id) && r.sku === product.sku);
+                                      const hasMismatches = auditInfo && auditInfo.status === 'mismatched' && auditInfo.mismatches.length > 0;
+                                      
+                                      return (
+                                          <TableRow key={product.id} className={hasMismatches ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}>
+                                              <TableCell>
+                                                  <div className="font-medium">{product.name}</div>
+                                                  <div className="text-xs text-muted-foreground font-mono">{product.handle}</div>
+                                              </TableCell>
+                                              <TableCell>${product.price.toFixed(2)}</TableCell>
+                                              <TableCell>{product.inventory ?? 'N/A'}</TableCell>
+                                              <TableCell>
+                                                 {hasMismatches ? (
+                                                    <Badge variant="outline" className={statusConfig.mismatched.badgeClass}>
+                                                        <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
+                                                        Mismatched
+                                                    </Badge>
+                                                 ) : (
+                                                    <Badge variant="outline">Matched</Badge>
+                                                 )}
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                   <AlertDialog>
+                                                      <AlertDialogTrigger asChild>
+                                                          <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                              <Trash2 className="mr-2 h-4 w-4" /> Delete Product
+                                                          </Button>
+                                                      </AlertDialogTrigger>
+                                                      <AlertDialogContent>
+                                                          <AlertDialogHeader>
+                                                              <AlertDialogTitle>Delete this product?</AlertDialogTitle>
+                                                              <AlertDialogDescription>
+                                                                  This will permanently delete the product "{product.name}" (handle: {product.handle}) from Shopify. This action cannot be undone.
+                                                              </AlertDialogDescription>
+                                                          </AlertDialogHeader>
+                                                          <AlertDialogFooter>
+                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                              <AlertDialogAction onClick={() => handleDeleteProduct(issueItem, product)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                  Yes, delete product
+                                                              </AlertDialogAction>
+                                                          </AlertDialogFooter>
+                                                      </AlertDialogContent>
+                                                  </AlertDialog>
+                                              </TableCell>
+                                          </TableRow>
+                                      );
+                                  })}
                               </TableBody>
                           </Table>
                       </AccordionContent>
@@ -1180,4 +1205,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 }
 
     
+    
+
     
