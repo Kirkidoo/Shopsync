@@ -187,13 +187,13 @@ const HANDLES_PER_PAGE = 20;
 
 const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_sku'];
 
-export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: Summary, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
+export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: any, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [isFixing, startTransition] = useTransition();
   const { toast } = useToast();
   
   const [reportData, setReportData] = useState<AuditResult[]>(data);
-  const [reportSummary, setReportSummary] = useState<Summary>(summary);
+  const [reportSummary, setReportSummary] = useState<any>(summary);
   const [showRefresh, setShowRefresh] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
@@ -388,7 +388,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     
     setReportData(updatedData);
 
-    setReportSummary(prev => ({
+    setReportSummary((prev: any) => ({
         ...prev,
         missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
         matched: (prev.matched ?? 0) + itemsUpdatedCount,
@@ -419,7 +419,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       const itemsInHandle = reportData.filter(d => d.shopifyProduct?.handle === productToDelete.handle).length;
       const newData = reportData.filter(d => d.shopifyProduct?.handle !== productToDelete.handle);
       setReportData(newData);
-      setReportSummary(prev => ({
+      setReportSummary((prev: any) => ({
           ...prev,
           not_in_csv: prev.not_in_csv - itemsInHandle,
       }));
@@ -448,7 +448,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       const originalData = [...reportData];
       const newData = reportData.filter(d => d.sku !== item.sku);
       setReportData(newData);
-      setReportSummary(prev => ({
+      setReportSummary((prev: any) => ({
           ...prev,
           not_in_csv: prev.not_in_csv - 1,
       }));
@@ -613,7 +613,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     }
   }, [groupedByHandle, imageCounts, loadingImageCounts]);
 
-  const handleImageCountChange = useCallback((handle: string, count: number) => {
+  const onImageCountChange = useCallback((handle: string, count: number) => {
       setImageCounts(prev => ({...prev, [handle]: count}));
   }, []);
 
@@ -680,7 +680,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             {(['all', 'mismatched', 'missing_in_shopify', 'not_in_csv'] as const).map(f => {
                 const count = f === 'all' 
                     ? handleKeys.length // Use handleKeys length for 'all' to count groups
-                    : currentSummary[f];
+                    : currentSummary[f as Exclude<FilterType, 'all'>];
                 const config = statusConfig[f as keyof typeof statusConfig];
                 if (count === 0 && f !== 'all') return null;
 
@@ -798,32 +798,33 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
                              <AccordionHeader className="flex items-center p-3 text-left">
-                                {filter === 'mismatched' && (
-                                    <div className="px-1">
+                                <div className="flex items-center flex-grow gap-2">
+                                    {filter === 'mismatched' && (
                                         <Checkbox
                                             checked={selectedHandles.has(handle)}
                                             onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
                                             aria-label={`Select product ${handle}`}
+                                            onClick={(e) => e.stopPropagation()}
                                         />
-                                    </div>
-                                )}
-                                <AccordionTrigger className="flex-grow" disabled={isFixing}>
-                                    <div className="flex items-center gap-4 flex-grow">
-                                        <config.icon className={`w-5 h-5 shrink-0 ${
-                                            overallStatus === 'mismatched' ? 'text-yellow-500' 
-                                            : overallStatus === 'missing_in_shopify' ? 'text-red-500'
-                                            : 'text-blue-500'
-                                        }`} />
-                                        <div className="flex-grow text-left">
-                                            <p className="font-semibold">{productTitle}</p>
-                                            <p className="text-sm text-muted-foreground">{handle}</p>
+                                    )}
+                                    <AccordionTrigger className="flex-grow p-0" disabled={isFixing}>
+                                        <div className="flex items-center gap-4 flex-grow">
+                                            <config.icon className={`w-5 h-5 shrink-0 ${
+                                                overallStatus === 'mismatched' ? 'text-yellow-500' 
+                                                : overallStatus === 'missing_in_shopify' ? 'text-red-500'
+                                                : 'text-blue-500'
+                                            }`} />
+                                            <div className="flex-grow text-left">
+                                                <p className="font-semibold">{productTitle}</p>
+                                                <p className="text-sm text-muted-foreground">{handle}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                </AccordionTrigger>
-                                {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
-
-                                <div className="flex items-center gap-2 px-4">
-                                     {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
+                                    </AccordionTrigger>
+                                </div>
+                                
+                                <div className="flex items-center gap-2 pl-4">
+                                     {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
+                                    {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
                                         <Button size="sm" onClick={() => handleBulkFix(items.filter(i => i.status === 'mismatched'))} disabled={isFixing}>
                                             <Bot className="mr-2 h-4 w-4" />
                                             Fix All ({items.flatMap(i => i.mismatches).filter(m => m.field !== 'duplicate_sku').length})
@@ -845,7 +846,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             </DialogTrigger>
                                             <MediaManager 
                                                 productId={items[0].shopifyProduct!.id}
-                                                onImageCountChange={(count) => handleImageCountChange(handle, count)}
+                                                onImageCountChange={(count) => onImageCountChange(handle, count)}
                                                 initialImageCount={imageCounts[handle]}
                                             />
                                         </Dialog>
@@ -1033,3 +1034,5 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
+
+    
