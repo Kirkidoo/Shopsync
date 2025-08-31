@@ -60,10 +60,10 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
     }, [fetchMediaData]);
     
      useEffect(() => {
-        if (!isLoading && initialImageCount !== images.length) {
+        if (!isLoading) {
             onImageCountChange(images.length);
         }
-    }, [images.length, onImageCountChange, initialImageCount, isLoading]);
+    }, [images.length, onImageCountChange, isLoading]);
 
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
@@ -129,8 +129,7 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
             const result = await deleteImage(productId, imageId);
             if(result.success) {
                 toast({ title: 'Success!', description: 'Image has been deleted.' });
-                // Refetch all data to ensure UI is consistent
-                await fetchMediaData();
+                setImages(prevImages => prevImages.filter(img => img.id !== imageId));
             } else {
                  toast({ title: 'Error', description: result.message, variant: 'destructive' });
             }
@@ -149,17 +148,21 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         }
 
         startSubmitting(async () => {
+            const idsToDelete = Array.from(selectedImageIds);
             const results = await Promise.all(
-                Array.from(selectedImageIds).map(id => deleteImage(productId, id))
+                idsToDelete.map(id => deleteImage(productId, id))
             );
 
             const failed = results.filter(r => !r.success);
             if (failed.length > 0) {
                  toast({ title: 'Some Deletions Failed', description: `Could not delete ${failed.length} images. Please try again.`, variant: 'destructive' });
+                 // We will still refetch to get the accurate state
+                 await fetchMediaData();
             } else {
                 toast({ title: 'Success!', description: `${selectedImageIds.size} images have been deleted.` });
+                setImages(prevImages => prevImages.filter(img => !idsToDelete.includes(img.id)));
+                setSelectedImageIds(new Set());
             }
-            await fetchMediaData();
         });
     }
 
@@ -493,5 +496,3 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         </DialogContent>
     );
 }
-
-    
