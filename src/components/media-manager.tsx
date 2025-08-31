@@ -60,10 +60,10 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
     }, [fetchMediaData]);
     
      useEffect(() => {
-        if (initialImageCount !== images.length) {
+        if (!isLoading && initialImageCount !== images.length) {
             onImageCountChange(images.length);
         }
-    }, [images, onImageCountChange, initialImageCount]);
+    }, [images.length, onImageCountChange, initialImageCount, isLoading]);
 
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
@@ -128,8 +128,9 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         startSubmitting(async () => {
             const result = await deleteImage(productId, imageId);
             if(result.success) {
-                setImages(prev => prev.filter(img => img.id !== imageId));
                 toast({ title: 'Success!', description: 'Image has been deleted.' });
+                // Refetch all data to ensure UI is consistent
+                await fetchMediaData();
             } else {
                  toast({ title: 'Error', description: result.message, variant: 'destructive' });
             }
@@ -388,6 +389,24 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
                                                 checked={selectedImageIds.has(image.id)}
                                                 onCheckedChange={(checked) => handleImageSelection(image.id, !!checked)}
                                             />
+                                             <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button variant="destructive" size="icon" className="h-6 w-6 pointer-events-auto" disabled={isSubmitting}>
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader><AlertDialogTitle>Delete this image?</AlertDialogTitle></AlertDialogHeader>
+                                                    <AlertDialogDescription>
+                                                        This will permanently delete the image from Shopify. This action cannot be undone.
+                                                         {isAssigned && <span className="font-bold text-destructive-foreground mt-2 block">Warning: This image is assigned to {image.variant_ids.length} variant(s).</span>}
+                                                    </AlertDialogDescription>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => handleDeleteImage(image.id)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Delete Image</AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
                                             {isAssigned && (
                                                 <TooltipProvider>
                                                     <Tooltip>
