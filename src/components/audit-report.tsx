@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv, markMismatchAsFixed, getFixedMismatches, clearFixedMismatches } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight, FileText, Eye, Trash2, Search, Image as ImageIcon, FileWarning, Bot, Eraser, Check } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, Weight, FileText, Eye, Trash2, Search, Image as ImageIcon, FileWarning, Bot, Eraser, Check, Link } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -593,9 +593,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     const handle = value;
     if (imageCounts[handle] !== undefined || loadingImageCounts.has(handle)) return;
 
-    const item = groupedByHandle[handle]?.[0];
+    const item = filteredData.find(item => getHandle(item) === handle);
     const productId = item?.shopifyProduct?.id;
-
+    
     if (productId) {
       setLoadingImageCounts(prev => new Set(prev).add(handle));
       getProductWithImages(productId).then(data => {
@@ -611,7 +611,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         });
       });
     }
-  }, [groupedByHandle, imageCounts, loadingImageCounts]);
+  }, [filteredData, imageCounts, loadingImageCounts]);
+
 
   const onImageCountChange = useCallback((handle: string, count: number) => {
       setImageCounts(prev => ({...prev, [handle]: count}));
@@ -794,6 +795,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                          
                          const allVariantsForHandleInShopify = data.filter(d => d.shopifyProduct?.handle === handle);
                          const isOnlyVariantNotInCsv = notInCsv && allVariantsForHandleInShopify.length === items.length;
+                        
+                        const productId = items[0].shopifyProduct?.id;
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
@@ -830,7 +833,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                     )}
                                     <Badge variant="outline" className="w-[80px] justify-center">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
                                     
-                                    {items[0].shopifyProduct?.id && (
+                                    {productId && (
                                         <Dialog>
                                             <DialogTrigger asChild>
                                                 <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => e.stopPropagation()}>
@@ -843,8 +846,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                 </Button>
                                             </DialogTrigger>
                                             <MediaManager 
-                                                key={items[0].shopifyProduct!.id}
-                                                productId={items[0].shopifyProduct!.id}
+                                                key={productId}
+                                                productId={productId}
                                                 onImageCountChange={(count) => onImageCountChange(handle, count)}
                                                 initialImageCount={imageCounts[handle]}
                                             />
