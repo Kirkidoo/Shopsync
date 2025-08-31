@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useTransition, useMemo, useCallback } from 'react';
@@ -62,7 +63,7 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         if (initialImageCount !== images.length) {
             onImageCountChange(images.length);
         }
-    }, [images.length, onImageCountChange, initialImageCount]);
+    }, [images, onImageCountChange, initialImageCount]);
 
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
@@ -473,3 +474,5 @@ export function MediaManager({ productId, onImageCountChange, initialImageCount 
         </DialogContent>
     );
 }
+
+    

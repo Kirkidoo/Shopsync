@@ -797,17 +797,18 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
                         return (
                         <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
-                             <AccordionHeader className="flex items-center p-3 text-left">
-                                <div className="flex items-center flex-grow gap-2">
+                             <AccordionHeader>
+                                <div className="flex items-center flex-grow p-0">
                                     {filter === 'mismatched' && (
-                                        <Checkbox
-                                            checked={selectedHandles.has(handle)}
-                                            onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
-                                            aria-label={`Select product ${handle}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
+                                        <div className="p-3 pl-4">
+                                            <Checkbox
+                                                checked={selectedHandles.has(handle)}
+                                                onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                                                aria-label={`Select product ${handle}`}
+                                            />
+                                        </div>
                                     )}
-                                    <AccordionTrigger className="flex-grow p-0" disabled={isFixing}>
+                                    <AccordionTrigger className="flex-grow p-3 text-left" disabled={isFixing}>
                                         <div className="flex items-center gap-4 flex-grow">
                                             <config.icon className={`w-5 h-5 shrink-0 ${
                                                 overallStatus === 'mismatched' ? 'text-yellow-500' 
@@ -821,8 +822,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         </div>
                                     </AccordionTrigger>
                                 </div>
-                                
-                                <div className="flex items-center gap-2 pl-4">
+                                <div className="flex items-center gap-2 p-3">
                                      {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
                                     {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
                                         <Button size="sm" onClick={() => handleBulkFix(items.filter(i => i.status === 'mismatched'))} disabled={isFixing}>
@@ -1035,4 +1035,5 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   );
 }
 
+    
     
