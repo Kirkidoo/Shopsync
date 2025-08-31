@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useTransition, useEffect, useMemo, useCallback } from 'react';
@@ -1146,7 +1145,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
               checked={isAllOnPageSelected}
               onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
               aria-label="Select all items on this page"
-              indeterminate={isSomeOnPageSelected}
+              indeterminate={isSomeOnPageSelected || undefined}
             />
             <Label htmlFor="select-all-page" className="ml-2 text-sm font-medium">
               Select all on this page ({paginatedHandleKeys.length} items)
@@ -1203,8 +1202,5 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
-
-    
-    
 
     
