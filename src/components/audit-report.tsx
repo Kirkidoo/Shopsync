@@ -920,11 +920,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                               </TableHeader>
                               <TableBody>
                                   {products.map(product => {
-                                      const auditInfo = reportData.find(r => r.shopifyProducts.some(p => p.id === product.id) && r.sku === product.sku);
+                                      const auditInfo = reportData.find(r => r.shopifyProducts[0]?.variantId === product.variantId);
                                       const hasMismatches = auditInfo && auditInfo.status === 'mismatched' && auditInfo.mismatches.length > 0;
                                       
                                       return (
-                                          <TableRow key={product.id} className={hasMismatches ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}>
+                                          <TableRow key={product.variantId} className={hasMismatches ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}>
                                               <TableCell>
                                                   <div className="font-medium">{product.name}</div>
                                                   <div className="text-xs text-muted-foreground font-mono">{product.handle}</div>
@@ -1202,5 +1202,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
-
-    
