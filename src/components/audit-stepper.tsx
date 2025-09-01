@@ -121,7 +121,7 @@ export default function AuditStepper() {
             addLog(`Downloading and parsing ${selectedCsv}...`);
             const result = await runAudit(selectedCsv, ftpData);
             
-            if (result && result.report && result.summary && result.duplicates) {
+            if (result && result.report && result.summary && typeof result.duplicates !== 'undefined') {
                 addLog('Audit complete!');
                 setAuditData(result);
                 setTimeout(() => setStep('report'), 500);
@@ -188,7 +188,7 @@ export default function AuditStepper() {
             addLog('Generating audit report...');
             const result = await runBulkAuditComparison(csvProducts, shopifyProducts);
             
-            if (result && result.report && result.summary && result.duplicates) {
+            if (result && result.report && result.summary && typeof result.duplicates !== 'undefined') {
                 addLog('Report finished!');
                 setAuditData(result);
                 setTimeout(() => setStep('report'), 500);
