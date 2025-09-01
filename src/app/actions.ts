@@ -194,6 +194,11 @@ function findMismatches(csvProduct: Product, shopifyProduct: Product): MismatchD
 async function runAuditComparison(csvProducts: Product[], shopifyProducts: Product[]): Promise<{ report: AuditResult[], summary: any }> {
     const csvProductMap = new Map(csvProducts.map(p => [p.sku, p]));
     console.log(`Created map with ${csvProductMap.size} products from CSV.`);
+    
+    const csvHandleMap = new Map<string, number>();
+     csvProducts.forEach(p => {
+        csvHandleMap.set(p.handle, (csvHandleMap.get(p.handle) || 0) + 1);
+    });
 
     const shopifyProductMap = new Map<string, Product[]>();
     for (const p of shopifyProducts) {
@@ -203,8 +208,6 @@ async function runAuditComparison(csvProducts: Product[], shopifyProducts: Produ
         shopifyProductMap.get(p.sku)!.push(p);
     }
     console.log(`Created map with ${shopifyProductMap.size} unique SKUs from Shopify.`);
-
-    const shopifyHandleSet = new Set(shopifyProducts.map(p => p.handle));
     
     console.log('Running audit comparison logic...');
     let report: AuditResult[] = [];
@@ -265,7 +268,9 @@ async function runAuditComparison(csvProducts: Product[], shopifyProducts: Produ
             }
         } else {
             // --- MISSING IN SHOPIFY ---
-            const missingType = shopifyHandleSet.has(csvProduct.handle) ? 'variant' : 'product';
+            const variantsInHandle = csvHandleMap.get(csvProduct.handle) || 1;
+            const missingType = variantsInHandle > 1 ? 'product' : 'variant';
+
             report.push({
                 sku: csvProduct.sku,
                 csvProducts: [csvProduct],
