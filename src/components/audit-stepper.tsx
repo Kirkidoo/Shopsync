@@ -110,7 +110,6 @@ export default function AuditStepper() {
         if (isBulk) {
             result = await runBulkAudit(selectedCsv, ftpData, useCache, handleProgressCallback);
         } else {
-            handleProgressCallback('Processing file... This may take a moment for large files.');
             result = await runAudit(selectedCsv, ftpData);
         }
 
@@ -371,5 +370,3 @@ export default function AuditStepper() {
 
   return null;
 }
-
-    
