@@ -110,6 +110,7 @@ async function getCsvStreamFromFtp(csvFileName: string, ftpData: FormData): Prom
 async function parseCsvFromStream(stream: Readable): Promise<{products: Product[]}> {
     console.log('Parsing CSV from stream...');
     const records: Product[] = [];
+    const handledHandles = new Set<string>();
     
     const parser = stream.pipe(parse({
         columns: true,
@@ -137,12 +138,26 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
         const tagArray = tags ? tags.split(',').map((t: string) => t.trim()) : [];
         const productType = tagArray.length >= 3 ? tagArray[2] : null;
         
-        if (record.Handle && sku && record.Title && !isNaN(price)) {
+        let handle = record.Handle;
+        
+        // --- Handle Collision Logic ---
+        const option1Name = record['Option1 Name'] || null;
+        const option1Value = record['Option1 Value'] || null;
+        const isDefaultTitleVariant = option1Name === 'Title' && option1Value === 'Default Title';
+
+        if (handle && handledHandles.has(handle) && isDefaultTitleVariant) {
+            const newHandle = `${handle}-${sku}`;
+            console.log(`Handle collision detected for '${handle}'. Creating unique handle: '${newHandle}' for SKU ${sku}.`);
+            handle = newHandle;
+        }
+        // --- End Handle Collision Logic ---
+        
+        if (handle && sku && record.Title && !isNaN(price)) {
             records.push({
                 id: '', // Shopify only
                 variantId: '', // Shopify only
                 inventoryItemId: '', // Shopify only
-                handle: record.Handle,
+                handle: handle,
                 sku: sku,
                 name: record.Title,
                 price: price,
@@ -157,14 +172,15 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 weight: weight,
                 mediaUrl: record['Variant Image'] || null,
                 category: record.Category || null,
-                option1Name: record['Option1 Name'] || null,
-                option1Value: record['Option1 Value'] || null,
+                option1Name: option1Name,
+                option1Value: option1Value,
                 option2Name: record['Option2 Name'] || null,
                 option2Value: record['Option2 Value'] || null,
                 option3Name: record['Option3 Name'] || null,
                 option3Value: record['Option3 Value'] || null,
                 imageId: null, // Shopify only
             });
+            handledHandles.add(handle);
         }
     }
     console.log(`Parsed ${records.length} products from CSV.`);
