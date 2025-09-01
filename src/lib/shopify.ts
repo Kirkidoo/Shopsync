@@ -226,7 +226,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 
     let processedSkus = 0;
     for (const batch of skuBatches) {
-        const query = batch.map(sku => `sku:${JSON.stringify(sku)}`).join(' OR ');
+        const query = batch.map(sku => `sku:"${sku}"`).join(' OR ');
         
         try {
             await sleep(500); // Rate limiting

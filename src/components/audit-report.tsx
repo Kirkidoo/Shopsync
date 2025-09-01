@@ -440,12 +440,14 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
               .map(d => d.csvProducts[0])
               .filter((p): p is Product => p !== null);
           
+          const missingType = firstItemForHandle.mismatches[0]?.missingType ?? 'product';
+
           return {
               product: firstItemForHandle.csvProducts[0],
               allVariants: allVariantsForHandle,
-              missingType: 'product' as const // Bulk create is always for new products
+              missingType: missingType,
           };
-      }).filter((item): item is { product: Product; allVariants: Product[]; missingType: 'product' } => item !== null);
+      }).filter((item): item is { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' } => item !== null);
 
       if (itemsToCreate.length > 0) {
           handleBulkCreate(itemsToCreate);
@@ -634,6 +636,12 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setFixedMismatches(prev => new Set(prev).add(`${sku}-${field}`));
     toast({ title: 'Mismatch hidden', description: 'This mismatch will be hidden until you clear remembered fixes or run a new non-cached audit.' });
   };
+  
+  const handleMarkAsCreated = (handle: string) => {
+    markProductAsCreated(handle);
+    setCreatedProductHandles(prev => new Set(prev).add(handle));
+    toast({ title: 'Product hidden', description: 'This product will be hidden until you clear remembered fixes or run a new non-cached audit.' });
+  }
 
   const editingMissingMediaVariants = useMemo(() => {
     if (!editingMissingMedia) return [];
@@ -767,6 +775,26 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 Fix All ({items.flatMap(i => i.mismatches).filter(m => m.field !== 'duplicate_in_shopify').length})
                             </Button>
                         )}
+                         {isMissing && items[0].mismatches[0]?.missingType === 'product' && (
+                            <>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={(e) => {e.stopPropagation(); handleMarkAsCreated(handle);}} disabled={isFixing}>
+                                                <Check className="h-4 w-4" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Mark as created (hide from report)</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleCreate(items[0])}} disabled={isFixing}>
+                                    <PlusCircle className="mr-2 h-4 w-4" />
+                                    Create Product
+                                </Button>
+                            </>
+                        )}
                         <Badge variant="outline" className="w-[80px] justify-center">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
                         
                         {productId && (
@@ -855,12 +883,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                             <div className="flex justify-end items-center gap-2">
                                                 {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
                                                     <MissingProductDetailsDialog product={item.csvProducts[0]} />
-                                                )}
-                                                {isMissing && index === 0 && (
-                                                    <Button size="sm" onClick={() => handleCreate(item)} disabled={isFixing}>
-                                                        <PlusCircle className="mr-2 h-4 w-4" />
-                                                        Create Product
-                                                    </Button>
                                                 )}
                                                 
                                                  {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
@@ -1251,3 +1273,4 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
+

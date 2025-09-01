@@ -512,7 +512,7 @@ export async function createInShopify(
     fileName: string,
     missingType: 'product' | 'variant'
 ) {
-    console.log(`Attempting to create product/variant for Handle: ${product.handle}`);
+    console.log(`Attempting to create product/variant for Handle: ${product.handle}, Missing Type: ${missingType}`);
     
     // Final pre-creation check to prevent duplicates
     const skusToCreate = allVariantsForHandle.map(p => p.sku);
@@ -617,7 +617,7 @@ export async function createInShopify(
 
 
         revalidatePath('/');
-        return { success: true, message: `Successfully created ${missingType} for ${product.sku}`, createdProductData: createdProduct };
+        return { success: true, message: `Successfully created ${missingType} for ${product.handle}`, createdProductData: createdProduct };
     } catch (error) {
         console.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
@@ -632,11 +632,24 @@ export async function createMultipleInShopify(
     let successCount = 0;
     const itemResults = [];
 
-    for (const item of itemsToCreate) {
-        // A bulk creation should always be for a new product, not a single variant.
-        // We ensure this by only calling this function for 'product' types from the client.
-        if (item.missingType !== 'product') continue;
+    // Group items by handle, since we create one product per handle.
+    const groupedByHandle = itemsToCreate.reduce((acc, item) => {
+        const handle = item.product.handle;
+        if (!acc[handle]) {
+            acc[handle] = {
+                product: item.product,
+                allVariants: [],
+                missingType: 'product', // Bulk create is always for new products
+            };
+        }
+        acc[handle].allVariants = item.allVariants;
+        return acc;
+    }, {} as { [handle: string]: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' } });
 
+
+    for (const handle in groupedByHandle) {
+        const item = groupedByHandle[handle];
+        
         const result = await createInShopify(item.product, item.allVariants, fileName, 'product');
         
         if (result.success) {
@@ -649,8 +662,9 @@ export async function createMultipleInShopify(
     if (successCount > 0) {
         revalidatePath('/');
     }
-
-    const message = `Attempted to create ${itemsToCreate.length} products. Successfully created ${successCount}.`;
+    
+    const totalProductsToCreate = Object.keys(groupedByHandle).length;
+    const message = `Attempted to create ${totalProductsToCreate} products. Successfully created ${successCount}.`;
     console.log(message);
     return { success: true, message, results: itemResults };
 }
