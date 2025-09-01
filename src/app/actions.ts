@@ -259,6 +259,7 @@ async function runAuditComparison(csvProducts: Product[], shopifyProducts: Produ
                     report.push({ sku: csvProduct.sku, csvProducts: [csvProduct], shopifyProducts: [shopifyProduct], status: 'mismatched', mismatches });
                     summary.mismatched++;
                 } else {
+                    report.push({ sku: csvProduct.sku, csvProducts: [csvProduct], shopifyProducts: [shopifyProduct], status: 'matched', mismatches: [] });
                     matchedCount++;
                 }
             }
@@ -301,9 +302,22 @@ async function runAuditComparison(csvProducts: Product[], shopifyProducts: Produ
     });
     console.log('Audit comparison complete. Matched:', matchedCount, 'Summary:', summary);
 
-    // Don't filter out 'matched' here, as we need them for the duplicate report.
-    // The UI will handle filtering what to show.
-    return { report, summary: { ...summary, matched: matchedCount } };
+    // This is a list of all SKUs that have been identified as duplicates in Shopify.
+    const duplicateSkuSet = new Set(
+      report.filter(r => r.status === 'duplicate_in_shopify').map(r => r.sku)
+    );
+
+    // Filter out 'matched' items unless they are part of a duplicate issue.
+    const finalReport = report.filter(item => {
+        if (item.status === 'matched') {
+            // If the item is matched, only keep it if its SKU is in our set of duplicates.
+            return duplicateSkuSet.has(item.sku);
+        }
+        // Keep all other non-matched items.
+        return true;
+    });
+
+    return { report: finalReport, summary: { ...summary, matched: matchedCount } };
 }
 
 
@@ -760,3 +774,5 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
     
 
     
+
+      
