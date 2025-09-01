@@ -12,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -424,6 +424,67 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     });
   };
 
+  const handleBulkCreate = (itemsToCreate: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' }[]) => {
+      setShowRefresh(true);
+
+      const handlesToUpdate = new Set(itemsToCreate.map(item => item.product.handle));
+      const originalData = [...reportData];
+      let itemsUpdatedCount = 0;
+
+      const updatedData = reportData.filter(d => {
+          const handle = d.csvProducts[0]?.handle;
+          const shouldRemove = handle && handlesToUpdate.has(handle) && d.status === 'missing_in_shopify';
+          if (shouldRemove) {
+              itemsUpdatedCount++;
+          }
+          return !shouldRemove;
+      });
+
+      setReportData(updatedData);
+      setReportSummary((prev: any) => ({
+          ...prev,
+          missing_in_shopify: prev.missing_in_shopify - itemsUpdatedCount,
+          matched: (prev.matched ?? 0) + itemsUpdatedCount,
+      }));
+      setSelectedHandles(new Set());
+
+      startTransition(async () => {
+          const result = await createMultipleInShopify(itemsToCreate, fileName);
+          if (result.success) {
+              toast({ title: 'Bulk Create Complete!', description: result.message });
+          } else {
+              toast({ title: 'Bulk Create Failed', description: result.message, variant: 'destructive' });
+              setReportData(originalData); // Revert on failure
+              setReportSummary(summary);
+          }
+      });
+  };
+  
+  const handleCreateSelected = () => {
+      const itemsToCreate = Array.from(selectedHandles).map(handle => {
+          const firstItemForHandle = reportData.find(d => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify');
+          if (!firstItemForHandle || !firstItemForHandle.csvProducts[0]) return null;
+          
+          const allVariantsForHandle = reportData
+              .filter(d => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify')
+              .map(d => d.csvProducts[0])
+              .filter((p): p is Product => p !== null);
+          
+          return {
+              product: firstItemForHandle.csvProducts[0],
+              allVariants: allVariantsForHandle,
+              missingType: 'product' as const // Bulk create is always for new products
+          };
+      }).filter((item): item is { product: Product; allVariants: Product[]; missingType: 'product' } => item !== null);
+
+      if (itemsToCreate.length > 0) {
+          handleBulkCreate(itemsToCreate);
+      } else {
+          toast({ title: "No items to create", description: "Please select products to create.", variant: "destructive" });
+      }
+  };
+
+
   const handleDeleteProduct = (item: AuditResult, productToDelete?: Product) => {
       const product = productToDelete || item.shopifyProducts[0];
       if (!product || !product.id) {
@@ -667,10 +728,12 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   }, [paginatedHandleKeys, selectedHandles]);
 
   useEffect(() => {
-    if (selectAllCheckboxRef.current) {
-      selectAllCheckboxRef.current.indeterminate = isSomeOnPageSelected;
+    const checkbox = selectAllCheckboxRef.current;
+    if (checkbox) {
+        checkbox.setAttribute('data-state', isAllOnPageSelected ? 'checked' : (isSomeOnPageSelected ? 'indeterminate' : 'unchecked'));
     }
-  }, [isSomeOnPageSelected]);
+  }, [isAllOnPageSelected, isSomeOnPageSelected]);
+
 
   const renderRegularReport = () => (
     <Accordion type="single" collapsible className="w-full" onValueChange={handleAccordionChange}>
@@ -702,12 +765,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             return (
             <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
                 <AccordionHeader className="flex items-center p-0">
-                    {filter === 'mismatched' && (
+                    {(filter === 'mismatched' || filter === 'missing_in_shopify') && (
                         <div className="p-3 pl-4">
                             <Checkbox
                                 checked={selectedHandles.has(handle)}
                                 onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
                                 aria-label={`Select product ${handle}`}
+                                disabled={isFixing || (filter === 'missing_in_shopify' && items[0].mismatches[0]?.missingType === 'variant')}
                             />
                         </div>
                     )}
@@ -754,7 +818,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 />
                             </Dialog>
                         )}
-                        {isMissing && (
+                        {isMissing && items[0].mismatches[0]?.missingType === 'product' && (
                             <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}}>
                                 <ImageIcon className="mr-2 h-4 w-4" />
                                 Manage Media
@@ -806,7 +870,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                 }
                                                 {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
                                                     <p className="text-sm text-muted-foreground">
-                                                        This SKU is in your CSV but is a{' '}
+                                                        This SKU is a{' '}
                                                         <span className="font-semibold text-foreground">
                                                             {item.mismatches[0]?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
                                                         </span>.
@@ -1144,9 +1208,15 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                     Fix {selectedHandles.size} Selected
                 </Button>
             )}
+            {filter === 'missing_in_shopify' && selectedHandles.size > 0 && (
+                <Button onClick={handleCreateSelected} disabled={isFixing} className="w-full md:w-auto">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Create {selectedHandles.size} Selected
+                </Button>
+            )}
         </div>
 
-        {filter === 'mismatched' && paginatedHandleKeys.length > 0 && (
+        {(filter === 'mismatched' || filter === 'missing_in_shopify') && paginatedHandleKeys.length > 0 && (
           <div className="flex items-center border-t border-b px-4 py-2 bg-muted/50">
             <Checkbox
               ref={selectAllCheckboxRef}

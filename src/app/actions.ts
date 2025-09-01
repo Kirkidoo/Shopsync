@@ -11,7 +11,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const FTP_DIRECTORY = '/Gamma_Product_Files/Shopify_Files/';
-const GAMMA_WAREHOUSE_LOCATION_ID = 93998154045;
+const GAMMA_WAREhouse_LOCATION_ID = 93998154045;
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILE_PATH = path.join(CACHE_DIR, 'shopify-bulk-export.jsonl');
 const CACHE_INFO_PATH = path.join(CACHE_DIR, 'cache-info.json');
@@ -136,6 +136,9 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
         
         if (record.Handle && sku && record.Title && !isNaN(price)) {
             records.push({
+                id: '', // Shopify only
+                variantId: '', // Shopify only
+                inventoryItemId: '', // Shopify only
                 handle: record.Handle,
                 sku: sku,
                 name: record.Title,
@@ -157,9 +160,6 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
                 option2Value: record['Option2 Value'] || null,
                 option3Name: record['Option3 Name'] || null,
                 option3Value: record['Option3 Value'] || null,
-                id: '', // Shopify only
-                variantId: '', // Shopify only
-                inventoryItemId: '', // Shopify only
                 imageId: null, // Shopify only
             });
         }
@@ -195,8 +195,6 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
     const csvProductMap = new Map(csvProducts.map(p => [p.sku, p]));
     console.log(`Created map with ${csvProductMap.size} products from CSV.`);
     
-    const shopifyHandleSet = new Set(shopifyProducts.map(p => p.handle));
-
     const shopifyProductMap = new Map<string, Product[]>();
     for (const p of shopifyProducts) {
         if (!shopifyProductMap.has(p.sku)) {
@@ -206,6 +204,9 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
     }
     console.log(`Created map with ${shopifyProductMap.size} unique SKUs from Shopify.`);
     
+    // Create a Set of all handles that exist in Shopify for efficient lookup.
+    const shopifyHandleSet = new Set(shopifyProducts.map(p => p.handle));
+
     console.log('Running audit comparison logic...');
     let report: AuditResult[] = [];
     let matchedCount = 0;
@@ -265,6 +266,8 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
             }
         } else {
             // --- MISSING IN SHOPIFY ---
+            // A product is a new 'product' if its handle does not exist in Shopify at all.
+            // It is a new 'variant' if its handle *does* already exist.
             const missingType = shopifyHandleSet.has(csvProduct.handle) ? 'variant' : 'product';
 
             report.push({
@@ -322,13 +325,15 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
 }
 
 
-export async function runAudit(csvFileName: string, ftpData: FormData): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] }> {
+export async function runAudit(csvFileName: string, ftpData: FormData, onProgress: (message: string) => void): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] }> {
   console.log(`Starting audit for file: ${csvFileName}`);
   
   let csvProducts: Product[] = [];
 
   try {
+    onProgress(`Downloading ${csvFileName} from FTP...`);
     const readableStream = await getCsvStreamFromFtp(csvFileName, ftpData);
+    onProgress('Parsing CSV file...');
     const parsedData = await parseCsvFromStream(readableStream);
     csvProducts = parsedData.products;
   } catch (error) {
@@ -340,11 +345,14 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
     console.log('No products found in the CSV file. Aborting audit.');
     throw new Error('No products with valid Handle, SKU, Title, and Price found in the CSV file.');
   }
+  onProgress(`Found ${csvProducts.length} products in CSV.`);
 
   const skusFromCsv = csvProducts.map(p => p.sku);
-  console.log(`Fetching ${skusFromCsv.length} products from Shopify based on CSV SKUs...`);
+  onProgress(`Fetching ${skusFromCsv.length} product variants from Shopify...`);
   const shopifyProducts = await getShopifyProductsBySku(skusFromCsv);
+  onProgress(`Found ${shopifyProducts.length} matching variants in Shopify.`);
   
+  onProgress('Comparing CSV and Shopify data...');
   const { report, summary } = await runAuditComparison(csvProducts, shopifyProducts);
 
   const finalReport = report.filter(item => item.status !== 'matched' && item.status !== 'duplicate_in_shopify');
@@ -444,7 +452,7 @@ async function _fixSingleMismatch(
                 break;
             case 'inventory':
                  if (fixPayload.inventoryItemId && fixPayload.inventory !== null) {
-                    await updateInventoryLevel(fixPayload.inventoryItemId, fixPayload.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
+                    await updateInventoryLevel(fixPayload.inventoryItemId, fixPayload.inventory, GAMMA_WAREhouse_LOCATION_ID);
                 }
                 break;
             case 'h1_tag':
@@ -577,11 +585,11 @@ export async function createInShopify(
             const inventoryItemIdGid = `gid://shopify/InventoryItem/${variant.inventory_item_id}`;
 
             if (sourceVariant.inventory !== null && inventoryItemIdGid) {
-                console.log(`Connecting inventory item ${inventoryItemIdGid} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`);
-                await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREHOUSE_LOCATION_ID);
+                console.log(`Connecting inventory item ${inventoryItemIdGid} to location ${GAMMA_WAREhouse_LOCATION_ID}...`);
+                await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREhouse_LOCATION_ID);
                 
                 console.log('Setting inventory level...');
-                await updateInventoryLevel(inventoryItemIdGid, sourceVariant.inventory, GAMMA_WAREHOUSE_LOCATION_ID);
+                await updateInventoryLevel(inventoryItemIdGid, sourceVariant.inventory, GAMMA_WAREhouse_LOCATION_ID);
 
                 if (garageLocation) {
                     console.log(`Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`);
@@ -617,6 +625,36 @@ export async function createInShopify(
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         return { success: false, message };
     }
+}
+
+export async function createMultipleInShopify(
+    itemsToCreate: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' }[],
+    fileName: string
+): Promise<{ success: boolean; message: string, results: any[] }> {
+    let successCount = 0;
+    const itemResults = [];
+
+    for (const item of itemsToCreate) {
+        // A bulk creation should always be for a new product, not a single variant.
+        // We ensure this by only calling this function for 'product' types from the client.
+        if (item.missingType !== 'product') continue;
+
+        const result = await createInShopify(item.product, item.allVariants, fileName, 'product');
+        
+        if (result.success) {
+            successCount++;
+        }
+        itemResults.push({ handle: item.product.handle, ...result });
+        await sleep(600); // Add delay between each product creation to avoid rate limiting
+    }
+
+    if (successCount > 0) {
+        revalidatePath('/');
+    }
+
+    const message = `Attempted to create ${itemsToCreate.length} products. Successfully created ${successCount}.`;
+    console.log(message);
+    return { success: true, message, results: itemResults };
 }
 
 export async function deleteFromShopify(productId: string) {
@@ -710,7 +748,7 @@ export async function addImageFromUrl(productId: string, imageUrl: string): Prom
     }
 }
 
-export async function assignImageToVariant(variantId: string, imageId: number): Promise<{ success: boolean; message: string }> {
+export async function assignImageToVariant(variantId: string, imageId: number | null): Promise<{ success: boolean; message: string }> {
      try {
         await sleep(600); // Add delay to prevent rate limiting
         const numericVariantId = parseInt(variantId.split('/').pop() || '0', 10);
@@ -741,36 +779,4 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
         return { success: false, message };
     }
 }
-    
-
-    
-
-
-
-
-    
-
-    
-
-    
-
-    
-
-    
-
-
-
-
-    
-
-    
-
-      
-
-    
-
-    
-
-    
-
     
