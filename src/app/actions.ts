@@ -126,7 +126,10 @@ async function parseCsvFromStream(stream: Readable): Promise<{products: Product[
         const compareAtPrice = compareAtPriceText && !isNaN(parseFloat(compareAtPriceText)) ? parseFloat(compareAtPriceText) : null;
 
         const costPerItemText = record['Cost Per Item'];
-        const costPerItem = costPerItemText && !isNaN-n(parseFloat(costPerItemText)) ? parseFloat(costPerItemText) : null;
+        let costPerItem = costPerItemText ? parseFloat(costPerItemText) : null;
+        if (isNaN(costPerItem as any)) {
+            costPerItem = null;
+        }
 
         const weight = record['Variant Grams'] ? parseFloat(record['Variant Grams']) : null;
         
@@ -325,15 +328,11 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
 }
 
 
-export async function runAudit(csvFileName: string, ftpData: FormData, onProgress: (message: string) => void): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] }> {
-  onProgress(`Starting audit for file: ${csvFileName}`);
-  
+export async function runAudit(csvFileName: string, ftpData: FormData): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] }> {
   let csvProducts: Product[] = [];
 
   try {
-    onProgress(`Downloading ${csvFileName} from FTP...`);
     const readableStream = await getCsvStreamFromFtp(csvFileName, ftpData);
-    onProgress('Parsing CSV file...');
     const parsedData = await parseCsvFromStream(readableStream);
     csvProducts = parsedData.products;
   } catch (error) {
@@ -345,16 +344,11 @@ export async function runAudit(csvFileName: string, ftpData: FormData, onProgres
     console.log('No products found in the CSV file. Aborting audit.');
     throw new Error('No products with valid Handle, SKU, Title, and Price found in the CSV file.');
   }
-  onProgress(`Found ${csvProducts.length} products in CSV.`);
 
-  onProgress(`Fetching product variants from Shopify...`);
   const allShopifyProducts = await getShopifyProductsFromCache(); // This will read from cache
-  onProgress(`Found ${allShopifyProducts.length} total variants in Shopify cache.`);
   
-  onProgress('Comparing CSV and Shopify data...');
   const { report, summary } = await runAuditComparison(csvProducts, allShopifyProducts);
 
-  onProgress('Audit Complete!');
   const duplicatesForCard: DuplicateSku[] = report
     .filter(d => d.status === 'duplicate_in_shopify')
     .map(d => ({ sku: d.sku, count: d.shopifyProducts.length }));
@@ -784,3 +778,5 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
     }
 }
     
+
+      
