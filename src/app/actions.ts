@@ -503,7 +503,8 @@ export async function fixMultipleMismatches(items: AuditResult[]): Promise<{ suc
 export async function createInShopify(
     product: Product,
     allVariantsForHandle: Product[],
-    fileName: string
+    fileName: string,
+    missingType: 'product' | 'variant'
 ) {
     console.log(`Attempting to create product/variant for Handle: ${product.handle}`);
     
@@ -519,8 +520,6 @@ export async function createInShopify(
     }
     console.log('Final check passed. No existing SKUs found.');
 
-
-    const missingType = allVariantsForHandle.length > 1 ? 'product' : 'variant';
     try {
         let createdProduct;
         const addClearanceTag = fileName.toLowerCase().includes('clearance');

@@ -413,7 +413,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
 
     startTransition(async () => {
-        const result = await createInShopify(productToCreate, allVariantsForHandle, fileName);
+        const result = await createInShopify(productToCreate, allVariantsForHandle, fileName, missingType);
         if (result.success) {
             toast({ title: 'Success!', description: result.message });
         } else {
@@ -667,9 +667,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   }, [paginatedHandleKeys, selectedHandles]);
 
   useEffect(() => {
-      if (selectAllCheckboxRef.current) {
-          selectAllCheckboxRef.current.indeterminate = isSomeOnPageSelected;
-      }
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = isSomeOnPageSelected;
+    }
   }, [isSomeOnPageSelected]);
 
   const renderRegularReport = () => (
