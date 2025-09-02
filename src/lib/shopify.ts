@@ -227,7 +227,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 
     let processedSkusCount = 0;
     for (const batch of skuBatches) {
-        const query = batch.map(sku => `sku:${sku}`).join(' OR '); // Use non-quoted SKU for broader match
+        const query = batch.map(sku => `sku:"${sku}"`).join(' OR ');
         
         try {
             await sleep(500); // Rate limiting
@@ -297,7 +297,6 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
         }
     }
     
-    // Post-fetch filtering for exact SKU match
     const exactMatchProducts = allProducts.filter(p => requestedSkuSet.has(p.sku));
     
     console.log(`Finished fetching. Found ${allProducts.length} potential matches, ${exactMatchProducts.length} exact matches.`);
@@ -341,24 +340,20 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
 
     const getOptionValue = (value: string | null | undefined, fallback: string | null) => (value?.trim() ? value.trim() : fallback);
 
-    // --- Duplicate Variant Option Handling ---
-    const processedVariants = [...productVariants]; // Create a mutable copy
+    const processedVariants = [...productVariants];
     const seenOptionValues = new Set<string>();
 
     for (const variant of processedVariants) {
         const optionKey = [variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/');
         if (seenOptionValues.has(optionKey) && optionKey !== "") {
             console.log(`Duplicate option values found for "${optionKey}". Uniquifying with SKU.`);
-            // Uniquify by appending SKU. This logic assumes Option1 is the primary one being duplicated.
             if (variant.option1Value) {
                 variant.option1Value = `${variant.option1Value}-${variant.sku}`;
             }
         }
         seenOptionValues.add([variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/'));
     }
-    // --- End Duplicate Handling ---
 
-    // Determine unique option names from the first variant
     const optionNames: string[] = [];
     if (firstVariant.option1Name && !isSingleDefaultVariant) optionNames.push(firstVariant.option1Name);
     if (firstVariant.option2Name) optionNames.push(firstVariant.option2Name);
@@ -413,7 +408,6 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
         productPayload.product.options = restOptions;
     }
 
-    // Assign heavy product template if weight > 50 lbs (22679.6 grams)
     const isHeavy = productVariants.some(p => p.weight && p.weight > 22679.6);
     if (isHeavy) {
         productPayload.product.template_suffix = 'heavy-products';
@@ -838,8 +832,8 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
                                     id
                                     sku
                                     price
-                                    inventoryQuantity
                                     weight
+                                    inventoryQuantity
                                     inventoryItem {
                                         id
                                     }
