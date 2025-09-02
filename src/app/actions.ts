@@ -356,7 +356,7 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
 }
 
 
-export async function runAudit(csvFileName: string, ftpData: FormData): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] }> {
+export async function runAudit(csvFileName: string, ftpData: FormData): Promise<{ report: AuditResult[], summary: any, duplicates: DuplicateSku[] } | null> {
   let csvProducts: Product[] = [];
 
   try {
@@ -375,6 +375,8 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
 
   const allShopifyProducts = await getShopifyProductsFromCache(); // This will read from cache
   
+  if (!allShopifyProducts) return null;
+
   const { report, summary } = await runAuditComparison(csvProducts, allShopifyProducts);
 
   const duplicatesForCard: DuplicateSku[] = report
@@ -397,7 +399,7 @@ export async function checkBulkCacheStatus(): Promise<{ lastModified: string | n
 
 // --- BULK AUDIT - REFACTORED ACTIONS ---
 
-export async function getCsvProducts(csvFileName: string, ftpData: FormData): Promise<Product[]> {
+export async function getCsvProducts(csvFileName: string, ftpData: FormData): Promise<Product[] | null> {
     try {
         const readableStream = await getCsvStreamFromFtp(csvFileName, ftpData);
         const parsedData = await parseCsvFromStream(readableStream);
@@ -411,13 +413,14 @@ export async function getCsvProducts(csvFileName: string, ftpData: FormData): Pr
     }
 }
 
-export async function getShopifyProductsFromCache(): Promise<Product[]> {
+export async function getShopifyProductsFromCache(): Promise<Product[] | null> {
     try {
         const fileContent = await fs.readFile(CACHE_FILE_PATH, 'utf-8');
         return await parseBulkOperationResult(fileContent);
     } catch (error) {
         console.error("Failed to read or parse cache file.", error);
-        throw new Error("Could not read the cache file. Please start a new bulk operation.");
+        // This is not a throw-worthy error, it just means we need to fetch.
+        return null;
     }
 }
 
@@ -429,8 +432,9 @@ export async function checkBulkOperationStatus(id: string): Promise<{ id: string
     return await checkShopifyBulkOpStatus(id);
 }
 
-export async function getBulkOperationResultAndParse(url: string): Promise<Product[]> {
+export async function getBulkOperationResultAndParse(url: string): Promise<Product[] | null> {
     const resultJsonl = await getBulkOperationResult(url);
+     if (!resultJsonl) return null;
     await ensureCacheDirExists();
     await fs.writeFile(CACHE_FILE_PATH, resultJsonl);
     await fs.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
@@ -849,4 +853,3 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
     
 
     
-

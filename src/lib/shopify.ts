@@ -42,6 +42,7 @@ const GET_PRODUCTS_BY_SKU_QUERY = `
                 price
                 inventoryQuantity
                 weight
+                weightUnit
                 inventoryItem {
                     id
                 }
@@ -194,7 +195,7 @@ function getShopifyRestClient() {
       apiSecretKey: 'dummy',
       scopes: ['read_products', 'write_products', 'read_inventory', 'write_inventory', 'read_locations'],
       hostName: 'dummy.ngrok.io',
-      apiVersion: LATEST_API_VERSION,
+      apiVersion: LATEST_4_API_VERSION,
       isEmbeddedApp: false,
       maxRetries: 3,
     });
@@ -210,6 +211,15 @@ function getShopifyRestClient() {
 }
 
 // --- Data Fetching Functions ---
+
+const convertWeightToGrams = (weight: number | null | undefined, unit: string | null | undefined): number | null => {
+    if (weight === null || weight === undefined) return null;
+    if (unit === 'GRAMS') return weight;
+    if (unit === 'KILOGRAMS') return weight * 1000;
+    if (unit === 'POUNDS') return weight * 453.592;
+    if (unit === 'OUNCES') return weight * 28.3495;
+    return weight; // Default to returning the value if unit is unknown or missing
+};
 
 export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]> {
     console.log(`Starting to fetch ${skus.length} products from Shopify by SKU.`);
@@ -269,7 +279,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             compareAtPrice: null,
                             costPerItem: null,
                             barcode: null,
-                            weight: variant.weight || null,
+                            weight: convertWeightToGrams(variant.weight, variant.weightUnit),
                             mediaUrl: productEdge.node.featuredImage?.url || null,
                             imageId: variant.image?.id ? parseInt(variant.image.id.split('/').pop(), 10) : null,
                             category: null,
@@ -345,7 +355,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
 
     for (const variant of processedVariants) {
         const optionKey = [variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/');
-        if (seenOptionValues.has(optionKey) && optionKey !== "") {
+        if (seenOptionValues.has(optionKey) && optionKey !== "" && optionKey !== "Default Title") {
             console.log(`Duplicate option values found for "${optionKey}". Uniquifying with SKU.`);
             if (variant.option1Value) {
                 variant.option1Value = `${variant.option1Value}-${variant.sku}`;
@@ -833,6 +843,8 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
                                     sku
                                     price
                                     inventoryQuantity
+                                    weight
+                                    weightUnit
                                     inventoryItem {
                                         id
                                     }
@@ -971,7 +983,7 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
                     compareAtPrice: null,
                     costPerItem: null,
                     barcode: null,
-                    weight: null, // Weight is not available in the bulk product export
+                    weight: convertWeightToGrams(shopifyProduct.weight, shopifyProduct.weightUnit),
                     mediaUrl: null, // Note: Bulk export doesn't easily link variant images
                     imageId: shopifyProduct.image?.id ? parseInt(shopifyProduct.image.id.split('/').pop(), 10) : null,
                     category: null,
