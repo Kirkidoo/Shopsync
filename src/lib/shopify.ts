@@ -228,7 +228,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
     let processedSkusCount = 0;
     for (const batch of skuBatches) {
         // The query remains broad to fetch potential matches.
-        const query = batch.map(sku => `sku:${sku}`).join(' OR ');
+        const query = batch.map(sku => `sku:"${sku}"`).join(' OR ');
         
         try {
             await sleep(500); // Rate limiting
@@ -377,8 +377,8 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
             inventory_management: 'shopify',
             inventory_policy: 'deny',
             requires_shipping: true,
-            weight: p.weight ? p.weight / 453.592 : 0, // Convert grams to lbs
-            weight_unit: 'lb',
+            weight: p.weight,
+            weight_unit: 'g',
             cost: p.costPerItem,
         };
 
@@ -474,8 +474,8 @@ export async function addProductVariant(product: Product): Promise<any> {
         compare_at_price: product.compareAtPrice,
         cost: product.costPerItem,
         barcode: product.barcode,
-        weight: product.weight ? product.weight / 453.592 : 0, // Convert grams to lbs
-        weight_unit: 'lb',
+        weight: product.weight,
+        weight_unit: 'g',
         inventory_management: 'shopify',
         inventory_policy: 'deny',
         option1: getOptionValue(product.option1Value, product.sku),
@@ -508,9 +508,9 @@ export async function addProductVariant(product: Product): Promise<any> {
 }
 
 
-export async function updateProduct(id: string, input: { title?: string, bodyHtml?: string }) {
+export async function updateProduct(id: string, input: { title?: string, bodyHtml?: string, templateSuffix?: string }) {
     // If we are only updating the title, we can use the more efficient GraphQL mutation
-    if (input.title && !input.bodyHtml) {
+    if (input.title && !input.bodyHtml && !input.templateSuffix) {
         const shopifyClient = getShopifyGraphQLClient();
         const response: any = await shopifyClient.query({
             data: {
@@ -526,24 +526,23 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
         return response.body.data?.productUpdate?.product;
     }
     
-    // For other updates, like bodyHtml, use the REST API
+    // For other updates, like bodyHtml or template, use the REST API
     const shopifyClient = getShopifyRestClient();
     const numericProductId = id.split('/').pop();
 
     if (!numericProductId) {
         throw new Error(`Invalid Product ID GID for REST update: ${id}`);
     }
-
-    const payload = {
+    
+    const payload: {product: any} = {
         product: {
-            id: numericProductId,
-            body_html: input.bodyHtml,
+            id: numericProductId
         }
     };
     
-    if (input.title) {
-        (payload.product as any).title = input.title;
-    }
+    if (input.bodyHtml) payload.product.body_html = input.bodyHtml;
+    if (input.title) payload.product.title = input.title;
+    if (input.templateSuffix) payload.product.template_suffix = input.templateSuffix;
 
     try {
         const response: any = await shopifyClient.put({
@@ -563,7 +562,7 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
 }
 
 
-export async function updateProductVariant(variantId: number, input: { image_id?: number, price?: number }) {
+export async function updateProductVariant(variantId: number, input: { image_id?: number | null, price?: number, weight?: number, weight_unit?: 'g' | 'lb' }) {
     const shopifyClient = getShopifyRestClient();
     
     const payload = { variant: { id: variantId, ...input }};

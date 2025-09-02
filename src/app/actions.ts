@@ -197,6 +197,9 @@ function findMismatches(csvProduct: Product, shopifyProduct: Product): MismatchD
     if (csvProduct.price !== shopifyProduct.price) {
         mismatches.push({ field: 'price', csvValue: csvProduct.price, shopifyValue: shopifyProduct.price });
     }
+     if (csvProduct.weight && (!shopifyProduct.weight || shopifyProduct.weight === 0)) {
+        mismatches.push({ field: 'weight', csvValue: csvProduct.weight, shopifyValue: shopifyProduct.weight });
+    }
 
     if (csvProduct.inventory !== null && csvProduct.inventory !== shopifyProduct.inventory) {
         const isCappedInventory = csvProduct.inventory > 10 && shopifyProduct.inventory === 10;
@@ -210,7 +213,7 @@ function findMismatches(csvProduct: Product, shopifyProduct: Product): MismatchD
     }
 
     // Heavy product check: weight > 50lbs (22679.6 grams)
-    if (shopifyProduct.weight && shopifyProduct.weight > 22679.6) {
+    if (csvProduct.weight && csvProduct.weight > 22679.6) {
         if (shopifyProduct.templateSuffix !== 'heavy-products') {
             mismatches.push({ field: 'heavy_product_template', csvValue: 'heavy-products', shopifyValue: shopifyProduct.templateSuffix || 'none' });
         }
@@ -476,6 +479,14 @@ async function _fixSingleMismatch(
             case 'inventory':
                  if (fixPayload.inventoryItemId && fixPayload.inventory !== null) {
                     await updateInventoryLevel(fixPayload.inventoryItemId, fixPayload.inventory, GAMMA_WAREhouse_LOCATION_ID);
+                }
+                break;
+            case 'weight':
+                 if (fixPayload.variantId && fixPayload.weight) {
+                    const numericVariantId = parseInt(fixPayload.variantId.split('/').pop() || '0', 10);
+                    if (numericVariantId) {
+                       await updateProductVariant(numericVariantId, { weight: fixPayload.weight, weight_unit: 'g' });
+                    }
                 }
                 break;
             case 'h1_tag':
@@ -838,3 +849,4 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
     
 
     
+

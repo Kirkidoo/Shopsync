@@ -53,7 +53,10 @@ const MismatchDetails = ({ mismatches, onFix, onMarkAsFixed, disabled, sku }: { 
                             {mismatch.field === 'duplicate_in_shopify' && (
                                 <span className="text-muted-foreground">SKU exists multiple times in Shopify.</span>
                             )}
-                            {mismatch.field !== 'h1_tag' && mismatch.field !== 'duplicate_in_shopify' && (
+                             {mismatch.field === 'weight' && (
+                                <span className="text-muted-foreground">Weight is missing in Shopify.</span>
+                            )}
+                            {mismatch.field !== 'h1_tag' && mismatch.field !== 'duplicate_in_shopify' && mismatch.field !== 'weight' && (
                                  <>
                                     <span className="text-red-500 line-through mr-2">{mismatch.shopifyValue ?? 'N/A'}</span>
                                     <span className="text-green-500">{mismatch.csvValue ?? 'N/A'}</span>
@@ -185,7 +188,7 @@ const ProductDetails = ({ product }: { product: Product | null }) => {
 
 const HANDLES_PER_PAGE = 20;
 
-const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_in_shopify'];
+const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_in_shopify', 'weight', 'heavy_product_template'];
 
 export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: any, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
   const [filter, setFilter] = useState<FilterType>('all');
@@ -555,7 +558,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             name: <Text className="h-4 w-4" />,
             price: <DollarSign className="h-4 w-4" />,
             inventory: <List className="h-4 w-4" />,
+            weight: <Weight className="h-4 w-4" />,
             h1_tag: <span className="text-xs font-bold leading-none">H1</span>,
+            heavy_product_template: <FileWarning className="h-4 w-4" />,
             duplicate_in_shopify: <Copy className="h-4 w-4" />,
             missing_in_shopify: <XCircle className="h-4 w-4" />,
         };
@@ -1273,4 +1278,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
-
