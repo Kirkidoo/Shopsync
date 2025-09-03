@@ -632,9 +632,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     })
   }
   
-  const handleSelectAllOnPage = (checked: boolean) => {
+  const handleSelectAllOnPage = (checked: boolean | 'indeterminate') => {
     const newSelectedHandles = new Set(selectedHandles);
-    if (checked) {
+    if (checked === true) {
       paginatedHandleKeys.forEach(handle => newSelectedHandles.add(handle));
     } else {
       paginatedHandleKeys.forEach(handle => newSelectedHandles.delete(handle));
@@ -1225,8 +1225,14 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           <div className="flex items-center border-t border-b px-4 py-2 bg-muted/50">
             <Checkbox
               id="select-all-page"
-              checked={isAllOnPageSelected}
-              onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
+              ref={selectAllCheckboxRef}
+              onCheckedChange={(checked) => {
+                if (isSomeOnPageSelected) {
+                    handleSelectAllOnPage(true);
+                } else {
+                    handleSelectAllOnPage(!!checked);
+                }
+              }}
               aria-label="Select all items on this page"
               data-state={isAllOnPageSelected ? 'checked' : (isSomeOnPageSelected ? 'indeterminate' : 'unchecked')}
             />
