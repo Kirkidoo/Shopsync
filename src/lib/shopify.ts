@@ -195,7 +195,7 @@ function getShopifyRestClient() {
       apiSecretKey: 'dummy',
       scopes: ['read_products', 'write_products', 'read_inventory', 'write_inventory', 'read_locations'],
       hostName: 'dummy.ngrok.io',
-      apiVersion: LATEST_4_API_VERSION,
+      apiVersion: LATEST_API_VERSION,
       isEmbeddedApp: false,
       maxRetries: 3,
     });
@@ -1009,6 +1009,8 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
 
     
 
+
+    
 
     
 
