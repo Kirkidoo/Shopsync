@@ -283,7 +283,7 @@ export function PreCreationMediaManager({ variants, onSave, onCancel }: PreCreat
                                         className="object-cover w-full aspect-square"
                                     />
                                 </Label>
-                                <div className="absolute inset-0 bg-black/60 opacity-100 flex items-start justify-between p-1.5 pointer-events-none">
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-between p-1.5 pointer-events-none">
                                     <Checkbox
                                         id={`pre-image-select-${i}`}
                                         className="bg-white/80 data-[state=checked]:bg-primary pointer-events-auto"
