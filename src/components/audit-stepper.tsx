@@ -363,13 +363,13 @@ export default function AuditStepper() {
   
   if (step === 'cache_check') {
     return (
-         <Card className="w-full max-w-md mx-auto">
+         <Card className="w-full max-w-lg mx-auto">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Database className="w-5 h-5"/>Bulk Operation Cache</CardTitle>
                 <CardDescription>You can use cached Shopify data to speed up the audit, or start a new operation to get the latest data.</CardDescription>
             </CardHeader>
             <CardContent className="text-center space-y-4">
-                {isPending ? (
+                {isPending && !cacheStatus ? (
                     <>
                         <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
                         <p className="text-sm text-muted-foreground">Checking for cached data...</p>
@@ -385,7 +385,7 @@ export default function AuditStepper() {
                     <Alert variant="destructive">
                         <AlertTitle>No Cached Data</AlertTitle>
                         <AlertDescription>
-                            A new bulk operation will be started to fetch all products from Shopify.
+                            A new bulk operation will be started to fetch all products from Shopify. This may take several minutes.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -394,7 +394,10 @@ export default function AuditStepper() {
                <Button variant="outline" onClick={() => setStep('select')} className="w-full sm:w-auto">Back</Button>
                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                    <Button onClick={() => handleRunBulkAudit(true)} disabled={isPending || !cacheStatus?.lastModified} className="w-full sm:w-auto">
-                       Use Cached Data
+                       <div className="flex flex-col items-center py-1">
+                           <span>Use Cached Data</span>
+                            {cacheStatus?.lastModified && <span className="text-xs opacity-80 font-normal">({formatDistanceToNow(new Date(cacheStatus.lastModified), { addSuffix: true })})</span>}
+                       </div>
                    </Button>
                    <Button onClick={() => handleRunBulkAudit(false)} disabled={isPending} className="w-full sm:w-auto">
                        Start New Bulk Operation
