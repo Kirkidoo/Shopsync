@@ -13,7 +13,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductWithImages, getProductImageCounts } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -681,26 +681,52 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       }, { mismatched: 0, missing_in_shopify: 0, not_in_csv: 0, duplicate_in_shopify: 0 });
   }, [filteredData]);
   
-   const handleAccordionChange = useCallback((value: string) => {
-    // This function will be triggered when an accordion is opened.
-    // `value` is the handle of the opened product.
-    if (value && imageCounts[value] === undefined && !loadingImageCounts.has(value)) {
-      setLoadingImageCounts(prev => new Set(prev).add(value));
-      getProductWithImages(groupedByHandle[value][0].shopifyProducts[0].id)
-      .then(data => {
-        setImageCounts(prev => ({ ...prev, [value]: data.images.length }));
-      }).catch(error => {
-        console.error("Failed to fetch image count for handle", value, error);
-        setImageCounts(prev => ({ ...prev, [value]: 0 })); // Set to 0 on error
-      }).finally(() => {
-         setLoadingImageCounts(prev => {
-           const newSet = new Set(prev);
-           newSet.delete(value);
-           return newSet;
-         });
-      });
-    }
-  }, [imageCounts, loadingImageCounts, groupedByHandle]);
+    useEffect(() => {
+        const fetchCounts = async () => {
+            if (paginatedHandleKeys.length === 0) return;
+
+            const productIdsToFetch: string[] = [];
+            const handlesToFetch: string[] = [];
+
+            for (const handle of paginatedHandleKeys) {
+                const items = groupedByHandle[handle];
+                const productId = items?.[0]?.shopifyProducts?.[0]?.id;
+                if (productId && imageCounts[handle] === undefined && !loadingImageCounts.has(handle)) {
+                    productIdsToFetch.push(productId);
+                    handlesToFetch.push(handle);
+                }
+            }
+
+            if (productIdsToFetch.length === 0) return;
+
+            setLoadingImageCounts(prev => {
+                const newSet = new Set(prev);
+                handlesToFetch.forEach(h => newSet.add(h));
+                return newSet;
+            });
+
+            try {
+                const counts = await getProductImageCounts(productIdsToFetch);
+                setImageCounts(prev => ({ ...prev, ...counts }));
+            } catch (error) {
+                console.error("Failed to fetch image counts for page", error);
+                toast({
+                    title: "Could not load image counts",
+                    description: error instanceof Error ? error.message : "An unknown error occurred.",
+                    variant: "destructive"
+                });
+            } finally {
+                setLoadingImageCounts(prev => {
+                    const newSet = new Set(prev);
+                    handlesToFetch.forEach(h => newSet.delete(h));
+                    return newSet;
+                });
+            }
+        };
+
+        fetchCounts();
+    }, [paginatedHandleKeys, groupedByHandle, toast]);
+
 
   const { isAllOnPageSelected, isSomeOnPageSelected } = useMemo(() => {
     const currentPageHandles = new Set(paginatedHandleKeys);
@@ -717,7 +743,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   }, [paginatedHandleKeys, selectedHandles]);
 
   const renderRegularReport = () => (
-    <Accordion type="single" collapsible className="w-full" onValueChange={handleAccordionChange}>
+    <Accordion type="single" collapsible className="w-full">
         {paginatedHandleKeys.map((handle) => {
              const items = groupedByHandle[handle];
              const productTitle = items[0].csvProducts[0]?.name || items[0].shopifyProducts[0]?.name || handle;
@@ -1226,9 +1252,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                     handleSelectAllOnPage(!!checked);
                 }
               }}
-              checked={isAllOnPageSelected || isSomeOnPageSelected}
-              ref={selectAllCheckboxRef}
-              data-state={isSomeOnPageSelected ? 'indeterminate' : isAllOnPageSelected ? 'checked' : 'unchecked'}
+              checked={isSomeOnPageSelected ? 'indeterminate' : isAllOnPageSelected}
             />
             <Label htmlFor="select-all-page" className="ml-2 text-sm font-medium">
               Select all on this page ({paginatedHandleKeys.length} items)

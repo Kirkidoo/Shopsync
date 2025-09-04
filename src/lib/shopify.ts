@@ -26,6 +26,7 @@ const GET_PRODUCTS_BY_SKU_QUERY = `
           title
           handle
           bodyHtml
+          templateSuffix
           priceRange {
             minVariantPrice {
               amount
@@ -289,7 +290,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                             option2Value: null,
                             option3Name: null,
                             option3Value: null,
-                            templateSuffix: null,
+                            templateSuffix: productEdge.node.templateSuffix,
                         });
                     }
                 }
@@ -334,6 +335,35 @@ export async function getFullProduct(productId: number): Promise<any> {
         throw new Error(`Failed to fetch product: ${JSON.stringify(error.response?.body?.errors || error.message)}`);
     }
 }
+
+export async function getProductImageCounts(productIds: string[]): Promise<Record<string, number>> {
+    const shopifyClient = getShopifyRestClient();
+    if (productIds.length === 0) {
+        return {};
+    }
+
+    try {
+        const response: any = await shopifyClient.get({
+            path: 'products',
+            query: {
+                ids: productIds.join(','),
+                fields: 'id,images'
+            }
+        });
+
+        const counts: Record<string, number> = {};
+        if (response.body.products && Array.isArray(response.body.products)) {
+            for (const product of response.body.products) {
+                counts[product.id.toString()] = product.images.length;
+            }
+        }
+        return counts;
+    } catch (error: any) {
+        console.error("Error fetching product image counts via REST:", error.response?.body || error);
+        throw new Error(`Failed to fetch product image counts: ${JSON.stringify(error.response?.body?.errors || error.message)}`);
+    }
+}
+
 
 // --- Data Mutation Functions ---
 

@@ -5,7 +5,7 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail, ShopifyProductImage
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant, startProductExportBulkOperation as startShopifyBulkOp, checkBulkOperationStatus as checkShopifyBulkOpStatus, getBulkOperationResult, parseBulkOperationResult, getFullProduct, addProductImage, deleteProductImage } from '@/lib/shopify';
+import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant, startProductExportBulkOperation as startShopifyBulkOp, checkBulkOperationStatus as checkShopifyBulkOpStatus, getBulkOperationResult, parseBulkOperationResult, getFullProduct, addProductImage, deleteProductImage, getProductImageCounts as getShopifyProductImageCounts } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
 import fs from 'fs/promises';
 import path from 'path';
@@ -809,6 +809,36 @@ export async function getProductWithImages(productId: string): Promise<{ variant
     }
 }
 
+export async function getProductImageCounts(productIds: string[]): Promise<Record<string, number>> {
+    try {
+        const numericProductIds = productIds.map(gid => {
+            const id = gid.split('/').pop();
+            if (!id || isNaN(parseInt(id, 10))) {
+                throw new Error(`Invalid Product GID for image count: ${gid}`);
+            }
+            return id;
+        });
+
+        if (numericProductIds.length === 0) {
+            return {};
+        }
+
+        const counts = await getShopifyProductImageCounts(numericProductIds);
+        
+        // Remap keys back to GIDs
+        const gidCounts: Record<string, number> = {};
+        for (const [numericId, count] of Object.entries(counts)) {
+            gidCounts[`gid://shopify/Product/${numericId}`] = count;
+        }
+
+        return gidCounts;
+    } catch(error) {
+        console.error(`Failed to get product image counts for IDs ${productIds.join(', ')}:`, error);
+        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+        throw new Error(message);
+    }
+}
+
 
 export async function addImageFromUrl(productId: string, imageUrl: string): Promise<{ success: boolean; message: string; image?: ShopifyProductImage }> {
     try {
@@ -866,3 +896,4 @@ export async function deleteImage(productId: string, imageId: number): Promise<{
     
 
     
+
