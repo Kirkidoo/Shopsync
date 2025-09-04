@@ -884,12 +884,6 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
                                     image {
                                       id
                                     }
-                                    measurement {
-                                        weight {
-                                            value
-                                            unit
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -1022,7 +1016,7 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
                     compareAtPrice: null,
                     costPerItem: shopifyProduct.inventoryItem?.unitCost?.amount ? parseFloat(shopifyProduct.inventoryItem.unitCost.amount) : null,
                     barcode: null,
-                    weight: convertWeightToGrams(shopifyProduct.measurement?.weight?.value, shopifyProduct.measurement?.weight?.unit),
+                    weight: null, // Weight is not available in bulk operations for this API version.
                     mediaUrl: null, // Note: Bulk export doesn't easily link variant images
                     imageId: shopifyProduct.image?.id ? parseInt(shopifyProduct.image.id.split('/').pop(), 10) : null,
                     category: null,
@@ -1056,5 +1050,6 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
     
 
     
+
 
 
