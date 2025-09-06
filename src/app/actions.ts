@@ -332,8 +332,9 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
     }
     
     report.sort((a, b) => {
-        const handleA = a.shopifyProducts[0]?.handle || a.csvProducts[0]?.handle || '';
-        const handleB = b.shopifyProducts[0]?.handle || b.csvProducts[0]?.handle || '';
+        const getHandle = (item: AuditResult) => item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || '';
+        const handleA = getHandle(a);
+        const handleB = getHandle(b);
         if (handleA !== handleB) {
             return handleA.localeCompare(handleB);
         }
@@ -936,18 +937,18 @@ export async function fixMismatchesAndDeleteUnlinkedImages(
 ): Promise<{ success: boolean; message: string; fixResults: any[]; deleteResults: any[] }> {
     console.log(`Starting combined fix & delete operation.`);
     
-    // Step 1: Fix mismatches
-    const fixResult = await fixMultipleMismatches(itemsToFix);
-    
-    // Step 2: Delete unlinked images
+    // Step 1: Delete unlinked images
     const deleteResult = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
+
+    // Step 2: Fix mismatches
+    const fixResult = await fixMultipleMismatches(itemsToFix);
     
     // Step 3: Combine results and create a summary message
     const totalFixes = fixResult.results.length;
     const totalProductsProcessedForDeletion = deleteResult.results.length;
     const totalImagesDeleted = deleteResult.results.reduce((sum, r) => sum + r.deletedCount, 0);
 
-    const message = `Bulk action complete. Fixed ${totalFixes} mismatches. Processed ${totalProductsProcessedForDeletion} products for unlinked images and deleted ${totalImagesDeleted} images.`;
+    const message = `Bulk action complete. Deleted ${totalImagesDeleted} unlinked images from ${totalProductsProcessedForDeletion} products and fixed ${totalFixes} mismatches.`;
 
     revalidatePath('/');
     
