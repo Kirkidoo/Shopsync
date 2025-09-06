@@ -331,8 +331,10 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
         }
     }
     
+    // This is the safe way to sort.
+    const getHandle = (item: AuditResult) => item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || '';
+
     report.sort((a, b) => {
-        const getHandle = (item: AuditResult) => item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || '';
         const handleA = getHandle(a);
         const handleB = getHandle(b);
         if (handleA !== handleB) {
@@ -340,6 +342,7 @@ export async function runAuditComparison(csvProducts: Product[], shopifyProducts
         }
         return a.sku.localeCompare(b.sku);
     });
+
     console.log('Audit comparison complete. Matched:', matchedCount, 'Summary:', summary);
 
     return { report, summary: { ...summary, matched: matchedCount } };
@@ -373,22 +376,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
     .filter(d => d.status === 'duplicate_in_shopify')
     .map(d => ({ sku: d.sku, count: d.shopifyProducts.length }));
   
-  // This is a list of all SKUs that have been identified as duplicates in Shopify.
-  const duplicateSkuSet = new Set(
-    report.filter(r => r.status === 'duplicate_in_shopify').map(r => r.sku)
-  );
-
-  // Filter out 'matched' items unless they are part of a duplicate issue.
-  const finalReport = report.filter(item => {
-      if (item.status === 'matched') {
-          // If the item is matched, only keep it if its SKU is in our set of duplicates.
-          return duplicateSkuSet.has(item.sku);
-      }
-      // Keep all other non-matched items.
-      return true;
-  });
-
-  return { report: finalReport, summary, duplicates: duplicatesForCard };
+  return { report: report, summary, duplicates: duplicatesForCard };
 }
 
 export async function checkBulkCacheStatus(): Promise<{ lastModified: string | null }> {
@@ -971,6 +959,8 @@ export async function fixMismatchesAndDeleteUnlinkedImages(
 
 
 
+
+    
 
     
 
