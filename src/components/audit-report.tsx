@@ -845,55 +845,65 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   }, [imageCounts, toast, handleImageCountChange]);
 
   const runAutoFix = useCallback(async () => {
-    if (!autoRunStateRef.current.isRunning) {
-        return;
-    }
-    
-    const handlesOnPage = new Set(paginatedHandleKeys);
-    if (handlesOnPage.size === 0) {
-        toast({ title: 'Auto-Fix Complete', description: 'No more items found matching your filters.' });
-        setIsAutoRunning(false);
-        autoRunStateRef.current.isRunning = false;
-        return;
-    }
+      if (!autoRunStateRef.current.isRunning) {
+          return;
+      }
+      
+      // Get currently visible and fixable items on the page
+      const handlesOnPage = new Set(paginatedHandleKeys);
+      const fixableHandles = Array.from(handlesOnPage).filter(handle => {
+          const items = filteredGroupedByHandle[handle];
+          const hasMismatches = items?.some(item => item.status === 'mismatched' && item.mismatches.length > 0);
+          const hasUnlinked = items?.some(item => {
+              const productId = item.shopifyProducts[0]?.id;
+              const imageCount = productId ? imageCounts[productId] : 0;
+              return productId && imageCount && imageCount > item.shopifyProducts.length;
+          });
+          return hasMismatches || hasUnlinked;
+      });
 
-    toast({ title: 'Auto-Fixing Page...', description: `Processing ${handlesOnPage.size} items.` });
-    
-    try {
-        await handleBulkFixAndClean(handlesOnPage);
-    } catch(error) {
-        toast({ title: 'Auto-Fix Error', description: 'The process was stopped due to an error.', variant: 'destructive' });
-        setIsAutoRunning(false);
-        autoRunStateRef.current.isRunning = false;
-        return;
-    }
+      if (fixableHandles.length === 0) {
+          toast({ title: 'Auto-Fix Complete', description: 'No more fixable items found on this page matching your filters.' });
+          setIsAutoRunning(false);
+          autoRunStateRef.current.isRunning = false;
+          return;
+      }
 
-    // Wait 2 seconds, then refresh data
-    setTimeout(() => {
-        if (autoRunStateRef.current.isRunning) {
-            onRefresh();
-        }
-    }, 2000);
-  }, [paginatedHandleKeys, handleBulkFixAndClean, onRefresh, toast]);
+      toast({ title: 'Auto-Fixing Page...', description: `Processing ${fixableHandles.length} items.` });
+      
+      try {
+          await handleBulkFixAndClean(new Set(fixableHandles));
+      } catch(error) {
+          toast({ title: 'Auto-Fix Error', description: 'The process was stopped due to an error.', variant: 'destructive' });
+          setIsAutoRunning(false);
+          autoRunStateRef.current.isRunning = false;
+          return;
+      }
 
+      // Wait 5 seconds, then re-run the check on the same page
+      setTimeout(() => {
+          if (autoRunStateRef.current.isRunning) {
+              runAutoFix(); // Recursive call
+          }
+      }, 5000);
+  }, [paginatedHandleKeys, filteredGroupedByHandle, handleBulkFixAndClean, imageCounts, toast]);
 
   useEffect(() => {
-    if (isAutoRunning && paginatedHandleKeys.length > 0 && !isFixing) {
-        runAutoFix();
-    }
-  }, [isAutoRunning, paginatedHandleKeys, isFixing, runAutoFix]);
+      if (isAutoRunning && !isFixing) {
+          runAutoFix();
+      }
+  }, [isAutoRunning, isFixing, runAutoFix]);
 
   const startAutoRun = () => {
-    setIsAutoRunning(true);
-    autoRunStateRef.current.isRunning = true;
+      setIsAutoRunning(true);
+      autoRunStateRef.current.isRunning = true;
   };
 
   const stopAutoRun = () => {
-    setIsAutoRunning(false);
-    autoRunStateRef.current.isRunning = false;
-    toast({ title: 'Auto-Fix Stopped', description: 'The automation process has been stopped.' });
+      setIsAutoRunning(false);
+      autoRunStateRef.current.isRunning = false;
+      toast({ title: 'Auto-Fix Stopped', description: 'The automation process has been stopped.' });
   };
-
 
   const renderRegularReport = () => (
     <Accordion type="single" collapsible className="w-full">
@@ -934,11 +944,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 checked={selectedHandles.has(handle)}
                                 onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
                                 aria-label={`Select product ${handle}`}
-                                disabled={isFixing || (filter === 'missing_in_shopify' && items[0].mismatches[0]?.missingType === 'variant')}
+                                disabled={isFixing || isAutoRunning || (filter === 'missing_in_shopify' && items[0].mismatches[0]?.missingType === 'variant')}
                             />
                         </div>
                     )}
-                    <AccordionTrigger className="flex-grow p-3 text-left" disabled={isFixing}>
+                    <AccordionTrigger className="flex-grow p-3 text-left" disabled={isFixing || isAutoRunning}>
                         <div className="flex items-center gap-4 flex-grow">
                             <config.icon className={`w-5 h-5 shrink-0 ${
                                 overallStatus === 'mismatched' ? 'text-yellow-500' 
@@ -956,7 +966,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                         {canHaveUnlinkedImages && (
                           <AlertDialog>
                               <AlertDialogTrigger asChild>
-                                  <Button size="sm" variant="destructive" onClick={(e) => e.stopPropagation()} disabled={isFixing}>
+                                  <Button size="sm" variant="destructive" onClick={(e) => e.stopPropagation()} disabled={isFixing || isAutoRunning}>
                                       <Trash2 className="mr-2 h-4 w-4" />
                                       Delete Unlinked ({imageCount! - items.length})
                                   </Button>
@@ -978,7 +988,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                           </AlertDialog>
                         )}
                         {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
-                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleBulkFix(items.filter(i => i.status === 'mismatched'))}} disabled={isFixing}>
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleBulkFix(items.filter(i => i.status === 'mismatched'))}} disabled={isFixing || isAutoRunning}>
                                 <Bot className="mr-2 h-4 w-4" />
                                 Fix All ({items.flatMap(i => i.mismatches).filter(m => m.field !== 'duplicate_in_shopify' && m.field !== 'heavy_product_flag').length})
                             </Button>
@@ -988,7 +998,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 <TooltipProvider>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={(e) => {e.stopPropagation(); handleMarkAsCreated(handle);}} disabled={isFixing}>
+                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={(e) => {e.stopPropagation(); handleMarkAsCreated(handle);}} disabled={isFixing || isAutoRunning}>
                                                 <Check className="h-4 w-4" />
                                             </Button>
                                         </TooltipTrigger>
@@ -997,7 +1007,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
-                                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleCreate(items[0])}} disabled={isFixing}>
+                                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleCreate(items[0])}} disabled={isFixing || isAutoRunning}>
                                     <PlusCircle className="mr-2 h-4 w-4" />
                                     Create Product
                                 </Button>
@@ -1008,7 +1018,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                         {productId && (
                             <Dialog open={editingMediaFor === productId} onOpenChange={(open) => setEditingMediaFor(open ? productId : null)}>
                                 <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="w-[180px]" onClick={(e) => e.stopPropagation()}>
+                                    <Button size="sm" variant="outline" className="w-[180px]" onClick={(e) => e.stopPropagation()} disabled={isAutoRunning}>
                                         {isLoadingImages ? (
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
                                         ) : (
@@ -1032,7 +1042,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                             </Dialog>
                         )}
                         {isMissing && items[0].mismatches[0]?.missingType === 'product' && (
-                            <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}}>
+                            <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}} disabled={isAutoRunning}>
                                 <ImageIcon className="mr-2 h-4 w-4" />
                                 Manage Media
                             </Button>
@@ -1079,7 +1089,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                         mismatches={item.mismatches} 
                                                         onFix={(fixType) => handleFixSingleMismatch(item, fixType)} 
                                                         onMarkAsFixed={(fixType) => handleMarkAsFixed(item.sku, fixType)}
-                                                        disabled={isFixing}
+                                                        disabled={isFixing || isAutoRunning}
                                                     />
                                                 }
                                                 {item.status === 'missing_in_shopify' && (
@@ -1104,7 +1114,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                  {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                            <Button size="sm" variant="destructive" disabled={isFixing || isAutoRunning}>
                                                                 <Trash2 className="mr-2 h-4 w-4" /> Delete Variant
                                                             </Button>
                                                         </AlertDialogTrigger>
@@ -1135,7 +1145,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                         <TableCell colSpan={4} className="text-right p-2">
                                              <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                    <Button size="sm" variant="destructive" disabled={isFixing || isAutoRunning}>
                                                         <Trash2 className="mr-2 h-4 w-4" /> Delete Entire Product
                                                     </Button>
                                                 </AlertDialogTrigger>
@@ -1179,7 +1189,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
               
               return (
                   <AccordionItem value={sku} key={sku} className="border-b last:border-b-0">
-                      <AccordionTrigger className="p-3 text-left" disabled={isFixing}>
+                      <AccordionTrigger className="p-3 text-left" disabled={isFixing || isAutoRunning}>
                           <div className="flex items-center gap-4 flex-grow">
                               <config.icon className="w-5 h-5 shrink-0 text-purple-500" />
                               <div className="flex-grow text-left">
@@ -1225,7 +1235,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                               <TableCell className="text-right">
                                                    <AlertDialog>
                                                       <AlertDialogTrigger asChild>
-                                                          <Button size="sm" variant="destructive" disabled={isFixing}>
+                                                          <Button size="sm" variant="destructive" disabled={isFixing || isAutoRunning}>
                                                               <Trash2 className="mr-2 h-4 w-4" /> Delete Product
                                                           </Button>
                                                       </AlertDialogTrigger>
@@ -1444,8 +1454,8 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                     Create {selectedHandles.size} Selected
                 </Button>
             )}
-            {filter === 'mismatched' && !isAutoRunning && (
-                <Button onClick={startAutoRun} disabled={isFixing || isAutoRunning} className="w-full md:w-auto bg-green-600 hover:bg-green-600/90 text-white">
+             {filter === 'mismatched' && !isAutoRunning && (
+                <Button onClick={startAutoRun} disabled={isFixing} className="w-full md:w-auto bg-green-600 hover:bg-green-600/90 text-white">
                     <SquarePlay className="mr-2 h-4 w-4" />
                     Auto Fix Page
                 </Button>
@@ -1528,7 +1538,3 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
-
-
-    
-
