@@ -212,9 +212,6 @@ function findMismatches(csvProduct: Product, shopifyProduct: Product): MismatchD
     // Heavy product check: weight > 50lbs (22679.6 grams)
     if (csvProduct.weight && csvProduct.weight > 22679.6) {
         mismatches.push({ field: 'heavy_product_flag', csvValue: `${(csvProduct.weight / 453.592).toFixed(2)} lbs`, shopifyValue: null });
-        if (shopifyProduct.templateSuffix !== 'heavy-products') {
-            mismatches.push({ field: 'heavy_product_template', csvValue: 'heavy-products', shopifyValue: shopifyProduct.templateSuffix || 'none' });
-        }
     }
     
     return mismatches;
@@ -483,11 +480,6 @@ async function _fixSingleMismatch(
                     await updateProduct(fixPayload.id, { bodyHtml: newDescription });
                 }
                 break;
-            case 'heavy_product_template':
-                if (fixPayload.id) {
-                    await updateProduct(fixPayload.id, { templateSuffix: 'heavy-products' });
-                }
-                break;
              case 'duplicate_in_shopify':
              case 'heavy_product_flag':
                 // This is a warning, cannot be fixed programmatically. Handled client-side.
@@ -520,7 +512,7 @@ export async function fixMultipleMismatches(items: AuditResult[]): Promise<{ suc
                 fixCount++;
             }
             itemResults.push({ sku: item.sku, field: mismatch.field, ...result });
-             await sleep(300); // Add a small delay to avoid rate limiting
+             await sleep(600); // Add a small delay to avoid rate limiting
         }
     }
     
@@ -876,17 +868,16 @@ export async function deleteUnlinkedImages(productId: string): Promise<{ success
 
         console.log(`Found ${unlinkedImages.length} unlinked images to delete.`);
         let deletedCount = 0;
-        const deletionPromises = unlinkedImages.map(async (image) => {
+        
+        for (const image of unlinkedImages) {
             const result = await deleteImage(productId, image.id);
             if(result.success) {
                 deletedCount++;
             } else {
                  console.warn(`Failed to delete image ID ${image.id}: ${result.message}`);
             }
-        });
+        }
         
-        await Promise.all(deletionPromises);
-
         const message = `Successfully deleted ${deletedCount} of ${unlinkedImages.length} unlinked images.`;
         console.log(message);
         return { success: true, message, deletedCount };

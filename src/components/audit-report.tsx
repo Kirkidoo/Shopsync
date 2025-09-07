@@ -187,7 +187,7 @@ const ProductDetails = ({ product }: { product: Product | null }) => {
 
 const HANDLES_PER_PAGE = 10;
 
-const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_in_shopify', 'heavy_product_template', 'heavy_product_flag'];
+const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_in_shopify', 'heavy_product_flag'];
 
 export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: any, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
   const [filter, setFilter] = useState<FilterType>('all');
@@ -650,7 +650,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             inventory: <List className="h-4 w-4" />,
             heavy_product_flag: <FileWarning className="h-4 w-4" />,
             h1_tag: <span className="text-xs font-bold leading-none">H1</span>,
-            heavy_product_template: <FileWarning className="h-4 w-4" />,
             duplicate_in_shopify: <Copy className="h-4 w-4" />,
             missing_in_shopify: <XCircle className="h-4 w-4" />,
         };
