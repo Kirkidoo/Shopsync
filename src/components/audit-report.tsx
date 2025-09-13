@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useTransition, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -1503,19 +1504,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             )}
             {selectedHandles.size > 0 && (
                 <>
-                    {hasSelectionWithMismatches && hasSelectionWithUnlinkedImages && (
-                        <Button onClick={() => handleBulkFixAndClean(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto bg-primary hover:bg-primary/90">
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Fix & Clean ({selectedHandles.size})
-                        </Button>
-                    )}
-                    {hasSelectionWithMismatches && !hasSelectionWithUnlinkedImages && (
+                    {hasSelectionWithMismatches && (
                         <Button onClick={() => handleBulkFix(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
                             <Wand2 className="mr-2 h-4 w-4" />
                             Fix Mismatches ({selectedHandles.size})
                         </Button>
                     )}
-                    {hasSelectionWithUnlinkedImages && !hasSelectionWithMismatches && (
+                    {hasSelectionWithUnlinkedImages && (
                          <Button variant="destructive" onClick={() => handleBulkDeleteUnlinked(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete Unlinked ({selectedHandles.size})
