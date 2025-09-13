@@ -68,12 +68,16 @@ export function MediaManager({ productId, onImageCountChange }: MediaManagerProp
         }
         setSelectedImageIds(newSet);
     };
+    
+    const unlinkedImages = useMemo(() => images.filter(img => img.variant_ids.length === 0), [images]);
 
-    const handleSelectAllImages = (checked: boolean) => {
+    const handleSelectAllUnlinked = (checked: boolean) => {
         if (checked) {
-            setSelectedImageIds(new Set(images.map(img => img.id)));
+            setSelectedImageIds(new Set(unlinkedImages.map(img => img.id)));
         } else {
-            setSelectedImageIds(new Set());
+            const newSet = new Set(selectedImageIds);
+            unlinkedImages.forEach(img => newSet.delete(img.id));
+            setSelectedImageIds(newSet);
         }
     };
 
@@ -269,6 +273,12 @@ export function MediaManager({ productId, onImageCountChange }: MediaManagerProp
             fetchMediaData();
         });
     }
+    
+    const areAllUnlinkedSelected = useMemo(() => {
+        if (unlinkedImages.length === 0) return false;
+        return unlinkedImages.every(img => selectedImageIds.has(img.id));
+    }, [unlinkedImages, selectedImageIds]);
+
 
     return (
         <DialogContent className="max-w-5xl">
@@ -383,11 +393,11 @@ export function MediaManager({ productId, onImageCountChange }: MediaManagerProp
                          <div className="flex items-center space-x-2">
                              <Checkbox
                                 id="select-all"
-                                onCheckedChange={(checked) => handleSelectAllImages(!!checked)}
-                                checked={selectedImageIds.size > 0 && selectedImageIds.size === images.length}
-                                disabled={images.length === 0}
+                                onCheckedChange={(checked) => handleSelectAllUnlinked(!!checked)}
+                                checked={areAllUnlinkedSelected}
+                                disabled={unlinkedImages.length === 0}
                              />
-                            <Label htmlFor="select-all" className="text-sm font-normal">Select All</Label>
+                            <Label htmlFor="select-all" className="text-sm font-normal">Select All Unlinked ({unlinkedImages.length})</Label>
                         </div>
                         
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
