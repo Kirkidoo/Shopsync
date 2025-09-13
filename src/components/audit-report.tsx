@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { downloadCsv, markMismatchAsFixed, getFixedMismatches, clearAuditMemory, getCreatedProductHandles, markProductAsCreated } from '@/lib/utils';
-import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, FileText, Eye, Trash2, Search, Image as ImageIcon, FileWarning, Bot, Eraser, Check, Link, Copy, Sparkles, SquarePlay, SquareX } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, Wrench, Siren, Loader2, RefreshCw, Text, DollarSign, List, FileText, Eye, Trash2, Search, Image as ImageIcon, FileWarning, Bot, Eraser, Check, Link, Copy, Sparkles, SquarePlay, SquareX, Wand2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -372,7 +372,22 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     downloadCsv(csvData, 'shopsync-audit-report.csv');
   };
   
-  const handleBulkFix = (itemsToFix: AuditResult[]) => {
+  const handleBulkFix = (handles: Set<string> | null = null) => {
+      const handlesToProcess = handles || selectedHandles;
+       if (handlesToProcess.size === 0) {
+        toast({ title: "No Action Taken", description: "No items were selected to fix.", variant: "destructive" });
+        return Promise.resolve();
+      }
+
+      const itemsToFix = reportData.filter(item => 
+          item.status === 'mismatched' && handlesToProcess.has(getHandle(item))
+      );
+
+       if (itemsToFix.length === 0) {
+            toast({ title: "No Action Needed", description: "Selected products have no mismatches to fix.", variant: "default" });
+            return Promise.resolve();
+        }
+
       setShowRefresh(true);
       
       return new Promise<void>((resolve) => {
@@ -400,7 +415,12 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         ...item,
         mismatches: item.mismatches.filter(m => m.field === fixType)
     };
-    handleBulkFix([itemToFix]);
+    handleBulkFix().then(() => {
+        // Since handleBulkFix uses selectedHandles, we need to add the handle of the single item.
+        const handle = getHandle(item);
+        const tempHandles = new Set([handle]);
+        handleBulkFix(tempHandles);
+    });
   };
   
   const handleBulkFixAndClean = (handles: Set<string> | null = null) => {
@@ -925,12 +945,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             return;
         }
 
+        // A small delay to allow UI to update before starting the logic
         const timer = setTimeout(() => {
             runAutoFix();
-        }, 5000); // Wait 5 seconds before the next run
+        }, 1000); 
 
         return () => clearTimeout(timer);
-    }, [isAutoRunning, isFixing, filteredData, runAutoFix]); // Rerun when data changes
+    }, [isAutoRunning, isFixing, filteredData, runAutoFix]);
 
 
   const startAutoRun = () => {
@@ -1026,7 +1047,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                           </AlertDialog>
                         )}
                         {items.some(i => i.status === 'mismatched' && i.mismatches.length > 0) && (
-                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleBulkFix(items.filter(i => i.status === 'mismatched'))}} disabled={isFixing || isAutoRunning}>
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleBulkFix(new Set([handle]))}} disabled={isFixing || isAutoRunning}>
                                 <Bot className="mr-2 h-4 w-4" />
                                 Fix All ({items.flatMap(i => i.mismatches).filter(m => m.field !== 'duplicate_in_shopify' && m.field !== 'heavy_product_flag').length})
                             </Button>
@@ -1480,17 +1501,27 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                     </SelectContent>
                 </Select>
             )}
-            {hasSelectionWithMismatches && hasSelectionWithUnlinkedImages && (
-                <Button onClick={() => handleBulkFixAndClean(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto bg-primary hover:bg-primary/90">
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Fix & Clean ({selectedHandles.size})
-                </Button>
-            )}
-            {hasSelectionWithUnlinkedImages && (
-                 <Button variant="destructive" onClick={() => handleBulkDeleteUnlinked(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Unlinked ({selectedHandles.size})
-                </Button>
+            {selectedHandles.size > 0 && (
+                <>
+                    {hasSelectionWithMismatches && hasSelectionWithUnlinkedImages && (
+                        <Button onClick={() => handleBulkFixAndClean(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto bg-primary hover:bg-primary/90">
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Fix & Clean ({selectedHandles.size})
+                        </Button>
+                    )}
+                    {hasSelectionWithMismatches && !hasSelectionWithUnlinkedImages && (
+                        <Button onClick={() => handleBulkFix(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
+                            <Wand2 className="mr-2 h-4 w-4" />
+                            Fix Mismatches ({selectedHandles.size})
+                        </Button>
+                    )}
+                    {hasSelectionWithUnlinkedImages && !hasSelectionWithMismatches && (
+                         <Button variant="destructive" onClick={() => handleBulkDeleteUnlinked(selectedHandles)} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete Unlinked ({selectedHandles.size})
+                        </Button>
+                    )}
+                </>
             )}
             {filter === 'missing_in_shopify' && selectedHandles.size > 0 && (
                 <Button onClick={handleCreateSelected} disabled={isFixing || isAutoRunning} className="w-full md:w-auto">
@@ -1582,3 +1613,5 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
+
+    
