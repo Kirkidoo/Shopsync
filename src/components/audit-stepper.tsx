@@ -122,13 +122,13 @@ export default function AuditStepper() {
             addLog(`Downloading and parsing ${selectedCsv}...`);
             const result = await runAudit(selectedCsv, ftpData);
             
-            if (result && result.report && result.summary && result.duplicates) {
-                addLog('Audit complete!');
-                setAuditData(result);
-                setTimeout(() => setStep('report'), 500);
-            } else {
+            if (!result || !result.report || !result.summary || !result.duplicates) {
                 throw new Error("An unexpected response was received from the server.");
             }
+
+            addLog('Audit complete!');
+            setAuditData(result);
+            setTimeout(() => setStep('report'), 500);
 
         } catch(error) {
             const message = error instanceof Error ? error.message : "An unexpected response was received from the server during the audit.";
@@ -202,13 +202,13 @@ export default function AuditStepper() {
             addLog('Generating audit report...');
             const result = await runBulkAuditComparison(csvProducts, shopifyProducts);
             
-            if (result && result.report && result.summary && result.duplicates) {
-                addLog('Report finished!');
-                setAuditData(result);
-                setTimeout(() => setStep('report'), 500);
-            } else {
+            if (!result || !result.report || !result.summary || !result.duplicates) {
                  throw new Error("An unexpected response was received from the server after bulk audit.");
             }
+
+            addLog('Report finished!');
+            setAuditData(result);
+            setTimeout(() => setStep('report'), 500);
 
         } catch(error) {
             const message = error instanceof Error ? error.message : "An unexpected response was received during the audit.";
