@@ -360,7 +360,7 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
   
   if (csvProducts.length === 0) {
     console.log('No products found in the CSV file. Aborting audit.');
-    throw new Error('No products with valid Handle, SKU, Title, and Price found in the CSV file.');
+    return { report: [], summary: { matched: 0, mismatched: 0, not_in_csv: 0, missing_in_shopify: 0, duplicate_in_shopify: 0 }, duplicates: [] };
   }
 
   const allShopifyProducts = await getShopifyProductsFromCache(); // This will read from cache
@@ -393,7 +393,7 @@ export async function getCsvProducts(csvFileName: string, ftpData: FormData): Pr
         const readableStream = await getCsvStreamFromFtp(csvFileName, ftpData);
         const parsedData = await parseCsvFromStream(readableStream);
         if (parsedData.products.length === 0) {
-            throw new Error('No products with valid Handle, SKU, Title, and Price found in the CSV file.');
+            return [];
         }
         return parsedData.products;
     } catch (error) {

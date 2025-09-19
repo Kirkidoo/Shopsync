@@ -398,18 +398,22 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
 
     const getOptionValue = (value: string | null | undefined, fallback: string | null) => (value?.trim() ? value.trim() : fallback);
 
-    const processedVariants = [...productVariants];
+    // Create a mutable copy for processing
+    const processedVariants = JSON.parse(JSON.stringify(productVariants));
     const seenOptionValues = new Set<string>();
 
     for (const variant of processedVariants) {
         const optionKey = [variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/');
-        if (seenOptionValues.has(optionKey) && optionKey !== "" && optionKey !== "Default Title") {
+        if (seenOptionValues.has(optionKey) && optionKey && optionKey !== "Default Title") {
             console.log(`Duplicate option values found for "${optionKey}". Uniquifying with SKU.`);
+            // Make just one of the options unique enough
             if (variant.option1Value) {
-                variant.option1Value = `${variant.option1Value}-${variant.sku}`;
+                variant.option1Value = `${variant.option1Value} (${variant.sku})`;
             }
         }
-        seenOptionValues.add([variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/'));
+        if (optionKey) {
+            seenOptionValues.add(optionKey);
+        }
     }
 
     const optionNames: string[] = [];
@@ -419,7 +423,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
     
     const restOptions = optionNames.length > 0 ? optionNames.map(name => ({ name })) : [];
     
-    const restVariants = processedVariants.map(p => {
+    const restVariants = processedVariants.map((p: Product) => {
         const variantPayload: any = {
             price: p.price,
             sku: p.sku,
@@ -442,7 +446,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
         return variantPayload;
     });
 
-    const uniqueImageUrls = [...new Set(processedVariants.map(p => p.mediaUrl).filter(Boolean) as string[])];
+    const uniqueImageUrls = [...new Set(processedVariants.map((p: Product) => p.mediaUrl).filter(Boolean) as string[])];
     const restImages = uniqueImageUrls.map(url => ({ src: url }));
 
     const tags = addClearanceTag ? 'Clearance' : '';
@@ -1068,6 +1072,7 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
     
 
     
+
 
 
 
