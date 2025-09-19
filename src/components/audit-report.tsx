@@ -213,7 +213,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [editingMediaFor, setEditingMediaFor] = useState<string | null>(null);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [isAutoCreating, setIsAutoCreating] = useState(false);
-  const [editingMissingVariantMedia, setEditingMissingVariantMedia] = useState<{item: AuditResult[], parentProductId: string} | null>(null);
+  const [editingMissingVariantMedia, setEditingMissingVariantMedia] = useState<{items: AuditResult[], parentProductId: string} | null>(null);
   
   const selectAllCheckboxRef = useRef<HTMLButtonElement | null>(null);
 
@@ -222,6 +222,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setReportSummary(summary);
     setShowRefresh(false);
     setCurrentPage(1);
+    setHandlesPerPage(filter === 'missing_in_shopify' ? 5 : 10);
     setSelectedHandles(new Set());
     setHasSelectionWithUnlinkedImages(false);
     setHasSelectionWithMismatches(false);
@@ -230,7 +231,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setImageCounts({});
     setLoadingImageCounts(new Set());
     setEditingMediaFor(null);
-  }, [data, summary]);
+  }, [data, summary, filter]);
 
   const uniqueVendors = useMemo(() => {
     const vendors = new Set<string>();
@@ -1193,52 +1194,25 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                         <Badge variant="outline" className="w-[80px] justify-center">{items.length} SKU{items.length > 1 ? 's' : ''}</Badge>
                         
                         {productId && !isMissingVariantCase && (
-                             <Dialog open={editingMediaFor === productId} onOpenChange={(open) => setEditingMediaFor(open ? productId : null)}>
-                                <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="w-[180px]" onClick={(e) => e.stopPropagation()} disabled={isAutoRunning || isAutoCreating}>
-                                        {isLoadingImages ? (
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                        ) : (
-                                            <ImageIcon className="mr-2 h-4 w-4" />
-                                        )}
-                                        Manage Media{' '}
-                                        {imageCount !== undefined && (
-                                            <span className={cn(imageCount > items.length ? "text-yellow-400 font-bold" : "")}>
-                                                ({imageCount})
-                                            </span>
-                                        )}
-                                    </Button>
-                                </DialogTrigger>
-                                {editingMediaFor === productId && (
-                                    <DialogContent className="max-w-5xl">
-                                        <MediaManager 
-                                            key={productId}
-                                            productId={productId}
-                                            onImageCountChange={(newCount) => handleImageCountChange(productId, newCount)}
-                                        />
-                                    </DialogContent>
+                             <Button size="sm" variant="outline" className="w-[180px]" onClick={(e) => {e.stopPropagation(); setEditingMediaFor(productId)}} disabled={isAutoRunning || isAutoCreating}>
+                                {isLoadingImages ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
+                                ) : (
+                                    <ImageIcon className="mr-2 h-4 w-4" />
                                 )}
-                            </Dialog>
+                                Manage Media{' '}
+                                {imageCount !== undefined && (
+                                    <span className={cn(imageCount > items.length ? "text-yellow-400 font-bold" : "")}>
+                                        ({imageCount})
+                                    </span>
+                                )}
+                            </Button>
                         )}
                         {isMissingProductCase && (
-                            <Dialog open={editingMissingMedia === handle} onOpenChange={(open) => setEditingMissingMedia(open ? handle : null)}>
-                                <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}} disabled={isAutoRunning || isAutoCreating}>
-                                        <ImageIcon className="mr-2 h-4 w-4" />
-                                        Manage Media
-                                    </Button>
-                                </DialogTrigger>
-                                {editingMissingMedia === handle && (
-                                    <DialogContent className="max-w-5xl">
-                                        <PreCreationMediaManager
-                                            key={handle} 
-                                            variants={editingMissingMediaVariants}
-                                            onSave={handleSavePreCreationMedia}
-                                            onCancel={() => setEditingMissingMedia(null)}
-                                        />
-                                    </DialogContent>
-                                )}
-                            </Dialog>
+                            <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}} disabled={isAutoRunning || isAutoCreating}>
+                                <ImageIcon className="mr-2 h-4 w-4" />
+                                Manage Media
+                            </Button>
                         )}
                     </div>
                 </AccordionHeader>
@@ -1461,6 +1435,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
           })}
       </Accordion>
   );
+
+  const memoizedMissingVariants = useMemo(() => {
+    if (!editingMissingVariantMedia) return [];
+    return editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p);
+  }, [editingMissingVariantMedia]);
 
 
   return (
@@ -1770,34 +1749,43 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         )}
       </CardContent>
     </Card>
-    {editingMissingMedia && (
-        <Dialog open={!!editingMissingMedia} onOpenChange={(open) => setEditingMissingMedia(open ? editingMissingMedia : null)}>
-            <DialogContent className="max-w-5xl">
+    <Dialog open={!!editingMediaFor} onOpenChange={(open) => setEditingMediaFor(open ? editingMediaFor : null)}>
+        <DialogContent className="max-w-5xl">
+            {editingMediaFor && (
+                <MediaManager 
+                    key={editingMediaFor}
+                    productId={editingMediaFor}
+                    onImageCountChange={(newCount) => handleImageCountChange(editingMediaFor, newCount)}
+                />
+            )}
+        </DialogContent>
+    </Dialog>
+     <Dialog open={!!editingMissingMedia} onOpenChange={(open) => setEditingMissingMedia(open ? editingMissingMedia : null)}>
+        <DialogContent className="max-w-5xl">
+            {editingMissingMedia && (
                 <PreCreationMediaManager
                     key={editingMissingMedia} 
                     variants={editingMissingMediaVariants}
                     onSave={handleSavePreCreationMedia}
                     onCancel={() => setEditingMissingMedia(null)}
                 />
-            </DialogContent>
-        </Dialog>
-    )}
-    {editingMissingVariantMedia && (
-        <Dialog open={!!editingMissingVariantMedia} onOpenChange={(open) => setEditingMissingVariantMedia(open ? editingMissingVariantMedia : null)}>
-            <DialogContent className="max-w-5xl">
-             <MediaManager 
-                key={editingMissingVariantMedia.parentProductId}
-                productId={editingMissingVariantMedia.parentProductId}
-                onImageCountChange={() => {}} // No need to change counts here
-                isMissingVariantMode={true}
-                missingVariants={editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p)}
-                onSaveMissingVariant={handleSaveMissingVariantMedia}
-             />
-            </DialogContent>
-        </Dialog>
-    )}
+            )}
+        </DialogContent>
+    </Dialog>
+    <Dialog open={!!editingMissingVariantMedia} onOpenChange={(open) => setEditingMissingVariantMedia(open ? editingMissingVariantMedia : null)}>
+        <DialogContent className="max-w-5xl">
+            {editingMissingVariantMedia && (
+                <MediaManager 
+                    key={editingMissingVariantMedia.parentProductId}
+                    productId={editingMissingVariantMedia.parentProductId}
+                    onImageCountChange={() => {}} // No need to change counts here
+                    isMissingVariantMode={true}
+                    missingVariants={memoizedMissingVariants}
+                    onSaveMissingVariant={handleSaveMissingVariantMedia}
+                />
+            )}
+        </DialogContent>
+    </Dialog>
     </>
   );
 }
-
-

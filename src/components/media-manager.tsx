@@ -42,7 +42,7 @@ export function MediaManager({
     const [isSubmitting, startSubmitting] = useTransition();
     const { toast } = useToast();
     const [selectedImageIds, setSelectedImageIds] = useState<Set<number>>(new Set());
-    const [localMissingVariants, setLocalMissingVariants] = useState<Product[]>([]);
+    const [localMissingVariants, setLocalMissingVariants] = useState<Product[]>(() => JSON.parse(JSON.stringify(missingVariants)));
 
 
     // State for bulk assign dialog
@@ -69,10 +69,6 @@ export function MediaManager({
     useEffect(() => {
         fetchMediaData();
     }, [fetchMediaData]);
-    
-    useEffect(() => {
-        setLocalMissingVariants(JSON.parse(JSON.stringify(missingVariants)));
-    }, [missingVariants]);
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
         const newSet = new Set(selectedImageIds);
@@ -84,7 +80,7 @@ export function MediaManager({
         setSelectedImageIds(newSet);
     };
     
-    const unlinkedImages = useMemo(() => images.filter(img => img.variant_ids.length === 0), [images]);
+    const unlinkedImages = useMemo(() => images.filter(img => !img.variant_ids || img.variant_ids.length === 0), [images]);
 
     const handleSelectAllUnlinked = (checked: boolean) => {
         if (checked) {
@@ -243,6 +239,7 @@ export function MediaManager({
                 
                 let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
                 const firstVariantWithOptions = missingVariants.find(v => v.option1Name || v.option2Name || v.option3Name);
+                
                 if (firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
                 else if (firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
                 else if (firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
@@ -640,4 +637,3 @@ export function MediaManager({
         </>
     );
 }
-
