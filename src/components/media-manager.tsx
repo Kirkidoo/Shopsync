@@ -243,9 +243,9 @@ export function MediaManager({
                 
                 let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
                 const firstVariantWithOptions = missingVariants.find(v => v.option1Name || v.option2Name || v.option3Name);
-                if(firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
-                else if(firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
-                else if(firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
+                if (firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
+                else if (firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
+                else if (firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
                 
                 if (!optionKeyToMatch) {
                     toast({ title: 'Option matching error', description: 'Could not determine which option to match on.', variant: 'destructive' });
