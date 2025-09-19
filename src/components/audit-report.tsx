@@ -1069,6 +1069,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     }
   };
 
+  const memoizedMissingVariants = useMemo(() => {
+    if (!editingMissingVariantMedia) return [];
+    return editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p);
+  }, [editingMissingVariantMedia]);
+
 
   const renderRegularReport = () => (
     <Accordion type="single" collapsible className="w-full">
@@ -1436,12 +1441,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       </Accordion>
   );
 
-  const memoizedMissingVariants = useMemo(() => {
-    if (!editingMissingVariantMedia) return [];
-    return editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p);
-  }, [editingMissingVariantMedia]);
-
-
   return (
     <>
     <Card className="w-full">
@@ -1749,7 +1748,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         )}
       </CardContent>
     </Card>
-    <Dialog open={!!editingMediaFor} onOpenChange={(open) => setEditingMediaFor(open ? editingMediaFor : null)}>
+    <Dialog open={!!editingMediaFor} onOpenChange={(open) => !open && setEditingMediaFor(null)}>
         <DialogContent className="max-w-5xl">
             {editingMediaFor && (
                 <MediaManager 
@@ -1760,7 +1759,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             )}
         </DialogContent>
     </Dialog>
-     <Dialog open={!!editingMissingMedia} onOpenChange={(open) => setEditingMissingMedia(open ? editingMissingMedia : null)}>
+     <Dialog open={!!editingMissingMedia} onOpenChange={(open) => !open && setEditingMissingMedia(null)}>
         <DialogContent className="max-w-5xl">
             {editingMissingMedia && (
                 <PreCreationMediaManager
@@ -1772,7 +1771,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             )}
         </DialogContent>
     </Dialog>
-    <Dialog open={!!editingMissingVariantMedia} onOpenChange={(open) => setEditingMissingVariantMedia(open ? editingMissingVariantMedia : null)}>
+    <Dialog open={!!editingMissingVariantMedia} onOpenChange={(open) => !open && setEditingMissingVariantMedia(null)}>
         <DialogContent className="max-w-5xl">
             {editingMissingVariantMedia && (
                 <MediaManager 
