@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useTransition, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -13,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImages, deleteUnlinkedImagesForMultipleProducts, fixMismatchesAndDeleteUnlinkedImages } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImagesForMultipleProducts } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -186,9 +185,6 @@ const ProductDetails = ({ product }: { product: Product | null }) => {
     );
 };
 
-const HANDLES_PER_PAGE_DEFAULT = 10;
-const HANDLES_PER_PAGE_MISSING = 5;
-
 const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = ['name', 'price', 'inventory', 'h1_tag', 'duplicate_in_shopify', 'heavy_product_flag'];
 
 export default function AuditReport({ data, summary, duplicates, fileName, onReset, onRefresh }: { data: AuditResult[], summary: any, duplicates: DuplicateSku[], fileName: string, onReset: () => void, onRefresh: () => void }) {
@@ -200,6 +196,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [reportSummary, setReportSummary] = useState<any>(summary);
   const [showRefresh, setShowRefresh] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [handlesPerPage, setHandlesPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
   const [mismatchFilters, setMismatchFilters] = useState<Set<MismatchDetail['field']>>(new Set());
   const [filterSingleSku, setFilterSingleSku] = useState(false);
@@ -217,10 +214,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [isAutoCreating, setIsAutoCreating] = useState(false);
   
   const selectAllCheckboxRef = useRef<HTMLButtonElement | null>(null);
-
-  const handlesPerPage = useMemo(() => {
-    return filter === 'missing_in_shopify' ? HANDLES_PER_PAGE_MISSING : HANDLES_PER_PAGE_DEFAULT;
-  }, [filter]);
 
   useEffect(() => {
     setReportData(data);
@@ -430,110 +423,48 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     });
   };
   
-  const handleBulkFixAndClean = (handles: Set<string> | null = null) => {
+  const handleBulkDeleteUnlinked = (handles: Set<string> | null = null) => {
       const handlesToProcess = handles || selectedHandles;
       if (handlesToProcess.size === 0) {
-        toast({ title: "No Action Taken", description: "No items were selected to fix.", variant: "destructive" });
-        return Promise.resolve();
+          toast({ title: "No Action Taken", description: "No items were selected.", variant: "destructive" });
+          return Promise.resolve();
       }
 
-      const itemsToFix = reportData.filter(item => 
-          item.status === 'mismatched' && handlesToProcess.has(getHandle(item))
-      );
-
       const productIdsWithUnlinked = Array.from(handlesToProcess).map(handle => {
-            const items = filteredGroupedByHandle[handle];
-            const productId = items?.[0]?.shopifyProducts?.[0]?.id;
-            const imageCount = productId ? imageCounts[productId] : 0;
-            if (productId && imageCount !== undefined && items.length < imageCount) {
-                return productId;
-            }
-            return null;
-        }).filter((id): id is string => id !== null);
+          const items = filteredGroupedByHandle[handle];
+          const productId = items?.[0]?.shopifyProducts?.[0]?.id;
+          const imageCount = productId ? imageCounts[productId] : undefined;
+          if (productId && imageCount !== undefined && items.length < imageCount) {
+              return productId;
+          }
+          return null;
+      }).filter((id): id is string => id !== null);
 
-        if (itemsToFix.length === 0 && productIdsWithUnlinked.length === 0) {
-            toast({ title: "No Action Needed", description: "Selected products have no mismatches or unlinked images to clean.", variant: "default" });
-            return Promise.resolve();
-        }
-      
+      if (productIdsWithUnlinked.length === 0) {
+          toast({ title: "No Action Needed", description: "Selected products have no unlinked images to clean." });
+          return Promise.resolve();
+      }
+
       setShowRefresh(true);
 
-      return new Promise<void>((resolve, reject) => {
-        startTransition(async () => {
-            try {
-                const result = await fixMismatchesAndDeleteUnlinkedImages(itemsToFix, productIdsWithUnlinked);
-                
-                if (result.success) {
-                    toast({ title: 'Bulk Action Complete!', description: result.message });
-
-                    const newFixed = new Set(fixedMismatches);
-                    result.fixResults.forEach(fixedItem => {
-                        markMismatchAsFixed(fixedItem.sku, fixedItem.field);
-                        newFixed.add(`${fixedItem.sku}-${fixedItem.field}`);
-                    });
-                    setFixedMismatches(newFixed);
-
-                    result.deleteResults.forEach(deleteRes => {
-                        if (deleteRes.success && deleteRes.deletedCount > 0) {
-                            handleImageCountChange(deleteRes.productId, imageCounts[deleteRes.productId] - deleteRes.deletedCount);
-                        }
-                    });
-
-                } else {
-                    toast({ title: 'Bulk Action Failed', description: result.message || "An error occurred.", variant: 'destructive' });
-                }
-                setSelectedHandles(new Set());
-                resolve();
-            } catch (error) {
-                toast({ title: 'Bulk Action Errored', description: error instanceof Error ? error.message : "An unknown error occurred.", variant: 'destructive' });
-                reject(error);
-            }
-        });
+      return new Promise<void>((resolve) => {
+          startTransition(async () => {
+              const result = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
+              if (result.success) {
+                  toast({ title: 'Deletion Complete!', description: result.message });
+                  result.results.forEach(deleteRes => {
+                      if (deleteRes.success && deleteRes.deletedCount > 0) {
+                          handleImageCountChange(deleteRes.productId, imageCounts[deleteRes.productId] - deleteRes.deletedCount);
+                      }
+                  });
+              } else {
+                  toast({ title: 'Deletion Failed', description: result.message || "An error occurred.", variant: 'destructive' });
+              }
+              setSelectedHandles(new Set());
+              resolve();
+          });
       });
   };
-
-    const handleBulkDeleteUnlinked = (handles: Set<string> | null = null) => {
-        const handlesToProcess = handles || selectedHandles;
-        if (handlesToProcess.size === 0) {
-            toast({ title: "No Action Taken", description: "No items were selected.", variant: "destructive" });
-            return Promise.resolve();
-        }
-
-        const productIdsWithUnlinked = Array.from(handlesToProcess).map(handle => {
-            const items = filteredGroupedByHandle[handle];
-            const productId = items?.[0]?.shopifyProducts?.[0]?.id;
-            const imageCount = productId ? imageCounts[productId] : undefined;
-            if (productId && imageCount !== undefined && items.length < imageCount) {
-                return productId;
-            }
-            return null;
-        }).filter((id): id is string => id !== null);
-
-        if (productIdsWithUnlinked.length === 0) {
-            toast({ title: "No Action Needed", description: "Selected products have no unlinked images to clean." });
-            return Promise.resolve();
-        }
-
-        setShowRefresh(true);
-
-        return new Promise<void>((resolve) => {
-            startTransition(async () => {
-                const result = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
-                if (result.success) {
-                    toast({ title: 'Deletion Complete!', description: result.message });
-                    result.results.forEach(deleteRes => {
-                        if (deleteRes.success && deleteRes.deletedCount > 0) {
-                            handleImageCountChange(deleteRes.productId, imageCounts[deleteRes.productId] - deleteRes.deletedCount);
-                        }
-                    });
-                } else {
-                    toast({ title: 'Deletion Failed', description: result.message || "An error occurred.", variant: 'destructive' });
-                }
-                setSelectedHandles(new Set());
-                resolve();
-            });
-        });
-    };
 
 
   const handleCreate = (item: AuditResult) => {
@@ -760,6 +691,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setMismatchFilters(new Set());
     setSelectedVendor('all');
     setSelectedHandles(new Set());
+    if (newFilter === 'missing_in_shopify') {
+        setHandlesPerPage(5);
+    } else {
+        setHandlesPerPage(10);
+    }
   }
   
   const handleMismatchFilterChange = (field: MismatchDetail['field'], checked: boolean) => {
@@ -917,10 +853,10 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
   const handleDeleteUnlinked = useCallback((productId: string) => {
       startTransition(async () => {
-          const result = await deleteUnlinkedImages(productId);
-          if (result.success) {
-              toast({ title: "Success!", description: result.message });
-              handleImageCountChange(productId, imageCounts[productId] - result.deletedCount);
+          const result = await deleteUnlinkedImagesForMultipleProducts([productId]);
+          if (result.success && result.results[0]?.deletedCount > 0) {
+              toast({ title: "Success!", description: result.results[0].message });
+              handleImageCountChange(productId, imageCounts[productId] - result.results[0].deletedCount);
           } else {
               toast({ title: "Error Deleting Images", description: result.message, variant: "destructive" });
           }
@@ -934,12 +870,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         const items = filteredGroupedByHandle[handle];
         if (!items) return false;
         const hasMismatches = items.some(item => item.status === 'mismatched' && item.mismatches.length > 0);
-        const hasUnlinked = items.some(item => {
-            const productId = item.shopifyProducts[0]?.id;
-            const imageCount = productId ? imageCounts[productId] : 0;
-            return productId && imageCount && imageCount > item.shopifyProducts.length;
-        });
-        return hasMismatches || hasUnlinked;
+        return hasMismatches;
     });
 
     if (fixableHandles.length === 0) {
@@ -951,13 +882,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     toast({ title: 'Auto-Fixing Page...', description: `Processing ${fixableHandles.length} items.` });
     
     try {
-        await handleBulkFixAndClean(new Set(fixableHandles));
+        await handleBulkFix(new Set(fixableHandles));
         // The loop continues via the useEffect, so no recursive call here.
     } catch(error) {
         toast({ title: 'Auto-Fix Error', description: 'The process was stopped due to an error.', variant: 'destructive' });
         setIsAutoRunning(false);
     }
-  }, [paginatedHandleKeys, filteredGroupedByHandle, handleBulkFixAndClean, imageCounts, toast]);
+  }, [paginatedHandleKeys, filteredGroupedByHandle, handleBulkFix, toast]);
 
     useEffect(() => {
         if (!isAutoRunning || isFixing) {
@@ -1658,6 +1589,26 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
 
         {totalPages > 1 && (
             <div className="flex items-center justify-end gap-4 mt-4">
+                 <div className="flex items-center gap-2 text-sm">
+                    <Label htmlFor="handles-per-page">Items per page</Label>
+                    <Select
+                        value={handlesPerPage.toString()}
+                        onValueChange={(value) => {
+                            setHandlesPerPage(Number(value));
+                            setCurrentPage(1);
+                        }}
+                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                    >
+                        <SelectTrigger id="handles-per-page" className="w-20">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {[5, 10, 25, 50].map(size => (
+                                <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
                 <span className="text-sm text-muted-foreground">
                     Page {currentPage} of {totalPages}
                 </span>
