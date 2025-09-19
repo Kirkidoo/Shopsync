@@ -12,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImagesForMultipleProducts, getProductByHandleServer } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImagesForMultipleProducts, getProductByHandleServer, createMultipleVariantsForProduct } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -212,7 +212,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   const [editingMediaFor, setEditingMediaFor] = useState<string | null>(null);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [isAutoCreating, setIsAutoCreating] = useState(false);
-  const [editingMissingVariantMedia, setEditingMissingVariantMedia] = useState<{item: AuditResult, parentProductId: string} | null>(null);
+  const [editingMissingVariantMedia, setEditingMissingVariantMedia] = useState<{item: AuditResult[], parentProductId: string} | null>(null);
   
   const selectAllCheckboxRef = useRef<HTMLButtonElement | null>(null);
 
@@ -271,10 +271,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         if (item.status === 'mismatched' && item.mismatches.length === 0) {
             return false;
         }
-        if (item.status === 'missing_in_shopify' && item.mismatches.length === 1 && item.mismatches[0].field === 'missing_in_shopify') {
-            // This is a "missing" product that has had its other warnings (like heavy_product) hidden.
-            // If the handle has been created, we hide it completely.
-             return !createdProductHandles.has(getHandle(item));
+        if (item.status === 'missing_in_shopify') {
+             if (createdProductHandles.has(getHandle(item))) {
+                 return false;
+             }
+             if (item.mismatches.length === 1 && item.mismatches[0].field === 'missing_in_shopify') {
+                return !createdProductHandles.has(getHandle(item));
+             }
         }
          if (item.status === 'missing_in_shopify' && item.mismatches.length === 0) {
             return false;
@@ -502,6 +505,30 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         }
     });
   };
+  
+    const handleBulkCreateVariants = (items: AuditResult[]) => {
+        const variantsToCreate = items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p);
+        
+        if (variantsToCreate.length === 0) {
+            toast({ title: 'No variants to create', description: 'Could not find any variant data to create.', variant: 'destructive' });
+            return;
+        }
+
+        const handle = variantsToCreate[0].handle;
+        setShowRefresh(true);
+
+        startTransition(async () => {
+            const result = await createMultipleVariantsForProduct(variantsToCreate);
+            if (result.success) {
+                toast({ title: 'Success!', description: result.message });
+                markProductAsCreated(handle);
+                setCreatedProductHandles(prev => new Set(prev).add(handle));
+            } else {
+                toast({ title: 'Creation Failed', description: result.message, variant: 'destructive' });
+            }
+        });
+    };
+
 
   const handleBulkCreate = (handlesToCreate: Set<string> | null = null) => {
       const handles = handlesToCreate || selectedHandles;
@@ -652,10 +679,11 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         });
     };
     
-    const handleSaveMissingVariantMedia = (updatedVariant: Product) => {
+    const handleSaveMissingVariantMedia = (updatedVariants: Product[]) => {
         setReportData(currentReportData => {
             return currentReportData.map(item => {
-                if (item.sku === updatedVariant.sku) {
+                const updatedVariant = updatedVariants.find(uv => uv.sku === item.sku);
+                if (updatedVariant) {
                     return {
                         ...item,
                         csvProducts: [updatedVariant],
@@ -667,7 +695,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         setEditingMissingVariantMedia(null);
          toast({
             title: "Media Saved",
-            description: "Image assignment has been updated. Click 'Add Variant' to finalize.",
+            description: "Image assignments have been updated. Click 'Add Variants' to finalize.",
         });
     };
 
@@ -727,20 +755,28 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
   };
 
   const updateSelectionState = (selection: Set<string>) => {
-    const hasUnlinked = Array.from(selection).some(handle => {
-        const items = filteredGroupedByHandle[handle];
-        if (!items) return false;
-        const productId = items[0]?.shopifyProducts[0]?.id;
-        const imageCount = productId ? imageCounts[productId] : undefined;
-        return imageCount !== undefined && items.length < imageCount;
-    });
-    setHasSelectionWithUnlinkedImages(hasUnlinked);
+    let hasUnlinked = false;
+    let hasMismatchesFlag = false;
 
-    const hasMismatches = Array.from(selection).some(handle => {
-        const items = filteredGroupedByHandle[handle];
-        return items?.some(item => item.status === 'mismatched');
-    });
-    setHasSelectionWithMismatches(hasMismatches);
+    for (const handle of Array.from(selection)) {
+      const items = filteredGroupedByHandle[handle];
+      if (!items) continue;
+
+      // Check for unlinked images
+      const productId = items[0]?.shopifyProducts[0]?.id;
+      const imageCount = productId ? imageCounts[productId] : undefined;
+      if (imageCount !== undefined && items.length < imageCount) {
+        hasUnlinked = true;
+      }
+      
+      // Check for mismatches
+      if (items.some(item => item.status === 'mismatched')) {
+        hasMismatchesFlag = true;
+      }
+    }
+
+    setHasSelectionWithUnlinkedImages(hasUnlinked);
+    setHasSelectionWithMismatches(hasMismatchesFlag);
   };
 
 
@@ -982,25 +1018,22 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
       toast({ title: 'Auto-Create Stopped', description: 'The automation process has been stopped.' });
   };
 
-  const handleOpenMissingVariantMediaManager = async (item: AuditResult) => {
-    if (!item.csvProducts[0]?.handle) return;
+  const handleOpenMissingVariantMediaManager = async (items: AuditResult[]) => {
+    if (items.length === 0 || !items[0].csvProducts[0]?.handle) return;
     
     toast({ title: "Loading Parent Product...", description: "Fetching existing product data from Shopify."});
     
-    // This is a bit of a workaround. We need the parent product's ID to fetch its images.
-    // The most reliable way to get this is to find a sibling variant that *is* in Shopify.
     let parentProductId: string | undefined;
-    const siblingInShopify = data.find(d => d.shopifyProducts.length > 0 && d.shopifyProducts[0].handle === item.csvProducts[0].handle);
+    const siblingInShopify = data.find(d => d.shopifyProducts.length > 0 && d.shopifyProducts[0].handle === items[0].csvProducts[0]!.handle);
     parentProductId = siblingInShopify?.shopifyProducts[0]?.id;
 
     if (!parentProductId) {
-        // As a fallback, try to fetch the product by handle. This is less reliable.
-        const parentProduct = await getProductByHandleServer(item.csvProducts[0].handle);
+        const parentProduct = await getProductByHandleServer(items[0].csvProducts[0]!.handle);
         parentProductId = parentProduct?.id;
     }
 
     if (parentProductId) {
-        setEditingMissingVariantMedia({ item, parentProductId });
+        setEditingMissingVariantMedia({ items: items, parentProductId });
     } else {
         toast({
             title: "Could not find parent product",
@@ -1041,13 +1074,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             const isLoadingImages = productId ? loadingImageCounts.has(productId) : false;
             const canHaveUnlinkedImages = imageCount !== undefined && items.length < imageCount;
 
-            const isMissingVariantCase = items.some(i => i.status === 'missing_in_shopify' && i.mismatches.some(m => m.missingType === 'variant'));
-
+            const isMissingProductCase = isMissing && items.every(i => i.mismatches.some(m => m.missingType === 'product'));
+            const isMissingVariantCase = isMissing && !isMissingProductCase;
 
             return (
             <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
                 <AccordionHeader className="flex items-center p-0">
-                    {(filter === 'mismatched' || filter === 'missing_in_shopify' || filter === 'all') && (
+                    {(filter === 'mismatched' || (filter === 'missing_in_shopify' && isMissingProductCase) || filter === 'all') && (
                         <div className="p-3 pl-4">
                             <Checkbox
                                 checked={selectedHandles.has(handle)}
@@ -1102,7 +1135,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 Fix All ({items.flatMap(i => i.mismatches).filter(m => m.field !== 'duplicate_in_shopify' && m.field !== 'heavy_product_flag').length})
                             </Button>
                         )}
-                         {isMissing && !isMissingVariantCase && (
+                         {isMissingProductCase && (
                             <>
                                 <TooltipProvider>
                                     <Tooltip>
@@ -1119,6 +1152,16 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 <Button size="sm" onClick={(e) => { e.stopPropagation(); handleCreate(items[0])}} disabled={isFixing || isAutoRunning || isAutoCreating}>
                                     <PlusCircle className="mr-2 h-4 w-4" />
                                     Create Product
+                                </Button>
+                            </>
+                        )}
+                        {isMissingVariantCase && (
+                             <>
+                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleOpenMissingVariantMediaManager(items)}}>
+                                    <ImageIcon className="mr-2 h-4 w-4" /> Manage Media
+                                </Button>
+                                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleBulkCreateVariants(items)}} disabled={isFixing}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Add All {items.length} Variants
                                 </Button>
                             </>
                         )}
@@ -1150,7 +1193,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                 )}
                             </Dialog>
                         )}
-                        {isMissing && !isMissingVariantCase && (
+                        {isMissingProductCase && (
                             <Button size="sm" variant="outline" className="w-[160px]" onClick={(e) => {e.stopPropagation(); setEditingMissingMedia(handle)}} disabled={isAutoRunning || isAutoCreating}>
                                 <ImageIcon className="mr-2 h-4 w-4" />
                                 Manage Media
@@ -1173,10 +1216,9 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                             {items.map((item, index) => {
                                 const itemConfig = statusConfig[item.status as Exclude<AuditStatus, 'matched'>];
                                 const productForDetails = item.csvProducts[0] || item.shopifyProducts[0];
-                                const isMissingType = item.mismatches.find(m => m.field === 'missing_in_shopify')?.missingType;
 
                                 if (item.status === 'mismatched' && item.mismatches.length === 0) return null;
-                                if (item.status === 'missing_in_shopify' && item.mismatches.every(m => m.field !== 'missing_in_shopify')) return null;
+                                if (item.status === 'missing_in_shopify' && !item.mismatches.some(m => m.field === 'missing_in_shopify')) return null;
 
                                 return (
                                     <TableRow key={item.sku} className={
@@ -1206,7 +1248,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                     <p className="text-sm text-muted-foreground">
                                                         This SKU is a{' '}
                                                         <span className="font-semibold text-foreground">
-                                                            {isMissingType === 'product' ? 'Missing Product' : 'Missing Variant'}
+                                                            {item.mismatches.find(m => m.field === 'missing_in_shopify')?.missingType === 'product' ? 'Missing Product' : 'Missing Variant'}
                                                         </span>.
                                                          {item.mismatches.some(m => m.field === 'heavy_product_flag') && <span className="block mt-1"> <AlertTriangle className="inline-block h-4 w-4 mr-1 text-yellow-500" /> This is a heavy product.</span>}
                                                     </p>
@@ -1220,16 +1262,6 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                                                 {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
                                                    <>
                                                       <MissingProductDetailsDialog product={item.csvProducts[0]} />
-                                                      {isMissingType === 'variant' && (
-                                                          <>
-                                                              <Button size="sm" variant="outline" onClick={() => handleOpenMissingVariantMediaManager(item)}>
-                                                                  <ImageIcon className="mr-2 h-4 w-4" /> Manage Media
-                                                              </Button>
-                                                              <Button size="sm" onClick={() => handleCreate(item)} disabled={isFixing}>
-                                                                  <PlusCircle className="mr-2 h-4 w-4" /> Add Variant
-                                                              </Button>
-                                                          </>
-                                                      )}
                                                    </>
                                                 )}
                                                 
@@ -1618,7 +1650,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             )}
         </div>
 
-        {(filter === 'mismatched' || filter === 'missing_in_shopify' || filter === 'all') && paginatedHandleKeys.length > 0 && (
+        {(filter === 'mismatched' || (filter === 'missing_in_shopify' && Array.from(selectedHandles).every(h => filteredGroupedByHandle[h]?.every(i => i.mismatches.some(m => m.missingType === 'product')))) || filter === 'all') && paginatedHandleKeys.length > 0 && (
           <div className="flex items-center border-t border-b px-4 py-2 bg-muted/50">
             <Checkbox
               ref={selectAllCheckboxRef}
@@ -1712,7 +1744,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
                 productId={editingMissingVariantMedia.parentProductId}
                 onImageCountChange={() => {}} // No need to change counts here
                 isMissingVariantMode={true}
-                missingVariant={editingMissingVariantMedia.item.csvProducts[0]}
+                missingVariants={editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter((p): p is Product => !!p)}
                 onSaveMissingVariant={handleSaveMissingVariantMedia}
              />
         </Dialog>

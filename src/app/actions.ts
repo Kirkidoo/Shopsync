@@ -365,7 +365,10 @@ export async function runAudit(csvFileName: string, ftpData: FormData): Promise<
 
   const allShopifyProducts = await getShopifyProductsFromCache(); // This will read from cache
   
-  if (!allShopifyProducts) return null;
+  if (!allShopifyProducts) {
+      console.error("Audit cannot run because Shopify product cache is empty or failed to load.");
+      return null;
+  }
 
   const { report, summary } = await runAuditComparison(csvProducts, allShopifyProducts);
 
@@ -727,6 +730,39 @@ export async function createMultipleInShopify(
     console.log(message);
     return { success: true, message, results: itemResults };
 }
+
+
+export async function createMultipleVariantsForProduct(
+    variants: Product[]
+): Promise<{ success: boolean; message: string; results: any[] }> {
+    let successCount = 0;
+    const itemResults = [];
+
+    if (variants.length === 0) {
+        return { success: false, message: 'No variants provided to create.', results: [] };
+    }
+    
+    const handle = variants[0].handle;
+    console.log(`Starting bulk variant creation for handle: ${handle}`);
+
+    for (const variant of variants) {
+        const result = await createInShopify(variant, variants, 'N/A', 'variant');
+        if (result.success) {
+            successCount++;
+        }
+        itemResults.push({ sku: variant.sku, ...result });
+        await sleep(600); // Add delay between each variant creation to avoid rate limiting
+    }
+
+    if (successCount > 0) {
+        revalidatePath('/');
+    }
+
+    const message = `Attempted to create ${variants.length} variants for handle ${handle}. Successfully created ${successCount}.`;
+    console.log(message);
+    return { success: successCount > 0, message, results: itemResults };
+}
+
 
 export async function deleteFromShopify(productId: string) {
     console.log(`Attempting to delete product with GID: ${productId}`);

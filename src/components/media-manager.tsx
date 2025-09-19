@@ -23,15 +23,15 @@ interface MediaManagerProps {
     productId: string;
     onImageCountChange: (newCount: number) => void;
     isMissingVariantMode?: boolean;
-    missingVariant?: Product;
-    onSaveMissingVariant?: (updatedVariant: Product) => void;
+    missingVariants?: Product[];
+    onSaveMissingVariant?: (updatedVariant: Product[]) => void;
 }
 
 export function MediaManager({ 
     productId, 
     onImageCountChange, 
     isMissingVariantMode = false, 
-    missingVariant,
+    missingVariants = [],
     onSaveMissingVariant
 }: MediaManagerProps) {
     const [isLoading, setIsLoading] = useState(true);
@@ -42,7 +42,7 @@ export function MediaManager({
     const [isSubmitting, startSubmitting] = useTransition();
     const { toast } = useToast();
     const [selectedImageIds, setSelectedImageIds] = useState<Set<number>>(new Set());
-    const [localMissingVariant, setLocalMissingVariant] = useState<Product | undefined>(missingVariant);
+    const [localMissingVariants, setLocalMissingVariants] = useState<Product[]>([]);
 
 
     // State for bulk assign dialog
@@ -71,8 +71,8 @@ export function MediaManager({
     }, [fetchMediaData]);
     
     useEffect(() => {
-        setLocalMissingVariant(missingVariant);
-    }, [missingVariant]);
+        setLocalMissingVariants(JSON.parse(JSON.stringify(missingVariants)));
+    }, [missingVariants]);
 
     const handleImageSelection = (imageId: number, checked: boolean) => {
         const newSet = new Set(selectedImageIds);
@@ -133,8 +133,8 @@ export function MediaManager({
         });
     }
 
-    const handleAssignImageToMissingVariant = (imageId: number | null) => {
-        setLocalMissingVariant(prev => prev ? { ...prev, imageId } : undefined);
+    const handleAssignImageToMissingVariant = (sku: string, imageId: number | null) => {
+        setLocalMissingVariants(prev => prev.map(v => v.sku === sku ? { ...v, imageId } : v));
     };
     
     const handleDeleteImage = (imageId: number) => {
@@ -196,18 +196,19 @@ export function MediaManager({
     }
 
     const availableOptions = useMemo(() => {
+        const optionsSource = isMissingVariantMode ? missingVariants : variants;
         const options = new Map<string, Set<string>>();
-        if (variants.length === 0) {
+        if (optionsSource.length === 0) {
             return options;
         }
         
         const optionNames = {
-            option1: variants.find(v => v.option1Name)?.option1Name || 'Option1',
-            option2: variants.find(v => v.option2Name)?.option2Name || 'Option2',
-            option3: variants.find(v => v.option3Name)?.option3Name || 'Option3',
+            option1: optionsSource.find(v => v.option1Name)?.option1Name || 'Option1',
+            option2: optionsSource.find(v => v.option2Name)?.option2Name || 'Option2',
+            option3: optionsSource.find(v => v.option3Name)?.option3Name || 'Option3',
         };
 
-        variants.forEach(variant => {
+        optionsSource.forEach(variant => {
             if (variant.option1Value) {
                 if (!options.has(optionNames.option1)) options.set(optionNames.option1, new Set());
                 options.get(optionNames.option1)!.add(variant.option1Value);
@@ -223,7 +224,7 @@ export function MediaManager({
         });
 
         return options;
-    }, [variants]);
+    }, [variants, missingVariants, isMissingVariantMode]);
 
     const handleBulkAssign = () => {
         const imageId = parseInt(bulkAssignImageId);
@@ -232,65 +233,96 @@ export function MediaManager({
             return;
         }
         
-        let variantsToUpdate: Partial<Product>[] = [];
+        if (isMissingVariantMode) {
+             let variantsToUpdate = [...localMissingVariants];
+             if (bulkAssignOption !== 'All Variants') {
+                 if (!bulkAssignValue) {
+                    toast({ title: 'Incomplete Selection', description: 'Please select a value to match.', variant: 'destructive' });
+                    return;
+                }
+                
+                let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
+                const firstVariantWithOptions = missingVariants.find(v => v.option1Name || v.option2Name || v.option3Name);
+                if(firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
+                else if(firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
+                else if(firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
+                
+                if (!optionKeyToMatch) {
+                    toast({ title: 'Option matching error', description: 'Could not determine which option to match on.', variant: 'destructive' });
+                    return;
+                }
+                variantsToUpdate = localMissingVariants.filter(v => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue);
+            }
 
-        if (bulkAssignOption === 'All Variants') {
-            variantsToUpdate = [...variants];
+            setLocalMissingVariants(prev => prev.map(v => 
+                variantsToUpdate.some(vtu => vtu.sku === v.sku) ? { ...v, imageId } : v
+            ));
+
+            toast({ title: 'Success!', description: `Image assigned to ${variantsToUpdate.length} variants.` });
+
         } else {
-            if (!bulkAssignValue) {
-                toast({ title: 'Incomplete Selection', description: 'Please select a value to match.', variant: 'destructive' });
-                return;
-            }
+            let variantsToUpdate: Partial<Product>[] = [];
 
-            let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
-            const firstVariantWithOptions = variants.find(v => v.option1Name || v.option2Name || v.option3Name);
-            if(firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
-            else if(firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
-            else if(firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
-            else if (bulkAssignOption === 'Option1') optionKeyToMatch = 'option1Value';
-            else if (bulkAssignOption === 'Option2') optionKeyToMatch = 'option2Value';
-            else if (bulkAssignOption === 'Option3') optionKeyToMatch = 'option3Value';
-
-            if (!optionKeyToMatch) {
-                toast({ title: 'Option matching error', description: 'Could not determine which option to match on.', variant: 'destructive' });
-                return;
-            }
-            variantsToUpdate = variants.filter(v => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue);
-        }
-        
-        if (variantsToUpdate.length === 0) {
-            toast({ title: 'No variants found', description: 'No variants match the selected criteria.', variant: 'destructive' });
-            return;
-        }
-        
-        const originalVariants = [...variants];
-        const newVariants = variants.map(v => {
-             if (variantsToUpdate.some(vtu => vtu.variantId === v.variantId)) {
-                return { ...v, imageId: imageId };
-            }
-            return v;
-        });
-        setVariants(newVariants);
-        setIsBulkAssignDialogOpen(false);
-
-        startSubmitting(async () => {
-            const results = await Promise.all(
-                variantsToUpdate.map(v => assignImageToVariant(v.variantId!, imageId))
-            );
-
-            const failedCount = results.filter(r => !r.success).length;
-            if (failedCount > 0) {
-                setVariants(originalVariants); // Revert on failure
-                toast({ title: 'Bulk Assign Failed', description: `Could not assign image to ${failedCount} variants.`, variant: 'destructive' });
+            if (bulkAssignOption === 'All Variants') {
+                variantsToUpdate = [...variants];
             } else {
-                toast({ title: 'Success!', description: `Image assigned to ${variantsToUpdate.length} variants.` });
+                if (!bulkAssignValue) {
+                    toast({ title: 'Incomplete Selection', description: 'Please select a value to match.', variant: 'destructive' });
+                    return;
+                }
+
+                let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
+                const firstVariantWithOptions = variants.find(v => v.option1Name || v.option2Name || v.option3Name);
+                if(firstVariantWithOptions?.option1Name === bulkAssignOption) optionKeyToMatch = 'option1Value';
+                else if(firstVariantWithOptions?.option2Name === bulkAssignOption) optionKeyToMatch = 'option2Value';
+                else if(firstVariantWithOptions?.option3Name === bulkAssignOption) optionKeyToMatch = 'option3Value';
+                else if (bulkAssignOption === 'Option1') optionKeyToMatch = 'option1Value';
+                else if (bulkAssignOption === 'Option2') optionKeyToMatch = 'option2Value';
+                else if (bulkAssignOption === 'Option3') optionKeyToMatch = 'option3Value';
+
+                if (!optionKeyToMatch) {
+                    toast({ title: 'Option matching error', description: 'Could not determine which option to match on.', variant: 'destructive' });
+                    return;
+                }
+                variantsToUpdate = variants.filter(v => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue);
             }
-            // Reset form
-            setBulkAssignImageId('');
-            setBulkAssignOption('');
-            setBulkAssignValue('');
-            fetchMediaData();
-        });
+            
+            if (variantsToUpdate.length === 0) {
+                toast({ title: 'No variants found', description: 'No variants match the selected criteria.', variant: 'destructive' });
+                return;
+            }
+            
+            const originalVariants = [...variants];
+            const newVariants = variants.map(v => {
+                 if (variantsToUpdate.some(vtu => vtu.variantId === v.variantId)) {
+                    return { ...v, imageId: imageId };
+                }
+                return v;
+            });
+            setVariants(newVariants);
+            setIsBulkAssignDialogOpen(false);
+
+            startSubmitting(async () => {
+                const results = await Promise.all(
+                    variantsToUpdate.map(v => assignImageToVariant(v.variantId!, imageId))
+                );
+
+                const failedCount = results.filter(r => !r.success).length;
+                if (failedCount > 0) {
+                    setVariants(originalVariants); // Revert on failure
+                    toast({ title: 'Bulk Assign Failed', description: `Could not assign image to ${failedCount} variants.`, variant: 'destructive' });
+                } else {
+                    toast({ title: 'Success!', description: `Image assigned to ${variantsToUpdate.length} variants.` });
+                }
+                fetchMediaData();
+            });
+        }
+        
+        // Reset form
+        setBulkAssignImageId('');
+        setBulkAssignOption('');
+        setBulkAssignValue('');
+        setIsBulkAssignDialogOpen(false);
     }
     
     const areAllUnlinkedSelected = useMemo(() => {
@@ -305,7 +337,7 @@ export function MediaManager({
                 <DialogTitle>Manage Product Media</DialogTitle>
                 <DialogDescription>
                     {isMissingVariantMode
-                        ? "Assign an existing image from the parent product to the new variant."
+                        ? "Assign an existing image from the parent product to the new variant(s)."
                         : "Add, remove, and assign images for this product and its variants. Use checkboxes for bulk actions."
                     }
                 </DialogDescription>
@@ -331,8 +363,6 @@ export function MediaManager({
                         <div className="flex justify-between items-center border-b pb-2">
                             <h3 className="font-semibold text-lg">Image Gallery ({images.length})</h3>
                              <div className="flex items-center gap-2">
-                                {!isMissingVariantMode && (
-                                <>
                                 <Dialog open={isBulkAssignDialogOpen} onOpenChange={setIsBulkAssignDialogOpen}>
                                     <DialogTrigger asChild>
                                         <Button variant="outline" size="sm" disabled={isSubmitting || images.length === 0}>
@@ -396,6 +426,7 @@ export function MediaManager({
                                         </DialogFooter>
                                     </DialogContent>
                                 </Dialog>
+                                {!isMissingVariantMode && (
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                         <Button variant="destructive" size="sm" disabled={isSubmitting || selectedImageIds.size === 0}>
@@ -412,7 +443,6 @@ export function MediaManager({
                                         </AlertDialogFooter>
                                     </AlertDialogContent>
                                 </AlertDialog>
-                                </>
                                 )}
                             </div>
                         </div>
@@ -515,7 +545,7 @@ export function MediaManager({
                     {/* Right side: Variant Assignments */}
                     <div className="flex flex-col gap-4 overflow-y-auto pr-2">
                         <h3 className="font-semibold text-lg border-b pb-2">
-                             {isMissingVariantMode ? "Assign to New Variant" : `Variant Assignments (${variants.length})`}
+                             {isMissingVariantMode ? "Assign to New Variants" : `Variant Assignments (${variants.length})`}
                         </h3>
                         <Table>
                             <TableHeader>
@@ -526,35 +556,37 @@ export function MediaManager({
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {isMissingVariantMode && localMissingVariant ? (
-                                    <TableRow>
-                                        <TableCell className="font-medium">{localMissingVariant.sku}</TableCell>
-                                        <TableCell className="text-xs text-muted-foreground">
-                                            {[localMissingVariant.option1Value, localMissingVariant.option2Value, localMissingVariant.option3Value].filter(Boolean).join(' / ')}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Select
-                                                value={localMissingVariant.imageId?.toString() ?? 'none'}
-                                                onValueChange={(value) => handleAssignImageToMissingVariant(value === 'none' ? null : parseInt(value))}
-                                                disabled={isSubmitting}
-                                            >
-                                                <SelectTrigger className="w-[180px]">
-                                                    <SelectValue placeholder="Select image..." />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="none">No Image</SelectItem>
-                                                    {images.map(image => (
-                                                         <SelectItem key={image.id} value={image.id.toString()}>
-                                                            <div className="flex items-center gap-2">
-                                                                <Image src={image.src} alt="" width={20} height={20} className="rounded-sm" />
-                                                                <span>Image #{image.id}</span>
-                                                            </div>
-                                                         </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </TableCell>
-                                    </TableRow>
+                                {isMissingVariantMode ? (
+                                    localMissingVariants.map(variant => (
+                                        <TableRow key={variant.sku}>
+                                            <TableCell className="font-medium">{variant.sku}</TableCell>
+                                            <TableCell className="text-xs text-muted-foreground">
+                                                {[variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join(' / ')}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Select
+                                                    value={variant.imageId?.toString() ?? 'none'}
+                                                    onValueChange={(value) => handleAssignImageToMissingVariant(variant.sku, value === 'none' ? null : parseInt(value))}
+                                                    disabled={isSubmitting}
+                                                >
+                                                    <SelectTrigger className="w-[180px]">
+                                                        <SelectValue placeholder="Select image..." />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="none">No Image</SelectItem>
+                                                        {images.map(image => (
+                                                             <SelectItem key={image.id} value={image.id.toString()}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <Image src={image.src} alt="" width={20} height={20} className="rounded-sm" />
+                                                                    <span>Image #{image.id}</span>
+                                                                </div>
+                                                             </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
                                 ) : (
                                 variants.map(variant => (
                                     <TableRow key={variant.variantId}>
@@ -596,10 +628,10 @@ export function MediaManager({
                             <Button variant="outline">Cancel</Button>
                         </DialogClose>
                         <Button
-                            onClick={() => onSaveMissingVariant?.(localMissingVariant!)}
-                            disabled={!localMissingVariant}
+                            onClick={() => onSaveMissingVariant?.(localMissingVariants)}
+                            disabled={localMissingVariants.length === 0}
                         >
-                            Save Assignment
+                            Save Assignments
                         </Button>
                     </DialogFooter>
                 )}
