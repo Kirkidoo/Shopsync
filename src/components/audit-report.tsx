@@ -12,7 +12,7 @@ import { CheckCircle2, AlertTriangle, PlusCircle, ArrowLeft, Download, XCircle, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImagesForMultipleProducts, getProductByHandleServer, createMultipleVariantsForProduct } from '@/app/actions';
+import { fixMultipleMismatches, createInShopify, createMultipleInShopify, deleteFromShopify, deleteVariantFromShopify, getProductImageCounts, deleteUnlinkedImagesForMultipleProducts, getProductByHandleServer, createMultipleVariantsForProduct, addImageFromUrl } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -1031,15 +1031,39 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
         const parentProduct = await getProductByHandleServer(items[0].csvProducts[0]!.handle);
         parentProductId = parentProduct?.id;
     }
-
-    if (parentProductId) {
-        setEditingMissingVariantMedia({ items: items, parentProductId });
-    } else {
+    
+     if (!parentProductId) {
         toast({
             title: "Could not find parent product",
             description: "Unable to load media. No existing variants of this product were found in the audit data.",
             variant: "destructive"
         });
+        return;
+    }
+    
+    // Check for new image URLs in the missing variants and upload them if necessary
+    const newImageUrls = [...new Set(items.map(i => i.csvProducts[0]?.mediaUrl).filter((url): url is string => !!url))];
+    
+    if (newImageUrls.length > 0) {
+        toast({ title: "Adding New Images...", description: `Found ${newImageUrls.length} new images in the CSV. Adding them to the product gallery.` });
+        
+        const uploads = await Promise.all(
+            newImageUrls.map(url => addImageFromUrl(parentProductId!, url))
+        );
+        
+        const failedUploads = uploads.filter(u => !u.success);
+        if (failedUploads.length > 0) {
+            toast({
+                title: "Some Images Failed to Add",
+                description: `${failedUploads.length} new images could not be added to the product. They will not be available in the gallery.`,
+                variant: "destructive"
+            });
+        }
+    }
+
+
+    if (parentProductId) {
+        setEditingMissingVariantMedia({ items: items, parentProductId });
     }
   };
 
@@ -1605,13 +1629,13 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
             {selectedHandles.size > 0 && (
                 <>
                     {hasSelectionWithMismatches && (
-                        <Button onClick={() => handleBulkFix(null)} disabled={isFixing || isAutoRunning || isAutoCreating}>
+                        <Button onClick={() => handleBulkFix()} disabled={isFixing || isAutoRunning || isAutoCreating}>
                             <Wand2 className="mr-2 h-4 w-4" />
                              Fix Mismatches ({selectedHandles.size})
                         </Button>
                     )}
                     {hasSelectionWithUnlinkedImages && (
-                         <Button variant="destructive" onClick={() => handleBulkDeleteUnlinked(null)} disabled={isFixing || isAutoRunning || isAutoCreating}>
+                         <Button variant="destructive" onClick={() => handleBulkDeleteUnlinked()} disabled={isFixing || isAutoRunning || isAutoCreating}>
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete Unlinked
                         </Button>
@@ -1752,3 +1776,4 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     </>
   );
 }
+

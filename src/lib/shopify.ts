@@ -517,9 +517,24 @@ export async function addProductVariant(product: Product): Promise<any> {
     if (!productGid) {
         throw new Error(`Could not find product with handle ${product.handle} to add variant to.`);
     }
-    const productId = productGid.split('/').pop();
+    const productId = parseInt(productGid.split('/').pop()!, 10);
 
     const getOptionValue = (value: string | null | undefined, fallback: string | null) => (value?.trim() ? value.trim() : fallback);
+    
+    let imageId = product.imageId;
+
+    // If a mediaUrl is provided and no imageId is set, upload the image first.
+    if (product.mediaUrl && !imageId) {
+        console.log(`Uploading new image from URL for new variant: ${product.mediaUrl}`);
+        try {
+            const newImage = await addProductImage(productId, product.mediaUrl);
+            imageId = newImage.id;
+            console.log(`New image uploaded with ID: ${imageId}`);
+        } catch (error) {
+            console.warn(`Failed to upload image from URL ${product.mediaUrl}. Variant will be created without an image.`, error);
+        }
+    }
+
 
     const variantPayload: any = {
       variant: {
@@ -535,7 +550,7 @@ export async function addProductVariant(product: Product): Promise<any> {
         option1: getOptionValue(product.option1Value, product.sku),
         option2: getOptionValue(product.option2Value, null),
         option3: getOptionValue(product.option3Value, null),
-        image_id: product.imageId,
+        image_id: imageId,
       }
     }
     
@@ -1072,6 +1087,7 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
     
 
     
+
 
 
 

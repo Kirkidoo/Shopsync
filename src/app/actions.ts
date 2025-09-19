@@ -991,35 +991,6 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
     console.log(message);
     return { success: totalSuccessCount > 0, message, results };
 }
-
-export async function fixMismatchesAndDeleteUnlinkedImages(
-    itemsToFix: AuditResult[],
-    productIdsWithUnlinked: string[]
-): Promise<{ success: boolean; message: string; fixResults: any[]; deleteResults: any[] }> {
-    console.log(`Starting combined fix & delete operation.`);
-    
-    // Step 1: Delete unlinked images
-    const deleteResult = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
-
-    // Step 2: Fix mismatches
-    const fixResult = await fixMultipleMismatches(itemsToFix);
-    
-    // Step 3: Combine results and create a summary message
-    const totalFixes = fixResult.results.length;
-    const totalProductsProcessedForDeletion = deleteResult.results.length;
-    const totalImagesDeleted = deleteResult.results.reduce((sum, r) => sum + r.deletedCount, 0);
-
-    const message = `Bulk action complete. Deleted ${totalImagesDeleted} unlinked images from ${totalProductsProcessedForDeletion} products and fixed ${totalFixes} mismatches.`;
-
-    revalidatePath('/');
-    
-    return {
-        success: fixResult.success || deleteResult.success,
-        message: message,
-        fixResults: fixResult.results,
-        deleteResults: deleteResult.results,
-    };
-}
       
 
     
@@ -1038,3 +1009,4 @@ export async function fixMismatchesAndDeleteUnlinkedImages(
     
 
     
+
