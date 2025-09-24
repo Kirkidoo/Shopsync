@@ -222,7 +222,7 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     setReportSummary(summary);
     setShowRefresh(false);
     setCurrentPage(1);
-    setHandlesPerPage(filter === 'missing_in_shopify' ? 5 : 10);
+    // setHandlesPerPage(filter === 'missing_in_shopify' ? 5 : 10);
     setSelectedHandles(new Set());
     setHasSelectionWithUnlinkedImages(false);
     setHasSelectionWithMismatches(false);
@@ -429,48 +429,48 @@ export default function AuditReport({ data, summary, duplicates, fileName, onRes
     });
   };
   
-  const handleBulkDeleteUnlinked = (handles: Set<string> | null = null) => {
-      const handlesToProcess = handles || selectedHandles;
-      if (handlesToProcess.size === 0) {
-          toast({ title: "No Action Taken", description: "No items were selected.", variant: "destructive" });
-          return Promise.resolve();
-      }
+    const handleBulkDeleteUnlinked = (handles: Set<string> | null = null) => {
+        const handlesToProcess = handles || selectedHandles;
+        if (handlesToProcess.size === 0) {
+            toast({ title: "No Action Taken", description: "No items were selected.", variant: "destructive" });
+            return Promise.resolve();
+        }
 
-      const productIdsWithUnlinked = Array.from(handlesToProcess).map(handle => {
-          const items = filteredGroupedByHandle[handle];
-          const productId = items?.[0]?.shopifyProducts?.[0]?.id;
-          const imageCount = productId ? imageCounts[productId] : undefined;
-          if (productId && imageCount !== undefined && items.length < imageCount) {
-              return productId;
-          }
-          return null;
-      }).filter((id): id is string => id !== null);
+        const productIdsWithUnlinked = Array.from(handlesToProcess).map(handle => {
+            const items = filteredGroupedByHandle[handle];
+            const productId = items?.[0]?.shopifyProducts?.[0]?.id;
+            const imageCount = productId ? imageCounts[productId] : undefined;
+            if (productId && imageCount !== undefined && items.length < imageCount) {
+                return productId;
+            }
+            return null;
+        }).filter((id): id is string => id !== null);
 
-      if (productIdsWithUnlinked.length === 0) {
-          toast({ title: "No Action Needed", description: "Selected products have no unlinked images to clean." });
-          return Promise.resolve();
-      }
+        if (productIdsWithUnlinked.length === 0) {
+            toast({ title: "No Action Needed", description: "Selected products have no unlinked images to clean." });
+            return Promise.resolve();
+        }
 
-      setShowRefresh(true);
+        setShowRefresh(true);
 
-      return new Promise<void>((resolve) => {
-          startTransition(async () => {
-              const result = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
-              if (result.success) {
-                  toast({ title: 'Deletion Complete!', description: result.message });
-                  result.results.forEach(deleteRes => {
-                      if (deleteRes.success && deleteRes.deletedCount > 0) {
-                          handleImageCountChange(deleteRes.productId, imageCounts[deleteRes.productId] - deleteRes.deletedCount);
-                      }
-                  });
-              } else {
-                  toast({ title: 'Deletion Failed', description: result.message || "An error occurred.", variant: 'destructive' });
-              }
-              setSelectedHandles(new Set());
-              resolve();
-          });
-      });
-  };
+        return new Promise<void>((resolve) => {
+            startTransition(async () => {
+                const result = await deleteUnlinkedImagesForMultipleProducts(productIdsWithUnlinked);
+                if (result.success) {
+                    toast({ title: 'Deletion Complete!', description: result.message });
+                    result.results.forEach(deleteRes => {
+                        if (deleteRes.success && deleteRes.deletedCount > 0) {
+                            handleImageCountChange(deleteRes.productId, imageCounts[deleteRes.productId] - deleteRes.deletedCount);
+                        }
+                    });
+                } else {
+                    toast({ title: 'Deletion Failed', description: result.message || "An error occurred.", variant: 'destructive' });
+                }
+                setSelectedHandles(new Set());
+                resolve();
+            });
+        });
+    };
 
 
   const handleCreate = (item: AuditResult) => {
