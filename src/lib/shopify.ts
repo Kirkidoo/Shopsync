@@ -285,13 +285,16 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                 });
                 
                 if (response.body.errors) {
-                  console.error('GraphQL Errors:', response.body.errors);
-                  if (JSON.stringify(response.body.errors).includes('Throttled')) {
-                     console.log("Throttled by Shopify, waiting 5 seconds before retrying...");
+                  const errorString = JSON.stringify(response.body.errors);
+                  console.error('GraphQL Errors:', errorString);
+                  if (errorString.includes('Throttled')) {
+                     console.log(`Throttled by Shopify on batch, waiting 5 seconds before retrying... (Attempt ${retries + 1})`);
                      retries++;
                      await sleep(5000);
                      continue; // Retry the same batch
                   }
+                   // For non-throttling errors, throw to fail the entire operation.
+                   throw new Error(`Non-recoverable GraphQL error: ${errorString}`);
                 }
 
                 const productEdges = response.body.data?.products?.edges || [];
@@ -335,14 +338,17 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
             } catch (error) {
                 console.error("Error during Shopify product fetch loop:", error);
                  if (error instanceof Error && error.message.includes('Throttled')) {
-                    console.log("Caught throttled error, waiting 5 seconds before retrying...");
+                    console.log(`Caught throttled error, waiting 5 seconds before retrying... (Attempt ${retries + 1})`);
                     retries++;
                     await sleep(5000);
                 } else {
-                   console.error("An unexpected error occurred while fetching a batch. Skipping to next.", error);
-                   break; // Break the retry loop for this batch and move to the next
+                   console.error("An unexpected error occurred while fetching a batch. Aborting.", error);
+                   throw error; // Re-throw the error to abort the entire audit
                 }
             }
+        }
+        if (!success) {
+            throw new Error(`Failed to fetch batch after ${retries} retries. Aborting audit.`);
         }
         processedSkusCount += batch.length;
     }
@@ -1179,5 +1185,7 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
 
 
       
+
+    
 
     

@@ -87,23 +87,28 @@ export async function listCsvFiles(data: FormData) {
 
 async function getCsvStreamFromFtp(csvFileName: string, ftpData: FormData): Promise<Readable> {
     const client = await getFtpClient(ftpData);
-    console.log('Navigating to FTP directory:', FTP_DIRECTORY);
-    await client.cd(FTP_DIRECTORY);
-    console.log(`Downloading file: ${csvFileName}`);
+    try {
+        console.log('Navigating to FTP directory:', FTP_DIRECTORY);
+        await client.cd(FTP_DIRECTORY);
+        console.log(`Downloading file: ${csvFileName}`);
 
-    const chunks: any[] = [];
-    const writable = new Writable({
-        write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
+        const chunks: any[] = [];
+        const writable = new Writable({
+            write(chunk, encoding, callback) {
+                chunks.push(chunk);
+                callback();
+            }
+        });
+
+        await client.downloadTo(writable, csvFileName);
+        console.log('File downloaded successfully.');
+        
+        return Readable.from(Buffer.concat(chunks));
+    } finally {
+        if (!client.closed) {
+            client.close();
         }
-    });
-
-    await client.downloadTo(writable, csvFileName);
-    console.log('File downloaded successfully.');
-    client.close();
-
-    return Readable.from(Buffer.concat(chunks));
+    }
 }
 
 
@@ -1064,5 +1069,7 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
     
 
 
+
+    
 
     
