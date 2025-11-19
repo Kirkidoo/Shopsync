@@ -10,7 +10,46 @@ import { createReadStream } from 'fs';
 import { S_IFREG } from 'constants';
 import { request } from 'http';
 
-// Helper function to introduce a delay
+// --- Helper Types for API Responses ---
+interface ShopifyGraphQLError {
+    message: string;
+    locations: { line: number; column: number; }[];
+    path: string[];
+    extensions: {
+        code: string;
+        documentation: string;
+    };
+}
+
+interface GraphQLResponse<T> {
+    body: {
+        data: T;
+        errors?: ShopifyGraphQLError[];
+        extensions: {
+            cost: {
+                requestedQueryCost: number;
+                actualQueryCost: number;
+                throttleStatus: {
+                    maximumAvailable: number;
+                    currentlyAvailable: number;
+                    restoreRate: number;
+                };
+            };
+        };
+    };
+}
+
+interface ShopifyRestError {
+    errors: string | { [key: string]: string | string[] };
+}
+
+interface RestResponse<T> {
+    body: T & ShopifyRestError;
+    headers: any;
+}
+
+
+// --- Helper function to introduce a delay ---
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const GAMMA_WAREHOUSE_LOCATION_ID = 93998154045;
@@ -299,12 +338,12 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
             try {
                 await sleep(500); // Rate limiting
 
-                const response: any = await shopifyClient.query({
+                const response = await shopifyClient.query({
                     data: {
                         query: GET_PRODUCTS_BY_SKU_QUERY,
                         variables: { query },
                     }
-                });
+                }) as GraphQLResponse<{ products: { edges: { node: any }[] } }>;
                 
                 const responseErrors = response.body.errors;
                 if (responseErrors) {
@@ -384,7 +423,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 export async function getShopifyLocations(): Promise<{id: number; name: string}[]> {
     const shopifyClient = getShopifyRestClient();
     try {
-        const response: any = await shopifyClient.get({ path: 'locations' });
+        const response = await shopifyClient.get({ path: 'locations' }) as RestResponse<{locations: {id: number; name: string}[]}>;
         return response.body.locations;
     } catch(error: any) {
         console.error("Error fetching Shopify locations:", error.response?.body || error);
@@ -395,7 +434,7 @@ export async function getShopifyLocations(): Promise<{id: number; name: string}[
 export async function getFullProduct(productId: number): Promise<any> {
     const shopifyClient = getShopifyRestClient();
     try {
-        const response: any = await shopifyClient.get({ path: `products/${productId}` });
+        const response = await shopifyClient.get({ path: `products/${productId}` }) as RestResponse<{product: any}>;
         return response.body.product;
     } catch(error: any) {
         console.error(`Error fetching full product for ID ${productId}:`, error.response?.body || error);
@@ -410,13 +449,13 @@ export async function getProductImageCounts(productIds: number[]): Promise<Recor
     }
 
     try {
-        const response: any = await shopifyClient.get({
+        const response = await shopifyClient.get({
             path: 'products',
             query: {
                 ids: productIds.join(','),
                 fields: 'id,images'
             }
-        });
+        }) as RestResponse<{products: {id: number, images: any[]}[]}>;
 
         const counts: Record<string, number> = {};
         if (response.body.products && Array.isArray(response.body.products)) {
@@ -434,12 +473,12 @@ export async function getProductImageCounts(productIds: number[]): Promise<Recor
 export async function getProductByHandle(handle: string): Promise<any> {
     const shopifyClient = getShopifyGraphQLClient();
      try {
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: GET_PRODUCT_BY_HANDLE_QUERY,
                 variables: { handle },
             },
-        });
+        }) as GraphQLResponse<{ productByHandle: any }>;
         return response.body.data?.productByHandle;
     } catch (error) {
         console.error(`Error fetching product by handle "${handle}":`, error);
@@ -464,7 +503,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
     const getOptionValue = (value: string | null | undefined, fallback: string | null) => (value?.trim() ? value.trim() : fallback);
 
     // Create a mutable copy for processing
-    const processedVariants = JSON.parse(JSON.stringify(productVariants));
+    const processedVariants = structuredClone(productVariants);
     const seenOptionValues = new Set<string>();
 
     for (const variant of processedVariants) {
@@ -520,7 +559,7 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
     }
 
 
-    const productPayload: any = {
+    const productPayload: { product: any } = {
         product: {
             title: firstVariant.name,
             handle: firstVariant.handle,
@@ -547,10 +586,10 @@ export async function createProduct(productVariants: Product[], addClearanceTag:
     console.log('Phase 1: Creating product with REST payload:', JSON.stringify(productPayload, null, 2));
 
     try {
-        const response: any = await shopifyClient.post({
+        const response = await shopifyClient.post({
             path: 'products',
             data: productPayload,
-        });
+        }) as RestResponse<{product: any}>;
 
         const createdProduct = response.body.product;
 
@@ -574,12 +613,12 @@ export async function addProductVariant(product: Product): Promise<any> {
     const graphQLClient = getShopifyGraphQLClient();
 
     // Find the parent product's ID using its handle
-    const productResponse: any = await graphQLClient.query({
+    const productResponse = await graphQLClient.query({
         data: {
             query: GET_PRODUCT_BY_HANDLE_QUERY,
             variables: { handle: product.handle },
         },
-    });
+    }) as GraphQLResponse<{productByHandle: any}>;
 
     const productByHandle = productResponse.body.data?.productByHandle;
     const productGid = productByHandle?.id;
@@ -616,7 +655,7 @@ export async function addProductVariant(product: Product): Promise<any> {
     }
 
 
-    const variantPayload: any = {
+    const variantPayload: { variant: any } = {
       variant: {
         price: product.price,
         sku: product.sku,
@@ -637,17 +676,17 @@ export async function addProductVariant(product: Product): Promise<any> {
     console.log(`Adding product variant to product ID ${productId} with REST payload:`, variantPayload);
 
     try {
-        const response: any = await shopifyClient.post({
+        const response = await shopifyClient.post({
             path: `products/${productId}/variants`,
             data: variantPayload,
-        });
+        }) as RestResponse<{variant: any}>;
 
         const createdVariant = response.body.variant;
         if (!createdVariant) {
             throw new Error('Variant creation did not return the expected variant data.');
         }
         
-        const fullProductResponse:any = await shopifyClient.get({ path: `products/${productId}` });
+        const fullProductResponse = await shopifyClient.get({ path: `products/${productId}` }) as RestResponse<{product: any}>;
 
         return fullProductResponse.body.product;
         
@@ -662,12 +701,12 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
     // If we are only updating the title, we can use the more efficient GraphQL mutation
     if (input.title && !input.bodyHtml && !input.templateSuffix) {
         const shopifyClient = getShopifyGraphQLClient();
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: UPDATE_PRODUCT_MUTATION,
                 variables: { input: { id, title: input.title } },
             },
-        });
+        }) as GraphQLResponse<{ productUpdate: { userErrors: any[] } }>;
         const userErrors = response.body.data?.productUpdate?.userErrors;
         if (userErrors && userErrors.length > 0) {
             console.error("Error updating product title via GraphQL:", userErrors);
@@ -695,10 +734,10 @@ export async function updateProduct(id: string, input: { title?: string, bodyHtm
     if (input.templateSuffix) payload.product.template_suffix = input.templateSuffix;
 
     try {
-        const response: any = await shopifyClient.put({
+        const response = await shopifyClient.put({
             path: `products/${numericProductId}`,
             data: payload,
-        });
+        }) as RestResponse<{product: any}>;
          if (response.body.errors) {
             console.error("Error updating product via REST:", response.body.errors);
             throw new Error(`Failed to update product: ${JSON.stringify(response.body.errors)}`);
@@ -720,10 +759,10 @@ export async function updateProductVariant(variantId: number, input: { image_id?
     console.log(`Phase 2: Updating variant ${variantId} with REST payload:`, JSON.stringify(payload, null, 2));
 
     try {
-        const response: any = await shopifyClient.put({
+        const response = await shopifyClient.put({
             path: `variants/${variantId}`,
             data: payload,
-        });
+        }) as RestResponse<{variant: any}>;
 
         if (response.body.errors) {
             console.error("Error updating variant via REST:", response.body.errors);
@@ -837,12 +876,12 @@ export async function inventorySetQuantities(inventoryItemId: string, quantity: 
     };
 
     try {
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: INVENTORY_SET_QUANTITIES_MUTATION,
                 variables: { input },
             },
-        });
+        }) as GraphQLResponse<{ inventorySetQuantities: { userErrors: any[] } }>;
 
         const userErrors = response.body.data?.inventorySetQuantities?.userErrors;
         if (userErrors && userErrors.length > 0) {
@@ -862,12 +901,12 @@ export async function getCollectionIdByTitle(title: string): Promise<string | nu
     const shopifyClient = getShopifyGraphQLClient();
     const formattedQuery = `title:"${title}"`;
     try {
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: GET_COLLECTION_BY_TITLE_QUERY,
                 variables: { query: formattedQuery },
             },
-        });
+        }) as GraphQLResponse<{ collections: { edges: { node: { id: string } }[] } }>;
         const collectionEdge = response.body.data?.collections?.edges?.[0];
         return collectionEdge?.node?.id || null;
     } catch (error) {
@@ -903,7 +942,7 @@ export async function publishProductToSalesChannels(productGid: string): Promise
     const shopifyClient = getShopifyGraphQLClient();
     
     // 1. Fetch all available publications
-    const publicationsResponse: any = await shopifyClient.query({ data: { query: GET_ALL_PUBLICATIONS_QUERY } });
+    const publicationsResponse = await shopifyClient.query({ data: { query: GET_ALL_PUBLICATIONS_QUERY } }) as GraphQLResponse<{ publications: { edges: { node: { id: string } }[] } }>;
     const publications = publicationsResponse.body.data?.publications?.edges.map((edge: any) => edge.node) || [];
     
     if (publications.length === 0) {
@@ -915,7 +954,7 @@ export async function publishProductToSalesChannels(productGid: string): Promise
 
     // 2. Publish the product to all publications
     try {
-        const result: any = await shopifyClient.query({
+        const result = await shopifyClient.query({
             data: {
                 query: PUBLISHABLE_PUBLISH_MUTATION,
                 variables: {
@@ -923,7 +962,7 @@ export async function publishProductToSalesChannels(productGid: string): Promise
                     input: publicationInputs
                 }
             }
-        });
+        }) as GraphQLResponse<{ publishablePublish: { userErrors: any[] } }>;
 
         const userErrors = result.body.data?.publishablePublish?.userErrors;
         if (userErrors && userErrors.length > 0) {
@@ -942,12 +981,12 @@ export async function publishProductToSalesChannels(productGid: string): Promise
 export async function addProductTags(productId: string, tags: string[]): Promise<void> {
     const shopifyClient = getShopifyGraphQLClient();
     try {
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: ADD_TAGS_MUTATION,
                 variables: { id: productId, tags },
             },
-        });
+        }) as GraphQLResponse<{ tagsAdd: { userErrors: any[] } }>;
         const userErrors = response.body.data?.tagsAdd?.userErrors;
         if (userErrors && userErrors.length > 0) {
             throw new Error(`Failed to add tags: ${userErrors[0].message}`);
@@ -962,12 +1001,12 @@ export async function addProductTags(productId: string, tags: string[]): Promise
 export async function removeProductTags(productId: string, tags: string[]): Promise<void> {
     const shopifyClient = getShopifyGraphQLClient();
     try {
-        const response: any = await shopifyClient.query({
+        const response = await shopifyClient.query({
             data: {
                 query: REMOVE_TAGS_MUTATION,
                 variables: { id: productId, tags },
             },
-        });
+        }) as GraphQLResponse<{ tagsRemove: { userErrors: any[] } }>;
         const userErrors = response.body.data?.tagsRemove?.userErrors;
         if (userErrors && userErrors.length > 0) {
             throw new Error(`Failed to remove tags: ${userErrors[0].message}`);
@@ -984,14 +1023,14 @@ export async function removeProductTags(productId: string, tags: string[]): Prom
 export async function addProductImage(productId: number, imageUrl: string): Promise<ShopifyProductImage> {
     const shopifyClient = getShopifyRestClient();
     try {
-        const response: any = await shopifyClient.post({
+        const response = await shopifyClient.post({
             path: `products/${productId}/images`,
             data: {
                 image: {
                     src: imageUrl,
                 },
             },
-        });
+        }) as RestResponse<{image: ShopifyProductImage}>;
         return response.body.image;
     } catch (error: any) {
         console.error(`Error adding image to product ${productId}:`, error.response?.body || error);
@@ -1018,9 +1057,9 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
     const shopifyClient = getShopifyGraphQLClient();
     
     // First, check if an operation is already running.
-    const currentOpResponse: any = await shopifyClient.query({
+    const currentOpResponse = await shopifyClient.query({
         data: { query: GET_CURRENT_BULK_OPERATION_QUERY },
-    });
+    }) as GraphQLResponse<{ currentBulkOperation: any }>;
     const currentOperation = currentOpResponse.body.data?.currentBulkOperation;
     if (currentOperation && (currentOperation.status === 'RUNNING' || currentOperation.status === 'CREATED')) {
         console.log(`Found existing bulk operation: ${currentOperation.id}. Recovering...`);
@@ -1067,12 +1106,12 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
         }
     `;
 
-    const response: any = await shopifyClient.query({
+    const response = await shopifyClient.query({
         data: {
             query: BULK_OPERATION_RUN_QUERY_MUTATION,
             variables: { query },
         },
-    });
+    }) as GraphQLResponse<{ bulkOperationRunQuery: { bulkOperation: any, userErrors: any[] } }>;
 
     const userErrors = response.body.data?.bulkOperationRunQuery?.userErrors;
     if (userErrors && userErrors.length > 0) {
@@ -1090,9 +1129,9 @@ export async function startProductExportBulkOperation(): Promise<{ id: string, s
 export async function checkBulkOperationStatus(id: string): Promise<{ id: string, status: string, resultUrl?: string }> {
     const shopifyClient = getShopifyGraphQLClient();
     
-    const currentOpResponse: any = await shopifyClient.query({
+    const currentOpResponse = await shopifyClient.query({
         data: { query: GET_CURRENT_BULK_OPERATION_QUERY },
-    });
+    }) as GraphQLResponse<{ currentBulkOperation: any }>;
 
     const operation = currentOpResponse.body.data?.currentBulkOperation;
     
@@ -1121,12 +1160,12 @@ export async function checkBulkOperationStatus(id: string): Promise<{ id: string
         }
       }
     `;
-    const specificOpResponse: any = await shopifyClient.query({
+    const specificOpResponse = await shopifyClient.query({
         data: {
             query: specificOpQuery,
             variables: { id }
         }
-    });
+    }) as GraphQLResponse<{ node: any }>;
 
     const specificOperation = specificOpResponse.body.data?.node;
 
