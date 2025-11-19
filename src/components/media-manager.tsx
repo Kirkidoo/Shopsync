@@ -419,7 +419,25 @@ export function MediaManager({
                                         </div>
                                         <DialogFooter>
                                             <Button variant="outline" onClick={() => setIsBulkAssignDialogOpen(false)}>Cancel</Button>
-                                            <Button onClick={handleBulkAssign}>Assign Image</Button>
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button disabled={!bulkAssignImageId || !bulkAssignOption || (bulkAssignOption !== 'All Variants' && !bulkAssignValue)}>Assign Image</Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            This will overwrite the current image assignments for all selected variants. This action cannot be undone.
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={handleBulkAssign}>
+                                                            Yes, Assign
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
                                         </DialogFooter>
                                     </DialogContent>
                                 </Dialog>
