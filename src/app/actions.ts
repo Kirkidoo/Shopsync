@@ -750,6 +750,7 @@ export async function createInShopify(
         // 2d. Publish to all sales channels (only for new products)
         if (missingType === 'product' && productGid) {
             console.log(`Publishing product ${productGid} to all sales channels...`);
+            await sleep(2000); // Add a 2-second wait to ensure the product is ready
             await publishProductToSalesChannels(productGid);
         } else {
             console.warn(`Could not publish product with handle ${product.handle} because its GID was not found or it's a new variant.`);
