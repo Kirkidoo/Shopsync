@@ -65,6 +65,14 @@ const GET_PRODUCT_BY_HANDLE_QUERY = `
     productByHandle(handle: $handle) {
       id
       handle
+      images(first: 100) {
+        edges {
+            node {
+                id
+                url
+            }
+        }
+      }
     }
   }
 `;
@@ -186,6 +194,21 @@ const REMOVE_TAGS_MUTATION = `
   }
 `;
 
+const INVENTORY_SET_QUANTITIES_MUTATION = `
+    mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+        inventorySetQuantities(input: $input) {
+            inventoryAdjustmentGroup {
+                id
+            }
+            userErrors {
+                field
+                message
+                code
+            }
+        }
+    }
+`;
+
 
 // --- Client Initialization ---
 
@@ -267,7 +290,6 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 
     console.log(`Processing ${skuBatches.length} batches of SKUs.`);
 
-    let processedSkusCount = 0;
     for (const batch of skuBatches) {
         const query = batch.map(sku => `sku:"${sku}"`).join(' OR ');
         let retries = 0;
@@ -284,17 +306,19 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                     }
                 });
                 
-                if (response.body.errors) {
-                  const errorString = JSON.stringify(response.body.errors);
-                  console.error('GraphQL Errors:', errorString);
-                  if (errorString.includes('Throttled')) {
-                     console.log(`Throttled by Shopify on batch, waiting 5 seconds before retrying... (Attempt ${retries + 1})`);
-                     retries++;
-                     await sleep(5000);
-                     continue; // Retry the same batch
-                  }
-                   // For non-throttling errors, throw to fail the entire operation.
-                   throw new Error(`Non-recoverable GraphQL error: ${errorString}`);
+                const responseErrors = response.body.errors;
+                if (responseErrors) {
+                    const errorString = JSON.stringify(responseErrors);
+                    console.error('GraphQL Errors:', errorString);
+
+                    if (errorString.includes('Throttled')) {
+                        console.log(`Throttled by Shopify on batch, waiting 5 seconds before retrying... (Attempt ${retries + 1})`);
+                        retries++;
+                        await sleep(5000);
+                        continue; // Retry the same batch
+                    }
+                    // For non-throttling errors, throw to fail the entire operation.
+                    throw new Error(`Non-recoverable GraphQL error: ${errorString}`);
                 }
 
                 const productEdges = response.body.data?.products?.edges || [];
@@ -336,7 +360,6 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                 }
                 success = true; // Batch processed successfully
             } catch (error) {
-                console.error("Error during Shopify product fetch loop:", error);
                  if (error instanceof Error && error.message.includes('Throttled')) {
                     console.log(`Caught throttled error, waiting 5 seconds before retrying... (Attempt ${retries + 1})`);
                     retries++;
@@ -350,7 +373,6 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
         if (!success) {
             throw new Error(`Failed to fetch batch after ${retries} retries. Aborting audit.`);
         }
-        processedSkusCount += batch.length;
     }
     
     const exactMatchProducts = allProducts.filter(p => requestedSkuSet.has(p.sku));
@@ -559,25 +581,37 @@ export async function addProductVariant(product: Product): Promise<any> {
         },
     });
 
-    const productGid = productResponse.body.data?.productByHandle?.id;
+    const productByHandle = productResponse.body.data?.productByHandle;
+    const productGid = productByHandle?.id;
+
     if (!productGid) {
         throw new Error(`Could not find product with handle ${product.handle} to add variant to.`);
     }
     const productId = parseInt(productGid.split('/').pop()!, 10);
+    
+    const existingImages = productByHandle.images?.edges.map((e: any) => e.node) || [];
 
     const getOptionValue = (value: string | null | undefined, fallback: string | null) => (value?.trim() ? value.trim() : fallback);
     
     let imageId = product.imageId;
 
-    // If a mediaUrl is provided and no imageId is set, upload the image first.
+    // If a mediaUrl is provided, check if it already exists before uploading.
     if (product.mediaUrl && !imageId) {
-        console.log(`Uploading new image from URL for new variant: ${product.mediaUrl}`);
-        try {
-            const newImage = await addProductImage(productId, product.mediaUrl);
-            imageId = newImage.id;
-            console.log(`New image uploaded with ID: ${imageId}`);
-        } catch (error) {
-            console.warn(`Failed to upload image from URL ${product.mediaUrl}. Variant will be created without an image.`, error);
+        const imageFilename = product.mediaUrl.split('/').pop()?.split('?')[0];
+        const existingImage = existingImages.find((img: {url: string}) => img.url.includes(imageFilename as string));
+
+        if (existingImage) {
+            imageId = parseInt(existingImage.id.split('/').pop()!);
+            console.log(`Reusing existing image ID ${imageId} for new variant.`);
+        } else {
+            console.log(`Uploading new image from URL for new variant: ${product.mediaUrl}`);
+            try {
+                const newImage = await addProductImage(productId, product.mediaUrl);
+                imageId = newImage.id;
+                console.log(`New image uploaded with ID: ${imageId}`);
+            } catch (error) {
+                console.warn(`Failed to upload image from URL ${product.mediaUrl}. Variant will be created without an image.`, error);
+            }
         }
     }
 
@@ -786,26 +820,41 @@ export async function disconnectInventoryFromLocation(inventoryItemId: string, l
 }
 
 
-export async function updateInventoryLevel(inventoryItemId: string, quantity: number, locationId: number) {
-    const shopifyClient = getShopifyRestClient();
-    const numericInventoryItemId = inventoryItemId.split('/').pop();
+export async function inventorySetQuantities(inventoryItemId: string, quantity: number, locationId: number) {
+    const shopifyClient = getShopifyGraphQLClient();
+    
+    const locationGid = `gid://shopify/Location/${locationId}`;
+
+    const input = {
+        reason: "correction",
+        setQuantities: [
+            {
+                inventoryItemId: inventoryItemId,
+                locationId: locationGid,
+                quantity: quantity
+            }
+        ]
+    };
 
     try {
-        await shopifyClient.post({
-            path: 'inventory_levels/set',
+        const response: any = await shopifyClient.query({
             data: {
-                inventory_item_id: numericInventoryItemId,
-                location_id: locationId,
-                available: quantity,
+                query: INVENTORY_SET_QUANTITIES_MUTATION,
+                variables: { input },
             },
         });
+
+        const userErrors = response.body.data?.inventorySetQuantities?.userErrors;
+        if (userErrors && userErrors.length > 0) {
+            console.error("Error setting inventory via GraphQL:", userErrors);
+            const errorMessage = userErrors.map((e: any) => e.message).join('; ');
+            throw new Error(`Failed to set inventory: ${errorMessage}`);
+        }
+        
         console.log(`Successfully set inventory for item ${inventoryItemId} at location ${locationId} to ${quantity}.`);
     } catch (error: any) {
-         if (error.response?.body) {
-            console.error("Error updating inventory via REST:", error.response.body);
-            throw new Error(`Failed to update inventory: ${JSON.stringify(error.response.body.errors || error.message)}`);
-        }
-        throw error;
+         console.error("Error updating inventory via GraphQL:", error);
+         throw error;
     }
 }
 
@@ -1185,6 +1234,8 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
 
 
       
+
+    
 
     
 

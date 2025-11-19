@@ -5,7 +5,7 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail, ShopifyProductImage
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { parse } from 'csv-parse';
-import { getShopifyProductsBySku, updateProduct, updateProductVariant, updateInventoryLevel, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant, startProductExportBulkOperation as startShopifyBulkOp, checkBulkOperationStatus as checkShopifyBulkOpStatus, getBulkOperationResult, parseBulkOperationResult, getFullProduct, addProductImage, deleteProductImage, getProductImageCounts as getShopifyProductImageCounts, getProductByHandle, addProductTags, removeProductTags } from '@/lib/shopify';
+import { getShopifyProductsBySku, updateProduct, updateProductVariant, inventorySetQuantities, createProduct, addProductVariant, connectInventoryToLocation, linkProductToCollection, getCollectionIdByTitle, getShopifyLocations, disconnectInventoryFromLocation, publishProductToSalesChannels, deleteProduct, deleteProductVariant, startProductExportBulkOperation as startShopifyBulkOp, checkBulkOperationStatus as checkShopifyBulkOpStatus, getBulkOperationResult, parseBulkOperationResult, getFullProduct, addProductImage, deleteProductImage, getProductImageCounts as getShopifyProductImageCounts, getProductByHandle, addProductTags, removeProductTags } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
 import fs from 'fs/promises';
 import path from 'path';
@@ -220,11 +220,8 @@ function findMismatches(csvProduct: Product, shopifyProduct: Product, csvFileNam
     }
     
     // Clearance tag check
-    if (csvFileName.toLowerCase().includes('clearance') && shopifyProduct.tags) {
-        const tags = shopifyProduct.tags.split(',').map(t => t.trim().toLowerCase());
-        if (!tags.includes('clearance')) {
-            mismatches.push({ field: 'missing_clearance_tag', csvValue: 'Clearance', shopifyValue: 'Not Found' });
-        }
+    if (csvFileName.toLowerCase().includes('clearance') && shopifyProduct.tags && !shopifyProduct.tags.toLowerCase().split(',').map(t=>t.trim()).includes('clearance')) {
+        mismatches.push({ field: 'missing_clearance_tag', csvValue: 'Clearance', shopifyValue: 'Not Found' });
     }
     
     return mismatches;
@@ -528,7 +525,7 @@ async function _fixSingleMismatch(
                 break;
             case 'inventory':
                  if (fixPayload.inventoryItemId && fixPayload.inventory !== null) {
-                    await updateInventoryLevel(fixPayload.inventoryItemId, fixPayload.inventory, GAMMA_WAREhouse_LOCATION_ID);
+                    await inventorySetQuantities(fixPayload.inventoryItemId, fixPayload.inventory, GAMMA_WAREhouse_LOCATION_ID);
                 }
                 break;
             case 'h1_tag':
@@ -557,32 +554,65 @@ async function _fixSingleMismatch(
 
 export async function fixMultipleMismatches(items: AuditResult[]): Promise<{ success: boolean; message: string, results: any[] }> {
     let fixCount = 0;
-    const itemResults = [];
+    const allResults: any[] = [];
 
-    for (const item of items) {
-        if (item.status !== 'mismatched' || item.csvProducts.length === 0 || item.shopifyProducts.length === 0) {
-            continue;
-        }
-
-        const csvProduct = item.csvProducts[0];
-        const shopifyProduct = item.shopifyProducts[0];
-
-        for (const mismatch of item.mismatches) {
-            const result = await _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct);
-            if (result.success) {
-                fixCount++;
+    // Group items by product ID to process fixes for the same product together
+    const groupedByProductId = items.reduce((acc, item) => {
+        if (item.status === 'mismatched' && item.shopifyProducts.length > 0) {
+            const productId = item.shopifyProducts[0].id;
+            if (!acc[productId]) {
+                acc[productId] = [];
             }
-            itemResults.push({ sku: item.sku, field: mismatch.field, ...result });
-             await sleep(600); // Add a small delay to avoid rate limiting
+            acc[productId].push(item);
         }
+        return acc;
+    }, {} as Record<string, AuditResult[]>);
+
+
+    for (const productId in groupedByProductId) {
+        const productItems = groupedByProductId[productId];
+        const fixPromises: Promise<{ sku: string; field: MismatchDetail['field']; success: boolean; message: string; }>[] = [];
+
+        for (const item of productItems) {
+            const csvProduct = item.csvProducts[0];
+            const shopifyProduct = item.shopifyProducts[0];
+
+            for (const mismatch of item.mismatches) {
+                fixPromises.push(
+                    _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct).then(result => ({
+                        sku: item.sku,
+                        field: mismatch.field,
+                        ...result
+                    }))
+                );
+            }
+        }
+        
+        try {
+            const results = await Promise.all(fixPromises);
+            allResults.push(...results);
+            const successfulFixesInBatch = results.filter(r => r.success).length;
+            fixCount += successfulFixesInBatch;
+            
+            if (successfulFixesInBatch < results.length) {
+                 console.log(`Some fixes failed for product ID ${productId}`);
+            }
+
+        } catch (error) {
+            console.error(`An error occurred during parallel fix execution for product ID ${productId}:`, error);
+        }
+
+        // Add delay between processing each product to avoid rate limiting
+        await sleep(600);
     }
     
     if (fixCount > 0) {
         revalidatePath('/');
     }
 
-    const successfulFixes = itemResults.filter(r => r.success);
-    const message = `Attempted to fix ${itemResults.length} issues. Successfully fixed ${fixCount}.`;
+    const totalFixesAttempted = allResults.length;
+    const successfulFixes = allResults.filter(r => r.success);
+    const message = `Attempted to fix ${totalFixesAttempted} issues. Successfully fixed ${fixCount}.`;
     console.log(message);
     return { success: true, message, results: successfulFixes };
 }
@@ -697,7 +727,7 @@ export async function createInShopify(
                 await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREhouse_LOCATION_ID);
                 
                 console.log('Setting inventory level...');
-                await updateInventoryLevel(inventoryItemIdGid, sourceVariant.inventory, GAMMA_WAREhouse_LOCATION_ID);
+                await inventorySetQuantities(inventoryItemIdGid, sourceVariant.inventory, GAMMA_WAREhouse_LOCATION_ID);
 
                 if (garageLocation) {
                     console.log(`Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`);
@@ -1069,6 +1099,8 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
     
 
 
+
+    
 
     
 
