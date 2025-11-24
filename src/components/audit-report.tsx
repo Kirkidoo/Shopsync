@@ -760,58 +760,61 @@ export default function AuditReport({
     downloadCsv(csvData, 'shopsync-audit-report.csv');
   };
 
-  const handleBulkFix = (
-    handles: Set<string> | null = null,
-    fixTypes: MismatchDetail['field'][] | undefined = undefined
-  ) => {
-    const handlesToProcess = handles || selectedHandles;
-    if (handlesToProcess.size === 0) {
-      toast({
-        title: 'No Action Taken',
-        description: 'No items were selected to fix.',
-        variant: 'destructive',
+  const handleBulkFix = useCallback(
+    (
+      handles: Set<string> | null = null,
+      fixTypes: MismatchDetail['field'][] | undefined = undefined
+    ) => {
+      const handlesToProcess = handles || selectedHandles;
+      if (handlesToProcess.size === 0) {
+        toast({
+          title: 'No Action Taken',
+          description: 'No items were selected to fix.',
+          variant: 'destructive',
+        });
+        return Promise.resolve();
+      }
+
+      const itemsToFix = reportData.filter(
+        (item) => item.status === 'mismatched' && handlesToProcess.has(getHandle(item))
+      );
+
+      if (itemsToFix.length === 0) {
+        toast({
+          title: 'No Action Needed',
+          description: 'Selected products have no mismatches to fix.',
+          variant: 'default',
+        });
+        return Promise.resolve();
+      }
+
+      setShowRefresh(true);
+
+      return new Promise<void>((resolve) => {
+        startTransition(async () => {
+          const result = await fixMultipleMismatches(itemsToFix, fixTypes);
+          if (result.success && result.results.length > 0) {
+            toast({ title: 'Bulk Fix Complete!', description: result.message });
+            const newFixed = new Set(fixedMismatches);
+            result.results.forEach((fixedItem) => {
+              markMismatchAsFixed(fixedItem.sku, fixedItem.field);
+              newFixed.add(`${fixedItem.sku}-${fixedItem.field}`);
+            });
+            setFixedMismatches(newFixed);
+          } else {
+            toast({
+              title: 'Bulk Fix Failed',
+              description: result.message || 'No items were fixed.',
+              variant: 'destructive',
+            });
+          }
+          setSelectedHandles(new Set());
+          resolve();
+        });
       });
-      return Promise.resolve();
-    }
-
-    const itemsToFix = reportData.filter(
-      (item) => item.status === 'mismatched' && handlesToProcess.has(getHandle(item))
-    );
-
-    if (itemsToFix.length === 0) {
-      toast({
-        title: 'No Action Needed',
-        description: 'Selected products have no mismatches to fix.',
-        variant: 'default',
-      });
-      return Promise.resolve();
-    }
-
-    setShowRefresh(true);
-
-    return new Promise<void>((resolve) => {
-      startTransition(async () => {
-        const result = await fixMultipleMismatches(itemsToFix, fixTypes);
-        if (result.success && result.results.length > 0) {
-          toast({ title: 'Bulk Fix Complete!', description: result.message });
-          const newFixed = new Set(fixedMismatches);
-          result.results.forEach((fixedItem) => {
-            markMismatchAsFixed(fixedItem.sku, fixedItem.field);
-            newFixed.add(`${fixedItem.sku}-${fixedItem.field}`);
-          });
-          setFixedMismatches(newFixed);
-        } else {
-          toast({
-            title: 'Bulk Fix Failed',
-            description: result.message || 'No items were fixed.',
-            variant: 'destructive',
-          });
-        }
-        setSelectedHandles(new Set());
-        resolve();
-      });
-    });
-  };
+    },
+    [selectedHandles, reportData, fixedMismatches, toast, setFixedMismatches, setSelectedHandles]
+  );
 
   const handleFixSingleMismatch = (item: AuditResult, fixType: MismatchDetail['field']) => {
     const itemToFix: AuditResult = {
@@ -963,84 +966,87 @@ export default function AuditReport({
     });
   };
 
-  const handleBulkCreate = (handlesToCreate: Set<string> | null = null) => {
-    const handles = handlesToCreate || selectedHandles;
-    if (handles.size === 0) {
-      toast({
-        title: 'No Action Taken',
-        description: 'No items were selected to create.',
-        variant: 'destructive',
-      });
-      return Promise.resolve();
-    }
+  const handleBulkCreate = useCallback(
+    (handlesToCreate: Set<string> | null = null) => {
+      const handles = handlesToCreate || selectedHandles;
+      if (handles.size === 0) {
+        toast({
+          title: 'No Action Taken',
+          description: 'No items were selected to create.',
+          variant: 'destructive',
+        });
+        return Promise.resolve();
+      }
 
-    const itemsToCreate = Array.from(handles)
-      .map((handle) => {
-        const firstItemForHandle = reportData.find(
-          (d) => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify'
+      const itemsToCreate = Array.from(handles)
+        .map((handle) => {
+          const firstItemForHandle = reportData.find(
+            (d) => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify'
+          );
+          if (!firstItemForHandle || !firstItemForHandle.csvProducts[0]) return null;
+
+          const allVariantsForHandle = reportData
+            .filter((d) => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify')
+            .map((d) => d.csvProducts[0])
+            .filter((p): p is Product => p !== null);
+
+          const missingType =
+            firstItemForHandle.mismatches.find((m) => m.field === 'missing_in_shopify')
+              ?.missingType ?? 'product';
+
+          // We only want to bulk-create *new products*, not add variants to existing ones.
+          if (missingType !== 'product') return null;
+
+          return {
+            product: firstItemForHandle.csvProducts[0],
+            allVariants: allVariantsForHandle,
+            missingType: missingType,
+          };
+        })
+        .filter(
+          (item): item is { product: Product; allVariants: Product[]; missingType: 'product' } =>
+            item !== null
         );
-        if (!firstItemForHandle || !firstItemForHandle.csvProducts[0]) return null;
 
-        const allVariantsForHandle = reportData
-          .filter((d) => d.csvProducts[0]?.handle === handle && d.status === 'missing_in_shopify')
-          .map((d) => d.csvProducts[0])
-          .filter((p): p is Product => p !== null);
+      if (itemsToCreate.length === 0) {
+        toast({
+          title: 'No Products to Create',
+          description:
+            'The selected items are for adding variants to existing products, which cannot be done in bulk. Please create them individually.',
+          variant: 'default',
+        });
+        return Promise.resolve();
+      }
 
-        const missingType =
-          firstItemForHandle.mismatches.find((m) => m.field === 'missing_in_shopify')
-            ?.missingType ?? 'product';
+      setShowRefresh(true);
 
-        // We only want to bulk-create *new products*, not add variants to existing ones.
-        if (missingType !== 'product') return null;
-
-        return {
-          product: firstItemForHandle.csvProducts[0],
-          allVariants: allVariantsForHandle,
-          missingType: missingType,
-        };
-      })
-      .filter(
-        (item): item is { product: Product; allVariants: Product[]; missingType: 'product' } =>
-          item !== null
-      );
-
-    if (itemsToCreate.length === 0) {
-      toast({
-        title: 'No Products to Create',
-        description:
-          'The selected items are for adding variants to existing products, which cannot be done in bulk. Please create them individually.',
-        variant: 'default',
+      return new Promise<void>((resolve) => {
+        startTransition(async () => {
+          const result = await createMultipleInShopify(itemsToCreate, fileName);
+          if (result.success) {
+            toast({ title: 'Bulk Create Complete!', description: result.message });
+            const newCreatedHandles = new Set(createdProductHandles);
+            result.results.forEach((createdItem) => {
+              if (createdItem.success) {
+                markProductAsCreated(createdItem.handle);
+                newCreatedHandles.add(createdItem.handle);
+              }
+            });
+            setCreatedProductHandles(newCreatedHandles);
+          } else {
+            toast({
+              title: 'Bulk Create Failed',
+              description: result.message,
+              variant: 'destructive',
+            });
+          }
+          setSelectedHandles(new Set());
+          resolve();
+        });
       });
-      return Promise.resolve();
-    }
-
-    setShowRefresh(true);
-
-    return new Promise<void>((resolve) => {
-      startTransition(async () => {
-        const result = await createMultipleInShopify(itemsToCreate, fileName);
-        if (result.success) {
-          toast({ title: 'Bulk Create Complete!', description: result.message });
-          const newCreatedHandles = new Set(createdProductHandles);
-          result.results.forEach((createdItem) => {
-            if (createdItem.success) {
-              markProductAsCreated(createdItem.handle);
-              newCreatedHandles.add(createdItem.handle);
-            }
-          });
-          setCreatedProductHandles(newCreatedHandles);
-        } else {
-          toast({
-            title: 'Bulk Create Failed',
-            description: result.message,
-            variant: 'destructive',
-          });
-        }
-        setSelectedHandles(new Set());
-        resolve();
-      });
-    });
-  };
+    },
+    [selectedHandles, reportData, fileName, toast, createdProductHandles]
+  );
 
   const handleDeleteProduct = (item: AuditResult, productToDelete?: Product) => {
     const product = productToDelete || item.shopifyProducts[0];
@@ -1668,28 +1674,27 @@ export default function AuditReport({
               {(filter === 'mismatched' ||
                 (filter === 'missing_in_shopify' && isMissingProductCase) ||
                 filter === 'all') && (
-                <div className="p-3 pl-4">
-                  <Checkbox
-                    checked={selectedHandles.has(handle)}
-                    onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
-                    aria-label={`Select product ${handle}`}
-                    disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
-                  />
-                </div>
-              )}
+                  <div className="p-3 pl-4">
+                    <Checkbox
+                      checked={selectedHandles.has(handle)}
+                      onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                      aria-label={`Select product ${handle}`}
+                      disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
+                    />
+                  </div>
+                )}
               <AccordionTrigger
                 className="flex-grow p-3 text-left"
                 disabled={isFixing || isAutoRunning || isAutoCreating}
               >
                 <div className="flex flex-grow items-center gap-4">
                   <config.icon
-                    className={`h-5 w-5 shrink-0 ${
-                      overallStatus === 'mismatched'
-                        ? 'text-yellow-500'
-                        : overallStatus === 'missing_in_shopify'
-                          ? 'text-red-500'
-                          : 'text-blue-500'
-                    }`}
+                    className={`h-5 w-5 shrink-0 ${overallStatus === 'mismatched'
+                      ? 'text-yellow-500'
+                      : overallStatus === 'missing_in_shopify'
+                        ? 'text-red-500'
+                        : 'text-blue-500'
+                      }`}
                   />
                   <div className="flex-grow text-left">
                     <p className="font-semibold">{productTitle}</p>
@@ -2011,7 +2016,7 @@ export default function AuditReport({
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This will permanently delete the variant with SKU "{item.sku}"
+                                      This will permanently delete the variant with SKU &quot;{item.sku}&quot;
                                       from Shopify. This action cannot be undone.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
@@ -2049,7 +2054,7 @@ export default function AuditReport({
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                All variants for "{productTitle}" are not in the CSV. This will
+                                All variants for &quot;{productTitle}&quot; are not in the CSV. This will
                                 permanently delete the entire product and its {items.length}{' '}
                                 variants from Shopify. This action cannot be undone.
                               </AlertDialogDescription>
@@ -2162,7 +2167,7 @@ export default function AuditReport({
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete this product?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete the product "{product.name}" (handle:{' '}
+                                  This will permanently delete the product &quot;{product.name}&quot; (handle:{' '}
                                   {product.handle}) from Shopify. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
@@ -2236,7 +2241,7 @@ export default function AuditReport({
               <AlertDescription>
                 Your Shopify store contains {duplicates.length} SKUs that are assigned to multiple
                 products. This can cause issues with inventory and order fulfillment. View them in
-                the 'Duplicate in Shopify' tab.
+                the &apos;Duplicate in Shopify&apos; tab.
               </AlertDescription>
             </Alert>
           )}
@@ -2658,7 +2663,7 @@ export default function AuditReport({
             <MediaManager
               key={editingMissingVariantMedia.parentProductId}
               productId={editingMissingVariantMedia.parentProductId}
-              onImageCountChange={() => {}} // No need to change counts here
+              onImageCountChange={() => { }} // No need to change counts here
               isMissingVariantMode={true}
               missingVariants={memoizedMissingVariants}
               onSaveMissingVariant={handleSaveMissingVariantMedia}

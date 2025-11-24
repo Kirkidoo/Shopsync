@@ -500,7 +500,7 @@ export default function AuditStepper() {
                         Bulk Audit (Recommended)
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Uses Shopify's Bulk API. Best for large files and 100% accuracy.
+                        Uses Shopify&apos;s Bulk API. Best for large files and 100% accuracy.
                         {cacheStatus?.lastModified ? (
                           <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
                             Cache available from{' '}
