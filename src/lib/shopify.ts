@@ -171,7 +171,9 @@ async function retryOperation<T>(operation: () => Promise<T>, maxRetries: number
 
       if (isThrottled && retries < maxRetries) {
         const delay = 1000 * Math.pow(2, retries);
-        console.log(`Rate limited. Retrying in ${delay}ms... (Attempt ${retries + 1}/${maxRetries})`);
+        console.log(
+          `Rate limited. Retrying in ${delay}ms... (Attempt ${retries + 1}/${maxRetries})`
+        );
         await sleep(delay);
         retries++;
       } else {
@@ -509,9 +511,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
           // console.error('GraphQL Errors:', errorString); // Reduce noise
 
           if (errorString.includes('Throttled')) {
-            console.log(
-              `Throttled by Shopify on batch, backing off... (Attempt ${retries + 1})`
-            );
+            console.log(`Throttled by Shopify on batch, backing off... (Attempt ${retries + 1})`);
             retries++;
             continue; // Retry
           }
@@ -523,7 +523,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 
         if (batch.includes('420-8417')) {
           console.log(`DEBUG: Found ${variantEdges.length} variants in batch containing 420-8417.`);
-          const found = variantEdges.find(e => e.node.sku === '420-8417');
+          const found = variantEdges.find((e) => e.node.sku === '420-8417');
           if (found) {
             console.log('DEBUG: Successfully found 420-8417 in response!');
           } else {
@@ -568,18 +568,17 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
               option3Name: null,
               option3Value: null,
               templateSuffix: product.templateSuffix,
-              locationIds: variant.inventoryItem?.inventoryLevels?.edges?.map(
-                (edge: any) => edge.node.location.id
-              ) || [],
+              locationIds:
+                variant.inventoryItem?.inventoryLevels?.edges?.map(
+                  (edge: any) => edge.node.location.id
+                ) || [],
             });
           }
         }
         success = true;
       } catch (error) {
         if (error instanceof Error && error.message.includes('Throttled')) {
-          console.log(
-            `Caught throttled error, backing off... (Attempt ${retries + 1})`
-          );
+          console.log(`Caught throttled error, backing off... (Attempt ${retries + 1})`);
           retries++;
         } else {
           console.error('An unexpected error occurred while fetching a batch. Aborting.', error);
@@ -611,8 +610,12 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
   await Promise.all(workers);
 
   // Case-insensitive matching with trimming
-  const requestedSkuSetLower = new Set(Array.from(requestedSkuSet).map(s => s.trim().toLowerCase()));
-  const exactMatchProducts = allProducts.filter((p) => requestedSkuSetLower.has(p.sku.trim().toLowerCase()));
+  const requestedSkuSetLower = new Set(
+    Array.from(requestedSkuSet).map((s) => s.trim().toLowerCase())
+  );
+  const exactMatchProducts = allProducts.filter((p) =>
+    requestedSkuSetLower.has(p.sku.trim().toLowerCase())
+  );
 
   // --- Verification Step for Missing Products ---
   const foundSkusLower = new Set(exactMatchProducts.map((p) => p.sku.trim().toLowerCase()));
@@ -621,7 +624,9 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
   );
 
   if (missingSkus.length > 0) {
-    console.log(`Verification: ${missingSkus.length} SKUs not found in batch search. Verifying individually...`);
+    console.log(
+      `Verification: ${missingSkus.length} SKUs not found in batch search. Verifying individually...`
+    );
 
     // Helper for single SKU verification
     const verifySku = async (sku: string) => {
@@ -637,7 +642,9 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
 
         const edges = response.body.data?.productVariants?.edges || [];
         // Strict check: must match exactly
-        const match = edges.find(e => e.node.sku.trim().toLowerCase() === sku.trim().toLowerCase());
+        const match = edges.find(
+          (e) => e.node.sku.trim().toLowerCase() === sku.trim().toLowerCase()
+        );
 
         if (match) {
           console.log(`Verification: SKU '${sku}' found on second pass!`);
@@ -688,9 +695,7 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
                 node.inventoryItem?.measurement?.weight?.unit
               ),
               mediaUrl: product.featuredImage?.url || null,
-              imageId: node.image?.id
-                ? parseInt(node.image.id.split('/').pop() || '0', 10)
-                : null,
+              imageId: node.image?.id ? parseInt(node.image.id.split('/').pop() || '0', 10) : null,
               category: null,
               option1Name: null,
               option1Value: null,
@@ -705,11 +710,15 @@ export async function getShopifyProductsBySku(skus: string[]): Promise<Product[]
       }
     };
 
-    const verifyWorkers = Array(Math.min(missingSkus.length, VERIFY_CONCURRENCY)).fill(null).map(verifyWorker);
+    const verifyWorkers = Array(Math.min(missingSkus.length, VERIFY_CONCURRENCY))
+      .fill(null)
+      .map(verifyWorker);
     await Promise.all(verifyWorkers);
 
     if (verifiedProducts.length > 0) {
-      console.log(`Verification recovered ${verifiedProducts.length} products that were initially missed.`);
+      console.log(
+        `Verification recovered ${verifiedProducts.length} products that were initially missed.`
+      );
       exactMatchProducts.push(...verifiedProducts);
     }
   }
@@ -833,7 +842,10 @@ export async function createProduct(
 
   // Limit to first 3 tags to prevent "cannot be more than 250" error
   if (tags) {
-    const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
+    const tagList = tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
     if (tagList.length > 3) {
       tags = tagList.slice(0, 3).join(', ');
     }
@@ -865,7 +877,9 @@ export async function createProduct(
 
   if (addClearanceTag) {
     productPayload.product.template_suffix = 'clearance';
-    console.log(`Product ${firstVariant.handle} is from clearance file, assigning 'clearance' template.`);
+    console.log(
+      `Product ${firstVariant.handle} is from clearance file, assigning 'clearance' template.`
+    );
   } else if (isHeavy) {
     productPayload.product.template_suffix = 'heavy-products';
     console.log(
@@ -1677,9 +1691,9 @@ export async function parseBulkOperationResult(jsonlContent: string): Promise<Pr
             : null,
           weight: shopifyProduct.inventoryItem?.measurement?.weight?.value
             ? convertWeightToGrams(
-              parseFloat(shopifyProduct.inventoryItem.measurement.weight.value),
-              shopifyProduct.inventoryItem.measurement.weight.unit
-            )
+                parseFloat(shopifyProduct.inventoryItem.measurement.weight.value),
+                shopifyProduct.inventoryItem.measurement.weight.unit
+              )
             : null,
           mediaUrl: null, // Note: Bulk export doesn't easily link variant images
           imageId: shopifyProduct.image?.id

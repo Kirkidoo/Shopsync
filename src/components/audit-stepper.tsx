@@ -109,12 +109,16 @@ export default function AuditStepper() {
         console.log('Fetched credentials from server:', {
           host: creds.host,
           username: creds.username,
-          hasPassword: !!creds.password
+          hasPassword: !!creds.password,
         });
 
         const currentValues = ftpForm.getValues();
-        if ((creds.host || creds.username || creds.password) &&
-          !currentValues.host && !currentValues.username && !currentValues.password) {
+        if (
+          (creds.host || creds.username || creds.password) &&
+          !currentValues.host &&
+          !currentValues.username &&
+          !currentValues.password
+        ) {
           ftpForm.reset(creds);
         }
       } catch (error) {
@@ -317,7 +321,7 @@ export default function AuditStepper() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4">
+    <div className="mx-auto w-full max-w-4xl p-4">
       <AnimatePresence mode="wait">
         {step === 'connect' && (
           <motion.div
@@ -348,7 +352,11 @@ export default function AuditStepper() {
                         <FormItem>
                           <FormLabel>FTP Host</FormLabel>
                           <FormControl>
-                            <Input placeholder="ftp.your-domain.com" {...field} className="bg-background/50" />
+                            <Input
+                              placeholder="ftp.your-domain.com"
+                              {...field}
+                              className="bg-background/50"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -361,7 +369,11 @@ export default function AuditStepper() {
                         <FormItem>
                           <FormLabel>Username</FormLabel>
                           <FormControl>
-                            <Input placeholder="your-username" {...field} className="bg-background/50" />
+                            <Input
+                              placeholder="your-username"
+                              {...field}
+                              className="bg-background/50"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -474,13 +486,15 @@ export default function AuditStepper() {
               <CardContent className="space-y-6">
                 {isPending && !cacheStatus ? (
                   <div className="flex flex-col items-center justify-center py-8">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                    <p className="text-sm text-muted-foreground animate-pulse">Checking for cached data...</p>
+                    <Loader2 className="mb-4 h-12 w-12 animate-spin text-primary" />
+                    <p className="animate-pulse text-sm text-muted-foreground">
+                      Checking for cached data...
+                    </p>
                   </div>
                 ) : (
                   <div className="grid gap-6 md:grid-cols-2">
                     {/* Option 1: Bulk / Cache */}
-                    <div className="space-y-4 rounded-lg border p-4 hover:bg-accent/5 transition-colors">
+                    <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
                       <div className="flex items-center gap-2 font-semibold text-foreground">
                         <Database className="h-4 w-4 text-blue-500" />
                         Bulk Audit (Recommended)
@@ -488,11 +502,15 @@ export default function AuditStepper() {
                       <p className="text-sm text-muted-foreground">
                         Uses Shopify's Bulk API. Best for large files and 100% accuracy.
                         {cacheStatus?.lastModified ? (
-                          <span className="block mt-2 text-green-600 dark:text-green-400 font-medium">
-                            Cache available from {formatDistanceToNow(new Date(cacheStatus.lastModified), { addSuffix: true })}.
+                          <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
+                            Cache available from{' '}
+                            {formatDistanceToNow(new Date(cacheStatus.lastModified), {
+                              addSuffix: true,
+                            })}
+                            .
                           </span>
                         ) : (
-                          <span className="block mt-2 text-orange-600 dark:text-orange-400 font-medium">
+                          <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
                             No cache found. Will start a new export (takes time).
                           </span>
                         )}
@@ -501,7 +519,7 @@ export default function AuditStepper() {
                         <Button
                           onClick={() => handleRunBulkAudit(true)}
                           disabled={isPending || !cacheStatus?.lastModified}
-                          variant={cacheStatus?.lastModified ? "default" : "secondary"}
+                          variant={cacheStatus?.lastModified ? 'default' : 'secondary'}
                           className="w-full"
                         >
                           Use Cached Data
@@ -518,14 +536,14 @@ export default function AuditStepper() {
                     </div>
 
                     {/* Option 2: Live Audit */}
-                    <div className="space-y-4 rounded-lg border p-4 hover:bg-accent/5 transition-colors">
+                    <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
                       <div className="flex items-center gap-2 font-semibold text-foreground">
                         <Server className="h-4 w-4 text-green-500" />
                         Live Audit
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Queries Shopify in real-time. Good for small files or quick checks.
-                        <span className="block mt-2 text-muted-foreground">
+                        <span className="mt-2 block text-muted-foreground">
                           Now includes verification step to prevent false positives.
                         </span>
                       </p>
@@ -533,7 +551,7 @@ export default function AuditStepper() {
                         onClick={handleRunStandardAudit}
                         disabled={isPending}
                         variant="secondary"
-                        className="w-full mt-auto"
+                        className="mt-auto w-full"
                       >
                         Run Live Audit
                       </Button>
@@ -569,13 +587,15 @@ export default function AuditStepper() {
               <CardContent className="space-y-4 pt-6">
                 <div className="flex justify-center py-8">
                   <div className="relative">
-                    <div className="absolute inset-0 rounded-full blur-xl bg-primary/20 animate-pulse"></div>
+                    <div className="absolute inset-0 animate-pulse rounded-full bg-primary/20 blur-xl"></div>
                     <Loader2 className="relative h-16 w-16 animate-spin text-primary" />
                   </div>
                 </div>
                 {activityLog.length > 0 && (
                   <div className="mt-4 max-h-60 overflow-y-auto rounded-lg border bg-muted/50 p-4 font-mono text-sm">
-                    <h3 className="mb-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Activity Log</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Activity Log
+                    </h3>
                     <ul className="space-y-2">
                       <AnimatePresence initial={false}>
                         {activityLog.map((log, index) => {
@@ -593,9 +613,15 @@ export default function AuditStepper() {
                               {isDone ? (
                                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
                               ) : (
-                                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary animate-pulse" />
+                                <Clock className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-primary" />
                               )}
-                              <span className={isDone ? 'text-muted-foreground' : 'text-foreground font-medium'}>{log}</span>
+                              <span
+                                className={
+                                  isDone ? 'text-muted-foreground' : 'font-medium text-foreground'
+                                }
+                              >
+                                {log}
+                              </span>
                             </motion.li>
                           );
                         })}

@@ -51,7 +51,10 @@ function findMismatches(
   // Clearance tag and template check
   if (csvFileName.toLowerCase().includes('clearance')) {
     const tags = shopifyProduct.tags
-      ? shopifyProduct.tags.toLowerCase().split(',').map((t) => t.trim())
+      ? shopifyProduct.tags
+          .toLowerCase()
+          .split(',')
+          .map((t) => t.trim())
       : [];
 
     // Check if Price equals Compare At Price (Invalid Clearance)

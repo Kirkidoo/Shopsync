@@ -112,7 +112,11 @@ export async function getShopifyProductsFromCache(): Promise<Product[] | null> {
   }
 }
 
-export async function startBulkOperation(): Promise<{ id: string; status: string; resultUrl?: string }> {
+export async function startBulkOperation(): Promise<{
+  id: string;
+  status: string;
+  resultUrl?: string;
+}> {
   return await startShopifyBulkOp();
 }
 
@@ -159,7 +163,6 @@ async function _fixSingleMismatch(
 
   try {
     switch (fixType) {
-
       case 'price':
         if (fixPayload.variantId) {
           const numericVariantId = parseInt(fixPayload.variantId.split('/').pop() || '0', 10);
@@ -195,7 +198,7 @@ async function _fixSingleMismatch(
       case 'clearance_price_mismatch':
         // Fix: Remove 'Clearance' tag and reset template to default
         await removeProductTags(fixPayload.id, ['Clearance', 'clearance']);
-        await updateProduct(fixPayload.id, { templateSuffix: "" });
+        await updateProduct(fixPayload.id, { templateSuffix: '' });
         break;
       case 'duplicate_in_shopify':
       case 'duplicate_handle':
@@ -227,11 +230,11 @@ export async function fixMultipleMismatches(
   const itemsToProcess =
     targetFields && targetFields.length > 0
       ? items
-        .map((item) => ({
-          ...item,
-          mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
-        }))
-        .filter((item) => item.mismatches.length > 0)
+          .map((item) => ({
+            ...item,
+            mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
+          }))
+          .filter((item) => item.mismatches.length > 0)
       : items;
 
   // Group items by product ID to process fixes for the same product together
@@ -596,9 +599,7 @@ export async function createMultipleVariantsForProduct(
     }
   };
 
-  const workers = Array(Math.min(variants.length, CONCURRENCY_LIMIT))
-    .fill(null)
-    .map(worker);
+  const workers = Array(Math.min(variants.length, CONCURRENCY_LIMIT)).fill(null).map(worker);
   await Promise.all(workers);
 
   if (successCount > 0) {
@@ -827,9 +828,7 @@ export async function deleteUnlinkedImages(
   }
 }
 
-export async function deleteUnlinkedImagesForMultipleProducts(
-  productIds: string[]
-): Promise<{
+export async function deleteUnlinkedImagesForMultipleProducts(productIds: string[]): Promise<{
   success: boolean;
   message: string;
   results: { productId: string; success: boolean; deletedCount: number; message: string }[];

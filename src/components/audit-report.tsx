@@ -1668,27 +1668,28 @@ export default function AuditReport({
               {(filter === 'mismatched' ||
                 (filter === 'missing_in_shopify' && isMissingProductCase) ||
                 filter === 'all') && (
-                  <div className="p-3 pl-4">
-                    <Checkbox
-                      checked={selectedHandles.has(handle)}
-                      onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
-                      aria-label={`Select product ${handle}`}
-                      disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
-                    />
-                  </div>
-                )}
+                <div className="p-3 pl-4">
+                  <Checkbox
+                    checked={selectedHandles.has(handle)}
+                    onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                    aria-label={`Select product ${handle}`}
+                    disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
+                  />
+                </div>
+              )}
               <AccordionTrigger
                 className="flex-grow p-3 text-left"
                 disabled={isFixing || isAutoRunning || isAutoCreating}
               >
                 <div className="flex flex-grow items-center gap-4">
                   <config.icon
-                    className={`h-5 w-5 shrink-0 ${overallStatus === 'mismatched'
-                      ? 'text-yellow-500'
-                      : overallStatus === 'missing_in_shopify'
-                        ? 'text-red-500'
-                        : 'text-blue-500'
-                      }`}
+                    className={`h-5 w-5 shrink-0 ${
+                      overallStatus === 'mismatched'
+                        ? 'text-yellow-500'
+                        : overallStatus === 'missing_in_shopify'
+                          ? 'text-red-500'
+                          : 'text-blue-500'
+                    }`}
                   />
                   <div className="flex-grow text-left">
                     <p className="font-semibold">{productTitle}</p>
@@ -2657,7 +2658,7 @@ export default function AuditReport({
             <MediaManager
               key={editingMissingVariantMedia.parentProductId}
               productId={editingMissingVariantMedia.parentProductId}
-              onImageCountChange={() => { }} // No need to change counts here
+              onImageCountChange={() => {}} // No need to change counts here
               isMissingVariantMode={true}
               missingVariants={memoizedMissingVariants}
               onSaveMissingVariant={handleSaveMissingVariantMedia}

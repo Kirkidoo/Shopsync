@@ -38,16 +38,16 @@ export type AuditStatus =
 
 export interface MismatchDetail {
   field:
-  | 'price'
-  | 'inventory'
-  | 'h1_tag'
-  | 'missing_in_shopify'
-  | 'duplicate_in_shopify'
-  | 'heavy_product_flag'
-  | 'duplicate_handle'
-  | 'missing_clearance_tag'
-  | 'incorrect_template_suffix'
-  | 'clearance_price_mismatch';
+    | 'price'
+    | 'inventory'
+    | 'h1_tag'
+    | 'missing_in_shopify'
+    | 'duplicate_in_shopify'
+    | 'heavy_product_flag'
+    | 'duplicate_handle'
+    | 'missing_clearance_tag'
+    | 'incorrect_template_suffix'
+    | 'clearance_price_mismatch';
   csvValue: string | number | null;
   shopifyValue: string | number | null;
   missingType?: 'product' | 'variant';

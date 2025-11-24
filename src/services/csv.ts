@@ -14,7 +14,13 @@ export async function parseCsvFromStream(stream: Readable): Promise<{ products: 
     read() {
       const chunk = stream.read();
       if (chunk) {
-        if (isFirstChunk && chunk.length >= 3 && chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
+        if (
+          isFirstChunk &&
+          chunk.length >= 3 &&
+          chunk[0] === 0xef &&
+          chunk[1] === 0xbb &&
+          chunk[2] === 0xbf
+        ) {
           this.push(chunk.slice(3));
         } else {
           this.push(chunk);
@@ -23,7 +29,7 @@ export async function parseCsvFromStream(stream: Readable): Promise<{ products: 
       } else {
         this.push(null);
       }
-    }
+    },
   });
 
   // If stream is already flowing, we might need a different approach, but for now assuming fresh stream

@@ -72,7 +72,7 @@ export async function getCsvStreamFromFtp(
 
     // Create a PassThrough stream to pipe the download into
     const passThrough = new Readable({
-      read() { },
+      read() {},
     });
 
     // We need to keep the client open while the stream is being read.
