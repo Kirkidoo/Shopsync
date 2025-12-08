@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 export type LogLevel = 'INFO' | 'ERROR' | 'WARN' | 'SUCCESS';
 
@@ -52,7 +53,7 @@ export async function log(level: LogLevel, message: string, details?: any) {
 
     await fs.writeFile(LOG_FILE_PATH, JSON.stringify(updatedLogs, null, 2));
   } catch (error) {
-    console.error('Failed to write to log file:', error);
+    logger.error('Failed to write to log file:', error);
   }
 }
 
@@ -62,7 +63,7 @@ export async function getLogs(): Promise<LogEntry[]> {
     const content = await fs.readFile(LOG_FILE_PATH, 'utf-8');
     return JSON.parse(content);
   } catch (error) {
-    console.error('Failed to read logs:', error);
+    logger.error('Failed to read logs:', error);
     return [];
   }
 }

@@ -26,6 +26,7 @@ export interface Product {
   option3Value: string | null;
   templateSuffix: string | null;
   locationIds?: string[]; // List of location GIDs where this variant is stocked
+  rawCsvData?: Record<string, string>; // Raw CSV row data for display
 }
 
 export type AuditStatus =
@@ -40,15 +41,15 @@ export interface MismatchDetail {
   field:
   | 'price'
   | 'inventory'
-  | 'h1_tag'
   | 'missing_in_shopify'
   | 'duplicate_in_shopify'
-  | 'heavy_product_flag'
   | 'duplicate_handle'
   | 'missing_clearance_tag'
   | 'incorrect_template_suffix'
   | 'clearance_price_mismatch'
-  | 'missing_category_tag';
+  | 'heavy_product_flag'
+  | 'missing_oversize_tag'
+  | 'compare_at_price';
   csvValue: string | number | null;
   shopifyValue: string | number | null;
   missingType?: 'product' | 'variant';

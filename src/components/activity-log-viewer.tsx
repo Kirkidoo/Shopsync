@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { fetchActivityLogs, clearActivityLogs } from '@/app/actions';
 import { Loader2, Trash2, RefreshCw, AlertCircle, CheckCircle, Info } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 interface LogEntry {
   id: string;
@@ -27,7 +28,7 @@ export function ActivityLogViewer() {
       const data = await fetchActivityLogs();
       setLogs(data);
     } catch (error) {
-      console.error('Failed to load logs', error);
+      logger.error('Failed to load logs', error);
     } finally {
       setLoading(false);
     }

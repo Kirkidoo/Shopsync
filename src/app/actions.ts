@@ -35,12 +35,18 @@ import {
   removeProductTags,
 } from '@/lib/shopify';
 import { revalidatePath } from 'next/cache';
-import fs from 'fs/promises';
+import fsPromises from 'fs/promises';
+import { createReadStream } from 'fs';
+import { createInterface } from 'readline';
 import path from 'path';
 import * as ftpService from '@/services/ftp';
 import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
 import { log, getLogs, clearLogs } from '@/services/logger';
+import { logger } from '@/lib/logger';
+
+
+
 
 const GAMMA_WAREhouse_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
   ? parseInt(process.env.GAMMA_WAREHOUSE_LOCATION_ID, 10)
@@ -53,9 +59,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureCacheDirExists() {
   try {
-    await fs.access(CACHE_DIR);
+    await fsPromises.access(CACHE_DIR);
   } catch {
-    await fs.mkdir(CACHE_DIR, { recursive: true });
+    await fsPromises.mkdir(CACHE_DIR, { recursive: true });
   }
 }
 
@@ -75,17 +81,22 @@ export async function getFtpCredentials() {
   };
 }
 
+export async function getAvailableLocations() {
+  return await getShopifyLocations();
+}
+
 export async function runAudit(
   csvFileName: string,
-  ftpData: FormData
+  ftpData: FormData,
+  locationId?: number // Optional for now to maintain backward compatibility during migration
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
-  return await auditService.runAudit(csvFileName, ftpData);
+  return await auditService.runAudit(csvFileName, ftpData, locationId);
 }
 
 export async function checkBulkCacheStatus(): Promise<{ lastModified: string | null }> {
   try {
-    await fs.access(CACHE_INFO_PATH);
-    const info = JSON.parse(await fs.readFile(CACHE_INFO_PATH, 'utf-8'));
+    await fsPromises.access(CACHE_INFO_PATH);
+    const info = JSON.parse(await fsPromises.readFile(CACHE_INFO_PATH, 'utf-8'));
     return { lastModified: info.lastModified };
   } catch (error) {
     return { lastModified: null };
@@ -101,13 +112,144 @@ export async function getCsvProducts(
   return await csvService.getCsvProducts(csvFileName, ftpData);
 }
 
+import { downloadBulkOperationResultToFile } from '@/lib/shopify';
+
+// --- Helper: JSONL Generator ---
+// --- Helper: JSONL Generator ---
+async function* parseJsonlGenerator(filePath: string, locationId?: number): AsyncGenerator<Product> {
+  const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+  const TARGET_LOCATION_URL_SUFFIX = `Location/${GAMMA_LOCATION_ID}`;
+
+  // Pass 1: Build Inventory Map
+  // Map of InventoryItemId -> Quantity at Target Location
+  // Only store if the item exists at the location.
+  const inventoryMap = new Map<string, number>();
+
+  const stream1 = createReadStream(filePath);
+  const rl1 = createInterface({
+    input: stream1,
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl1) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      // Check for InventoryLevel nodes
+      // Structure: { __parentId: "gid://.../InventoryItem/...", location: { id: "gid://.../Location/..." }, quantities: [...] }
+      if (obj.location && obj.location.id && obj.__parentId) {
+        if (obj.location.id.endsWith(TARGET_LOCATION_URL_SUFFIX)) {
+          let quantity = 0;
+          if (obj.quantities) {
+            const available = obj.quantities.find((q: any) => q.name === 'available');
+            if (available) {
+              quantity = available.quantity;
+            }
+          } else if (typeof obj.inventoryQuantity === 'number') {
+            quantity = obj.inventoryQuantity;
+          }
+          inventoryMap.set(obj.__parentId, quantity);
+        }
+      }
+    } catch (e) {
+      // Ignore errors in pass 1
+    }
+  }
+
+  // Pass 2: Yield Products
+  const stream2 = createReadStream(filePath);
+  const rl2 = createInterface({
+    input: stream2,
+    crlfDelay: Infinity,
+  });
+
+  const parentProducts = new Map<string, any>();
+
+  for await (const line of rl2) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+
+      // For "Product" node (Parent):
+      if (obj.id && obj.id.includes('gid://shopify/Product/') && !obj.__parentId) {
+        parentProducts.set(obj.id, {
+          title: obj.title,
+          handle: obj.handle,
+          bodyHtml: obj.bodyHtml,
+          vendor: obj.vendor,
+          productType: obj.productType,
+          tags: obj.tags ? obj.tags.join(', ') : '',
+          templateSuffix: obj.templateSuffix,
+        });
+      }
+      // For Variant node:
+      else if (obj.sku !== undefined || obj.price !== undefined) {
+        const parentId = obj.__parentId;
+        const parent = parentProducts.get(parentId);
+        const inventoryItemId = obj.inventoryItem?.id;
+
+        // FILTER: Check if this variant is stocked at the target location
+        // If inventoryItemId is NOT in inventoryMap, it means this variant has NO inventory record at the target location.
+        // Thus, it should be excluded.
+        let finalInventory = 0;
+        let isAtLocation = false;
+
+        if (inventoryItemId && inventoryMap.has(inventoryItemId)) {
+          finalInventory = inventoryMap.get(inventoryItemId)!;
+          isAtLocation = true;
+        }
+
+        if (!isAtLocation) continue;
+
+        if (parent) {
+          yield {
+            id: parentId,
+            variantId: obj.id,
+            inventoryItemId: inventoryItemId || '',
+            handle: parent.handle,
+            sku: obj.sku || '',
+            name: parent.title,
+            price: parseFloat(obj.price || '0'),
+            inventory: finalInventory,
+            descriptionHtml: parent.bodyHtml,
+            productType: parent.productType,
+            vendor: parent.vendor,
+            tags: parent.tags,
+            compareAtPrice: obj.compareAtPrice ? parseFloat(obj.compareAtPrice) : null,
+            costPerItem: null,
+            barcode: obj.barcode,
+            weight: obj.inventoryItem?.measurement?.weight?.value || 0,
+            mediaUrl: null,
+            category: null,
+            option1Name: null,
+            option1Value: obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
+            option2Name: null,
+            option2Value: obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
+            option3Name: null,
+            option3Value: obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
+            imageId: null,
+            templateSuffix: parent.templateSuffix,
+            locationIds: [], // We filtered, so implied it's at this location. We don't need full list for audit purposes right now.
+          } as Product;
+        }
+      }
+
+    } catch (e) {
+      logger.error('Error parsing JSONL line:', e);
+    }
+  }
+}
+
 export async function getShopifyProductsFromCache(): Promise<Product[] | null> {
   try {
-    const fileContent = await fs.readFile(CACHE_FILE_PATH, 'utf-8');
-    return await parseBulkOperationResult(fileContent);
+    await fsPromises.access(CACHE_FILE_PATH);
+    const products: Product[] = [];
+    for await (const product of parseJsonlGenerator(CACHE_FILE_PATH)) {
+      products.push(product);
+    }
+    return products;
   } catch (error) {
-    console.error('Failed to read or parse cache file.', error);
-    // This is not a throw-worthy error, it just means we need to fetch.
+    logger.error('Failed to read or parse cache file.', error);
     return null;
   }
 }
@@ -126,20 +268,31 @@ export async function checkBulkOperationStatus(
   return await checkShopifyBulkOpStatus(id);
 }
 
-export async function getBulkOperationResultAndParse(url: string): Promise<Product[] | null> {
-  const resultJsonl = await getBulkOperationResult(url);
-  if (!resultJsonl) return null;
+export async function getBulkOperationResultAndParse(url: string, locationId?: number): Promise<Product[] | null> {
   await ensureCacheDirExists();
-  await fs.writeFile(CACHE_FILE_PATH, resultJsonl);
-  await fs.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
-  return await parseBulkOperationResult(resultJsonl);
+  try {
+    await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
+    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+
+    // Convert to array for compatibility (Step 1)
+    const products: Product[] = [];
+    for await (const product of parseJsonlGenerator(CACHE_FILE_PATH, locationId)) {
+      products.push(product);
+    }
+    return products;
+  } catch (error) {
+    logger.error('Failed to download or parse bulk result', error);
+    return null;
+  }
 }
 
 export async function runBulkAuditComparison(
   csvProducts: Product[],
   shopifyProducts: Product[],
-  csvFileName: string
+  csvFileName: string,
+  locationId?: number
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] }> {
+  // Pass locationId if we need it for post-processing, though parsing should have handled it mostly.
   return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName);
 }
 
@@ -148,9 +301,10 @@ export async function runBulkAuditComparison(
 async function _fixSingleMismatch(
   fixType: MismatchDetail['field'],
   csvProduct: Product,
-  shopifyProduct: Product
+  shopifyProduct: Product,
+  targetValue?: string | number | null // New parameter
 ): Promise<{ success: boolean; message: string }> {
-  console.log(`Attempting to fix '${fixType}' for SKU: ${csvProduct.sku}`);
+  logger.info(`Attempting to fix '${fixType}' for SKU: ${csvProduct.sku}`);
   await log('INFO', `Attempting to fix '${fixType}' for SKU: ${csvProduct.sku}`);
 
   const fixPayload: Product = {
@@ -180,19 +334,26 @@ async function _fixSingleMismatch(
           );
         }
         break;
-      case 'h1_tag':
-        if (fixPayload.id && fixPayload.descriptionHtml) {
-          const newDescription = fixPayload.descriptionHtml
-            .replace(/<h1/gi, '<h2')
-            .replace(/<\/h1>/gi, '</h2>');
-          await updateProduct(fixPayload.id, { bodyHtml: newDescription });
-        }
-        break;
+
       case 'missing_clearance_tag':
         await addProductTags(fixPayload.id, ['Clearance']);
         break;
+      case 'missing_oversize_tag':
+        await addProductTags(fixPayload.id, ['oversize']);
+        break;
       case 'incorrect_template_suffix':
-        await updateProduct(fixPayload.id, { templateSuffix: 'clearance' });
+        let newSuffix = '';
+        if (typeof targetValue === 'string') {
+          if (targetValue === 'Default Template') {
+            newSuffix = '';
+          } else {
+            newSuffix = targetValue;
+          }
+        } else {
+          // Fallback if no targetValue passed (shouldn't happen with new logic, but safe default)
+          newSuffix = 'clearance';
+        }
+        await updateProduct(fixPayload.id, { templateSuffix: newSuffix });
         break;
 
       case 'clearance_price_mismatch':
@@ -202,7 +363,6 @@ async function _fixSingleMismatch(
         break;
       case 'duplicate_in_shopify':
       case 'duplicate_handle':
-      case 'heavy_product_flag':
         // This is a warning, cannot be fixed programmatically. Handled client-side.
         return {
           success: true,
@@ -212,7 +372,7 @@ async function _fixSingleMismatch(
     await log('SUCCESS', `Successfully fixed ${fixType} for ${csvProduct.sku}`);
     return { success: true, message: `Successfully fixed ${fixType} for ${csvProduct.sku}` };
   } catch (error) {
-    console.error(`Failed to fix ${fixType} for SKU ${csvProduct.sku}:`, error);
+    logger.error(`Failed to fix ${fixType} for SKU ${csvProduct.sku}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     await log('ERROR', `Failed to fix ${fixType} for SKU ${csvProduct.sku}: ${message}`);
     return { success: false, message };
@@ -276,7 +436,7 @@ export async function fixMultipleMismatches(
 
         for (const mismatch of item.mismatches) {
           fixPromises.push(
-            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct).then((result) => ({
+            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then((result) => ({
               sku: item.sku,
               field: mismatch.field,
               ...result,
@@ -292,10 +452,10 @@ export async function fixMultipleMismatches(
         fixCount += successfulFixesInBatch;
 
         if (successfulFixesInBatch < results.length) {
-          console.log(`Some fixes failed for product ID ${productId}`);
+          logger.warn(`Some fixes failed for product ID ${productId}`);
         }
       } catch (error) {
-        console.error(
+        logger.error(
           `An error occurred during parallel fix execution for product ID ${productId}:`,
           error
         );
@@ -315,7 +475,7 @@ export async function fixMultipleMismatches(
   const totalFixesAttempted = allResults.length;
   const successfulFixes = allResults.filter((r) => r.success);
   const message = `Attempted to fix ${totalFixesAttempted} issues. Successfully fixed ${fixCount}.`;
-  console.log(message);
+  logger.info(message);
   return { success: true, message, results: successfulFixes };
 }
 
@@ -371,14 +531,14 @@ export async function bulkUpdateTags(
 
       const tags = Array.from(tagSet).join(', ');
 
-      console.log(`Updating tags for ${item.sku} to: "${tags}"`);
+      logger.info(`Updating tags for ${item.sku} to: "${tags}"`);
 
       try {
         await updateProduct(shopifyProduct.id, { tags });
         successCount++;
         itemResults.push({ sku: item.sku, success: true, message: 'Tags updated successfully.' });
       } catch (error) {
-        console.error(`Failed to update tags for ${item.sku}:`, error);
+        logger.error(`Failed to update tags for ${item.sku}:`, error);
         const message = error instanceof Error ? error.message : 'Unknown error';
         itemResults.push({ sku: item.sku, success: false, message });
       }
@@ -414,7 +574,7 @@ export async function createInShopify(
   fileName: string,
   missingType: 'product' | 'variant'
 ) {
-  console.log(
+  logger.info(
     `Attempting to create product/variant for Handle: ${product.handle}, Missing Type: ${missingType}`
   );
   await log('INFO', `Starting creation of ${missingType} for handle: ${product.handle}`);
@@ -423,15 +583,15 @@ export async function createInShopify(
   const skusToCreate =
     missingType === 'product' ? allVariantsForHandle.map((p) => p.sku) : [product.sku];
 
-  console.log(`Performing final check for SKUs: ${skusToCreate.join(', ')}`);
+  logger.info(`Performing final check for SKUs: ${skusToCreate.join(', ')}`);
   const existingProducts = await getShopifyProductsBySku(skusToCreate);
   if (existingProducts.length > 0) {
     const foundSkus = existingProducts.map((p) => p.sku).join(', ');
     const errorMessage = `Creation aborted. The following SKU(s) already exist in Shopify: ${foundSkus}. Please run a new audit.`;
-    console.error(errorMessage);
+    logger.error(errorMessage);
     return { success: false, message: errorMessage };
   }
-  console.log('Final check passed. No existing SKUs found.');
+  logger.info('Final check passed. No existing SKUs found.');
 
   try {
     let createdProduct;
@@ -439,13 +599,13 @@ export async function createInShopify(
 
     if (missingType === 'product') {
       // Phase 1: Create Product
-      console.log(
+      logger.info(
         `Phase 1: Creating product for handle ${product.handle} with ${allVariantsForHandle.length} variants.`
       );
       createdProduct = await createProduct(allVariantsForHandle, addClearanceTag);
     } else {
       // 'variant'
-      console.log(`Adding variant with SKU ${product.sku} to existing product.`);
+      logger.info(`Adding variant with SKU ${product.sku} to existing product.`);
       createdProduct = await addProductVariant(product);
     }
 
@@ -459,7 +619,7 @@ export async function createInShopify(
 
     // 2a. Link variant to image
     if (createdProduct.images && createdProduct.images.length > 0) {
-      console.log('Phase 2: Linking images to variants...');
+      logger.info('Phase 2: Linking images to variants...');
       // Shopify may alter image URLs (e.g., by adding version query params).
       // A more robust way to match is by the image filename.
       const getImageFilename = (url: string) => url.split('/').pop()?.split('?')[0];
@@ -495,12 +655,12 @@ export async function createInShopify(
         }
 
         if (imageIdToAssign) {
-          console.log(
+          logger.info(
             ` - Assigning image ID ${imageIdToAssign} to variant ID ${createdVariant.id}...`
           );
           await updateProductVariant(createdVariant.id, { image_id: imageIdToAssign });
         } else if (sourceVariant.mediaUrl || sourceVariant.imageId) {
-          console.warn(` - Could not find a matching image for SKU: ${sourceVariant.sku}`);
+          logger.warn(` - Could not find a matching image for SKU: ${sourceVariant.sku}`);
         }
       }
     }
@@ -522,12 +682,12 @@ export async function createInShopify(
       const inventoryItemIdGid = `gid://shopify/InventoryItem/${variant.inventory_item_id}`;
 
       if (sourceVariant.inventory !== null && inventoryItemIdGid) {
-        console.log(
+        logger.info(
           `Connecting inventory item ${inventoryItemIdGid} to location ${GAMMA_WAREhouse_LOCATION_ID}...`
         );
         await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREhouse_LOCATION_ID);
 
-        console.log('Setting inventory level...');
+        logger.info('Setting inventory level...');
         await inventorySetQuantities(
           inventoryItemIdGid,
           sourceVariant.inventory,
@@ -535,7 +695,7 @@ export async function createInShopify(
         );
 
         if (garageLocation) {
-          console.log(
+          logger.info(
             `Found 'Garage Harry Stanley' (ID: ${garageLocation.id}). Disconnecting inventory...`
           );
           await disconnectInventoryFromLocation(inventoryItemIdGid, garageLocation.id);
@@ -561,11 +721,11 @@ export async function createInShopify(
 
     // 2d. Publish to all sales channels (only for new products)
     if (missingType === 'product' && productGid) {
-      console.log(`Publishing product ${productGid} to all sales channels...`);
+      logger.info(`Publishing product ${productGid} to all sales channels...`);
       await sleep(2000); // Add a 2-second wait to ensure the product is ready
       await publishProductToSalesChannels(productGid);
     } else {
-      console.warn(
+      logger.warn(
         `Could not publish product with handle ${product.handle} because its GID was not found or it's a new variant.`
       );
     }
@@ -579,7 +739,7 @@ export async function createInShopify(
       createdProductData: createdProduct,
     };
   } catch (error) {
-    console.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
+    logger.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     await log('ERROR', `Failed to create ${missingType} for SKU ${product.sku}: ${message}`);
     return { success: false, message };
@@ -656,7 +816,7 @@ export async function createMultipleInShopify(
 
   const totalProductsToCreate = Object.keys(groupedByHandle).length;
   const message = `Attempted to create ${totalProductsToCreate} products. Successfully created ${successCount}.`;
-  console.log(message);
+  logger.info(message);
   return { success: true, message, results: itemResults };
 }
 
@@ -671,7 +831,7 @@ export async function createMultipleVariantsForProduct(
   }
 
   const handle = variants[0].handle;
-  console.log(`Starting bulk variant creation for handle: ${handle}`);
+  logger.info(`Starting bulk variant creation for handle: ${handle}`);
 
   const CONCURRENCY_LIMIT = 2;
   const queue = [...variants];
@@ -699,25 +859,25 @@ export async function createMultipleVariantsForProduct(
   }
 
   const message = `Attempted to create ${variants.length} variants for handle ${handle}. Successfully created ${successCount}.`;
-  console.log(message);
+  logger.info(message);
   return { success: successCount > 0, message, results: itemResults };
 }
 
 export async function deleteFromShopify(productId: string) {
-  console.log(`Attempting to delete product with GID: ${productId}`);
+  logger.info(`Attempting to delete product with GID: ${productId}`);
   try {
     await deleteProduct(productId);
     revalidatePath('/');
     return { success: true, message: `Successfully deleted product ${productId}` };
   } catch (error) {
-    console.error(`Failed to delete product ${productId}:`, error);
+    logger.error(`Failed to delete product ${productId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message };
   }
 }
 
 export async function deleteVariantFromShopify(productId: string, variantId: string) {
-  console.log(`Attempting to delete variant ${variantId} from product ${productId}`);
+  logger.info(`Attempting to delete variant ${variantId} from product ${productId}`);
   try {
     const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
     const numericVariantId = parseInt(variantId.split('/').pop() || '0', 10);
@@ -732,7 +892,7 @@ export async function deleteVariantFromShopify(productId: string, variantId: str
     revalidatePath('/');
     return { success: true, message: `Successfully deleted variant ${variantId}` };
   } catch (error) {
-    console.error(`Failed to delete variant ${variantId}:`, error);
+    logger.error(`Failed to delete variant ${variantId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message };
   }
@@ -774,7 +934,7 @@ export async function getProductWithImages(
 
     return { variants, images };
   } catch (error) {
-    console.error(`Failed to get product with images for ID ${productId}:`, error);
+    logger.error(`Failed to get product with images for ID ${productId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     throw new Error(message);
   }
@@ -791,7 +951,7 @@ export async function getProductByHandleServer(handle: string): Promise<Product 
       // Map other fields if necessary for the client
     } as Product;
   } catch (error) {
-    console.error(`Failed to get product by handle ${handle}:`, error);
+    logger.error(`Failed to get product by handle ${handle}:`, error);
     return null;
   }
 }
@@ -820,7 +980,7 @@ export async function getProductImageCounts(productIds: string[]): Promise<Recor
 
     return gidCounts;
   } catch (error) {
-    console.error(`Failed to get product image counts for IDs ${productIds.join(', ')}:`, error);
+    logger.error(`Failed to get product image counts for IDs ${productIds.join(', ')}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     throw new Error(message);
   }
@@ -839,7 +999,7 @@ export async function addImageFromUrl(
     const newImage = await addProductImage(numericProductId, imageUrl);
     return { success: true, message: 'Image added successfully.', image: newImage };
   } catch (error) {
-    console.error(`Failed to add image for product ${productId}:`, error);
+    logger.error(`Failed to add image for product ${productId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message };
   }
@@ -858,7 +1018,7 @@ export async function assignImageToVariant(
     await updateProductVariant(numericVariantId, { image_id: imageId });
     return { success: true, message: 'Image assigned successfully.' };
   } catch (error) {
-    console.error(`Failed to assign image ${imageId} to variant ${variantId}:`, error);
+    logger.error(`Failed to assign image ${imageId} to variant ${variantId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message };
   }
@@ -877,7 +1037,7 @@ export async function deleteImage(
     await deleteProductImage(numericProductId, imageId);
     return { success: true, message: 'Image deleted successfully.' };
   } catch (error) {
-    console.error(`Failed to delete image ${imageId} from product ${productId}:`, error);
+    logger.error(`Failed to delete image ${imageId} from product ${productId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message };
   }
@@ -886,7 +1046,7 @@ export async function deleteImage(
 export async function deleteUnlinkedImages(
   productId: string
 ): Promise<{ success: boolean; message: string; deletedCount: number }> {
-  console.log(`Starting to delete unlinked images for product GID: ${productId}`);
+  logger.info(`Starting to delete unlinked images for product GID: ${productId}`);
   try {
     const { images, variants } = await getProductWithImages(productId);
     const linkedImageIds = new Set(variants.map((v) => v.imageId).filter((id) => id !== null));

@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Frown, Loader2, LogIn, Server, FileText, Database, Check, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { logger } from '@/lib/logger';
 
 import {
   connectToFtp,
@@ -19,6 +20,7 @@ import {
   getBulkOperationResultAndParse,
   runBulkAuditComparison,
   getFtpCredentials,
+  getAvailableLocations,
 } from '@/app/actions';
 import { AuditResult, DuplicateSku, Product } from '@/lib/types';
 import AuditReport from '@/components/audit-report';
@@ -52,24 +54,39 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatDistanceToNow } from 'date-fns';
 
-type Step = 'connect' | 'select' | 'auditing' | 'report' | 'error' | 'cache_check';
+import { Stepper, Step } from '@/components/ui/stepper';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Badge } from '@/components/ui/badge';
+import { ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface FileInfo {
+  name: string;
+  size: number;
+  modifiedAt: string;
+}
+
+const BULK_AUDIT_FILE = 'bulk_audit_request.jsonl';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ftpSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
+  port: z.coerce.number().default(21),
+  secure: z.boolean().default(false),
 });
 
 type FtpFormData = z.infer<typeof ftpSchema>;
 
-const defaultFtpCredentials = {
+const defaultFtpCredentials: FtpFormData = {
   host: '',
   username: '',
   password: '',
+  port: 21,
+  secure: false,
 };
-
-const BULK_AUDIT_FILE = 'ShopifyProductImport.csv';
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const stepVariants = {
   initial: { opacity: 0, x: 20, scale: 0.95 },
@@ -77,11 +94,25 @@ const stepVariants = {
   exit: { opacity: 0, x: -20, scale: 0.95 },
 };
 
+type StepId = 'connect' | 'select' | 'auditing' | 'report' | 'error' | 'cache_check';
+
+const STEPS: Step[] = [
+  { id: 'connect', label: 'Connect' },
+  { id: 'select', label: 'Select Data' },
+  { id: 'cache_check', label: 'Method' },
+  { id: 'auditing', label: 'Processing' },
+  { id: 'report', label: 'Results' },
+];
+
 export default function AuditStepper() {
-  const [step, setStep] = useState<Step>('connect');
+  const [step, setStep] = useState<StepId>('connect');
   const [activityLog, setActivityLog] = useState<string[]>([]);
-  const [csvFiles, setCsvFiles] = useState<string[]>([]);
+  const [csvFiles, setCsvFiles] = useState<FileInfo[]>([]);
   const [selectedCsv, setSelectedCsv] = useState<string>('');
+  const [isLogOpen, setIsLogOpen] = useState(false);
+  const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>('');
+
   const [auditData, setAuditData] = useState<{
     report: AuditResult[];
     summary: any;
@@ -91,12 +122,37 @@ export default function AuditStepper() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null } | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const ftpForm = useForm<FtpFormData>({
     resolver: zodResolver(ftpSchema),
     defaultValues: defaultFtpCredentials,
   });
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (step === 'auditing') {
+      const start = Date.now();
+      setStartTime(start);
+      setElapsedSeconds(0);
+      interval = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+      }, 1000);
+    } else {
+      setStartTime(null);
+      setElapsedSeconds(0);
+    }
+    return () => clearInterval(interval);
+  }, [step]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -106,7 +162,7 @@ export default function AuditStepper() {
     const fetchCredentials = async () => {
       try {
         const creds = await getFtpCredentials();
-        console.log('Fetched credentials from server:', {
+        logger.info('Fetched credentials from server:', {
           host: creds.host,
           username: creds.username,
           hasPassword: !!creds.password,
@@ -122,10 +178,23 @@ export default function AuditStepper() {
           ftpForm.reset(creds);
         }
       } catch (error) {
-        console.error('Failed to fetch default credentials:', error);
+        logger.error('Failed to fetch default credentials:', error);
+      }
+    };
+    const fetchLocations = async () => {
+      try {
+        const locs = await getAvailableLocations();
+        setLocations(locs);
+        // Default to Gamma if available, or first one
+        const gamma = locs.find(l => l.id === 93998154045);
+        if (gamma) setSelectedLocationId(gamma.id.toString());
+        else if (locs.length > 0) setSelectedLocationId(locs[0].id.toString());
+      } catch (error) {
+        logger.error('Failed to fetch locations:', error);
       }
     };
     fetchCredentials();
+    fetchLocations();
   }, [ftpForm]);
 
   const handleConnect = (values: FtpFormData) => {
@@ -138,10 +207,10 @@ export default function AuditStepper() {
 
         await connectToFtp(formData);
         toast({ title: 'FTP Connection Successful', description: 'Ready to select a file.' });
-        const files = await listCsvFiles(formData);
+        const files = await listCsvFiles(formData) as any as FileInfo[]; // Type assertion for safety if action type inference lags
         setCsvFiles(files);
         if (files.length > 0) {
-          setSelectedCsv(files.includes(BULK_AUDIT_FILE) ? BULK_AUDIT_FILE : files[0]);
+          setSelectedCsv(files.find(f => f.name === BULK_AUDIT_FILE)?.name ? BULK_AUDIT_FILE : files[0].name);
         }
         setStep('select');
       } catch (error) {
@@ -185,7 +254,8 @@ export default function AuditStepper() {
         ftpData.append('password', values.password);
 
         addLog(`Downloading and parsing ${selectedCsv}...`);
-        const result = await runAudit(selectedCsv, ftpData);
+        const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
+        const result = await runAudit(selectedCsv, ftpData, locationId);
 
         if (!result || !result.report || !result.summary || !result.duplicates) {
           throw new Error('An unexpected response was received from the server.');
@@ -259,7 +329,8 @@ export default function AuditStepper() {
           }
 
           addLog('Downloading and parsing exported data from Shopify...');
-          shopifyProducts = await getBulkOperationResultAndParse(operation.resultUrl);
+          const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
+          shopifyProducts = await getBulkOperationResultAndParse(operation.resultUrl, locationId);
           addLog('Caching complete.');
         }
 
@@ -322,6 +393,11 @@ export default function AuditStepper() {
 
   return (
     <div className="mx-auto w-full max-w-4xl p-4">
+      {/* Visual Stepper */}
+      <div className="mb-8">
+        <Stepper steps={STEPS} currentStepId={step} />
+      </div>
+
       <AnimatePresence mode="wait">
         {step === 'connect' && (
           <motion.div
@@ -418,45 +494,85 @@ export default function AuditStepper() {
             exit="exit"
             transition={{ duration: 0.3 }}
           >
-            <Card className="mx-auto w-full max-w-md border-primary/10 shadow-2xl shadow-primary/5">
+            <Card className="mx-auto w-full max-w-xl border-primary/10 shadow-2xl shadow-primary/5">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
                   <FileText className="h-5 w-5" />
                   Select CSV File
                 </CardTitle>
                 <CardDescription>
-                  Choose the CSV file from the FTP server to start the audit.
+                  Choose a file to audit. We&apos;ve found {csvFiles.length} files.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Form {...ftpForm}>
-                  <form>
-                    <FormItem>
-                      <FormLabel htmlFor="csv-select">CSV File</FormLabel>
-                      <Select onValueChange={handleSelectChange} value={selectedCsv}>
-                        <FormControl>
-                          <SelectTrigger id="csv-select" className="bg-background/50">
-                            <SelectValue placeholder="Select a file..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {csvFiles.map((file) => (
-                            <SelectItem key={file} value={file}>
-                              {file}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  </form>
-                </Form>
+              <CardContent className="max-h-[60vh] overflow-y-auto pr-2">
+                <div className="grid gap-3">
+                  {csvFiles.map((file) => (
+                    <div
+                      key={file.name}
+                      onClick={() => handleSelectChange(file.name)}
+                      className={cn(
+                        "relative flex cursor-pointer items-center gap-4 rounded-lg border p-4 transition-all hover:bg-accent/5",
+                        selectedCsv === file.name
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      <div className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-full border",
+                        selectedCsv === file.name ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"
+                      )}>
+                        <FileSpreadsheet className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <p className="font-medium leading-none">{file.name}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{(file.size / 1024).toFixed(1)} KB</span>
+                          <span>•</span>
+                          <span>{new Date(file.modifiedAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      {selectedCsv === file.name && (
+                        <div className="absolute right-4 top-4">
+                          <Check className="h-5 w-5 text-primary" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {csvFiles.length === 0 && (
+                    <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed text-center text-muted-foreground">
+                      <p>No CSV files found in the directory.</p>
+                    </div>
+                  )}
+                </div>
               </CardContent>
-              <CardFooter className="flex justify-between">
+              <CardFooter className="flex justify-between border-t pt-6">
                 <Button variant="outline" onClick={() => setStep('connect')}>
                   Back
                 </Button>
-                <Button onClick={handleNextFromSelect} disabled={isPending || !selectedCsv}>
-                  {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <div className="border-t p-4">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-foreground">Filter by Shopify Location</span>
+                    <Select
+                      value={selectedLocationId}
+                      onValueChange={setSelectedLocationId}
+                    >
+                      <SelectTrigger className="w-full bg-background/50">
+                        <SelectValue placeholder="Select a location..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {locations.map((loc) => (
+                          <SelectItem key={loc.id} value={loc.id.toString()}>
+                            {loc.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Inventory will be filtered to check availability at this location only.
+                    </p>
+                  </div>
+                </div>
+                <Button onClick={handleNextFromSelect} disabled={isPending || !selectedCsv || !selectedLocationId}>
                   Next
                 </Button>
               </CardFooter>
@@ -578,58 +694,67 @@ export default function AuditStepper() {
             transition={{ duration: 0.3 }}
           >
             <Card className="mx-auto w-full max-w-lg border-primary/10 shadow-2xl shadow-primary/5">
-              <CardHeader>
-                <CardTitle className="text-primary">Processing File</CardTitle>
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl text-primary">Audit in Progress</CardTitle>
                 <CardDescription>
-                  Please wait while we process your file. This may take several minutes.
+                  Please wait while we process <strong>{selectedCsv}</strong>.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 pt-6">
-                <div className="flex justify-center py-8">
-                  <div className="relative">
+              <CardContent className="space-y-6 pt-2">
+                {/* Visual Pulse */}
+                <div className="flex flex-col items-center justify-center py-6">
+                  <div className="relative mb-6">
                     <div className="absolute inset-0 animate-pulse rounded-full bg-primary/20 blur-xl"></div>
-                    <Loader2 className="relative h-16 w-16 animate-spin text-primary" />
+                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-primary/30 bg-background">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    </div>
                   </div>
+
+                  <div className="mb-6 flex flex-col items-center gap-1">
+                    <div className="text-3xl font-bold font-mono text-foreground">
+                      {formatTime(elapsedSeconds)}
+                    </div>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground">Time Elapsed</span>
+                  </div>
+
+                  <p className="animate-pulse text-sm font-medium text-muted-foreground">
+                    {activityLog[activityLog.length - 1] || 'Initializing...'}
+                  </p>
                 </div>
-                {activityLog.length > 0 && (
-                  <div className="mt-4 max-h-60 overflow-y-auto rounded-lg border bg-muted/50 p-4 font-mono text-sm">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Activity Log
-                    </h3>
-                    <ul className="space-y-2">
-                      <AnimatePresence initial={false}>
-                        {activityLog.map((log, index) => {
-                          const isDone =
-                            activityLog.length > index + 1 ||
-                            log.toLowerCase().includes('finished') ||
-                            log.toLowerCase().includes('complete');
-                          return (
-                            <motion.li
-                              key={index}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              className="flex items-start gap-3"
-                            >
-                              {isDone ? (
-                                <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-                              ) : (
-                                <Clock className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-primary" />
-                              )}
-                              <span
-                                className={
-                                  isDone ? 'text-muted-foreground' : 'font-medium text-foreground'
-                                }
-                              >
-                                {log}
-                              </span>
-                            </motion.li>
-                          );
-                        })}
-                      </AnimatePresence>
-                      <div ref={logEndRef} />
-                    </ul>
+
+                {/* Collapsible Logs */}
+                <Collapsible
+                  open={isLogOpen}
+                  onOpenChange={setIsLogOpen}
+                  className="w-full space-y-2"
+                >
+                  <div className="flex items-center justify-between px-4">
+                    <h4 className="text-sm font-semibold text-muted-foreground">Detailed Activity Log</h4>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-9 p-0">
+                        {isLogOpen ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">Toggle</span>
+                      </Button>
+                    </CollapsibleTrigger>
                   </div>
-                )}
+                  <CollapsibleContent className="space-y-2">
+                    <div className="max-h-60 overflow-y-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs">
+                      <ul className="space-y-1">
+                        {activityLog.map((log, index) => (
+                          <li key={index} className="flex items-start gap-2">
+                            <span className="mt-0.5 text-primary">›</span>
+                            <span>{log}</span>
+                          </li>
+                        ))}
+                        <div ref={logEndRef} />
+                      </ul>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
             </Card>
           </motion.div>

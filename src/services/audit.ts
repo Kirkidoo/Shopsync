@@ -2,19 +2,18 @@ import { Product, AuditResult, DuplicateSku, MismatchDetail } from '@/lib/types'
 import { getCsvStreamFromFtp } from './ftp';
 import { parseCsvFromStream } from './csv';
 import { getShopifyProductsBySku } from '@/lib/shopify';
+import { logger } from '@/lib/logger';
 
-function findMismatches(
+export function findMismatches(
   csvProduct: Product,
   shopifyProduct: Product,
-  csvFileName: string
+  csvFileName: string,
+  isUseParentClearanceOverride: boolean = false
 ): MismatchDetail[] {
   const mismatches: MismatchDetail[] = [];
 
-  // Ignore products stocked at Garage Harry Stanley (ID: 86376317245)
-  if (shopifyProduct.locationIds?.includes('gid://shopify/Location/86376317245')) {
-    return [];
-  }
-
+  // Mismatch Logic
+  // 1. Price
   if (csvProduct.price !== shopifyProduct.price) {
     mismatches.push({
       field: 'price',
@@ -23,6 +22,34 @@ function findMismatches(
     });
   }
 
+  // 1.5 Compare At Price
+  const isClearanceFile = csvFileName.toLowerCase().includes('clearance');
+  if (isClearanceFile) {
+    // Standard comparison for clearance files
+    if (csvProduct.compareAtPrice !== shopifyProduct.compareAtPrice) {
+      mismatches.push({
+        field: 'compare_at_price',
+        csvValue: csvProduct.compareAtPrice,
+        shopifyValue: shopifyProduct.compareAtPrice,
+      });
+    }
+  } else {
+    // Non-clearance files: Check for "Sticky Sale" (On sale when it shouldn't be)
+    // Rule: Compare at price should be NULL or equal to Price.
+    const isEffectiveSale =
+      shopifyProduct.compareAtPrice !== null &&
+      shopifyProduct.compareAtPrice !== shopifyProduct.price;
+
+    if (isEffectiveSale) {
+      mismatches.push({
+        field: 'compare_at_price',
+        csvValue: 'N/A (Should be null or equal to price)',
+        shopifyValue: shopifyProduct.compareAtPrice,
+      });
+    }
+  }
+
+  // 2. Inventory
   if (csvProduct.inventory !== null && csvProduct.inventory !== shopifyProduct.inventory) {
     const isCappedInventory = csvProduct.inventory > 10 && shopifyProduct.inventory === 10;
     if (!isCappedInventory) {
@@ -34,38 +61,82 @@ function findMismatches(
     }
   }
 
-  if (shopifyProduct.descriptionHtml && /<h1/i.test(shopifyProduct.descriptionHtml)) {
-    mismatches.push({ field: 'h1_tag', csvValue: 'No H1 Expected', shopifyValue: 'H1 Found' });
-  }
+  // Tags preprocessing
+  const tags = shopifyProduct.tags
+    ? shopifyProduct.tags
+      .toLowerCase()
+      .split(',')
+      .map((t) => t.trim())
+    : [];
 
-  // Heavy product check: weight > 50lbs (22679.6 grams)
-  if (csvProduct.weight && csvProduct.weight > 22679.6) {
+  // 3. Oversize / Heavy Product Logic
+  const csvTags = csvProduct.tags
+    ? csvProduct.tags
+      .toLowerCase()
+      .split(',')
+      .map((t) => t.trim())
+    : [];
+
+  const isOversize = tags.includes('oversize') || csvTags.includes('oversize');
+
+  // 'oversize' tag (in CSV or Shopify) -> must have 'heavy-products' template
+  if (isOversize) {
+    if (shopifyProduct.templateSuffix !== 'heavy-products') {
+      mismatches.push({
+        field: 'incorrect_template_suffix',
+        csvValue: 'heavy-products', // Expected
+        shopifyValue: shopifyProduct.templateSuffix || 'Default Template',
+      });
+    }
+
+    // Check if missing 'oversize' tag in Shopify
+    if (!tags.includes('oversize')) {
+      mismatches.push({
+        field: 'missing_oversize_tag',
+        csvValue: 'oversize',
+        shopifyValue: shopifyProduct.tags || 'No Tags',
+      });
+    }
+
+    // Optional: Flag if missing from Shopify tags if strictly required?
+    // User complaint was about template logic, so we focus on that prioritization first.
+  }
+  // Reverse check: 'heavy-products' template -> must have 'oversize' tag
+  else if (shopifyProduct.templateSuffix === 'heavy-products') {
+    // If it's a clearance file, it should probably be 'clearance' template instead of default
+    const isClearanceFile = csvFileName.toLowerCase().includes('clearance');
+    const expectedTemplate = isClearanceFile ? 'clearance' : 'Default Template';
+
     mismatches.push({
-      field: 'heavy_product_flag',
-      csvValue: `${(csvProduct.weight / 453.592).toFixed(2)} lbs`,
-      shopifyValue: null,
+      field: 'incorrect_template_suffix',
+      csvValue: expectedTemplate, // Expected 'clearance' or 'Default Template'
+      shopifyValue: 'heavy-products',
     });
   }
-
-  // Clearance tag check
-  // Clearance tag and template check
-  if (csvFileName.toLowerCase().includes('clearance')) {
-    const tags = shopifyProduct.tags
-      ? shopifyProduct.tags
-        .toLowerCase()
-        .split(',')
-        .map((t) => t.trim())
-      : [];
-
-    // Check if Price equals Compare At Price (Invalid Clearance)
+  // 4. Clearance Logic
+  else if (csvFileName.toLowerCase().includes('clearance')) {
+    // Exception: compare_at_price == price -> Not clearance
     if (csvProduct.compareAtPrice !== null && csvProduct.price === csvProduct.compareAtPrice) {
-      mismatches.push({
-        field: 'clearance_price_mismatch', // New mismatch type
-        csvValue: `Price: ${csvProduct.price}`,
-        shopifyValue: `Compare At: ${csvProduct.compareAtPrice}`,
-      });
+      if (isUseParentClearanceOverride) {
+        // This variant has no discount, BUT a sibling variant does.
+        // So we ALLOW the parent to have 'clearance' template/tag.
+        // Do nothing -> No mismatch.
+      } else {
+        // If CSV implies NO discount, but Shopify has Clearance indicators -> Mismatch
+        let hasClearanceIssues = false;
+        if (tags.includes('clearance')) hasClearanceIssues = true;
+        if (shopifyProduct.templateSuffix === 'clearance') hasClearanceIssues = true;
+
+        if (hasClearanceIssues) {
+          mismatches.push({
+            field: 'clearance_price_mismatch',
+            csvValue: 'Regular Price (No Clearance)',
+            shopifyValue: 'Marked as Clearance',
+          });
+        }
+      }
     } else {
-      // Only check for missing clearance tag if it's NOT an invalid clearance product
+      // Rule: Must have 'Clearance' tag
       if (!tags.includes('clearance')) {
         mismatches.push({
           field: 'missing_clearance_tag',
@@ -74,6 +145,7 @@ function findMismatches(
         });
       }
 
+      // Rule: Must have 'clearance' template
       if (shopifyProduct.templateSuffix !== 'clearance') {
         mismatches.push({
           field: 'incorrect_template_suffix',
@@ -81,25 +153,6 @@ function findMismatches(
           shopifyValue: shopifyProduct.templateSuffix || 'Default Template',
         });
       }
-    }
-  }
-
-  // Category Tag Check
-  if (csvProduct.category) {
-    const tags = shopifyProduct.tags
-      ? shopifyProduct.tags
-        .toLowerCase()
-        .split(',')
-        .map((t) => t.trim())
-      : [];
-
-    const categoryLower = csvProduct.category.toLowerCase().trim();
-    if (!tags.includes(categoryLower)) {
-      mismatches.push({
-        field: 'missing_category_tag',
-        csvValue: csvProduct.category,
-        shopifyValue: shopifyProduct.tags || 'No Tags',
-      });
     }
   }
 
@@ -112,7 +165,7 @@ export async function runAuditComparison(
   csvFileName: string
 ): Promise<{ report: AuditResult[]; summary: any }> {
   const csvProductMap = new Map(csvProducts.map((p) => [p.sku, p]));
-  console.log(`Created map with ${csvProductMap.size} products from CSV.`);
+  logger.info(`Created map with ${csvProductMap.size} products from CSV.`);
 
   const shopifyProductMap = new Map<string, Product[]>();
   for (const p of shopifyProducts) {
@@ -122,7 +175,7 @@ export async function runAuditComparison(
     }
     shopifyProductMap.get(skuLower)!.push(p);
   }
-  console.log(`Created map with ${shopifyProductMap.size} unique SKUs from Shopify.`);
+  logger.info(`Created map with ${shopifyProductMap.size} unique SKUs from Shopify.`);
 
   // --- Duplicate Handle Detection ---
   const shopifyHandleMap = new Map<string, Product[]>();
@@ -171,13 +224,40 @@ export async function runAuditComparison(
 
   const shopifyHandleSet = new Set(shopifyProducts.map((p) => p.handle));
 
-  console.log('Running audit comparison logic...');
+  logger.info('Running audit comparison logic...');
   let matchedCount = 0;
 
   const processedShopifySkus = new Set<string>();
 
+  // --- CSV Handle Map for Sibling Lookup ---
+  const csvHandleMap = new Map<string, Product[]>();
+  for (const p of csvProducts) {
+    if (p.handle) {
+      if (!csvHandleMap.has(p.handle)) {
+        csvHandleMap.set(p.handle, []);
+      }
+      csvHandleMap.get(p.handle)!.push(p);
+    }
+  }
+
   for (const csvProduct of csvProducts) {
     const shopifyVariants = shopifyProductMapForSkuComparison.get(csvProduct.sku.toLowerCase());
+
+    // Check for sibling clearance status in CSV
+    let isUseParentClearanceOverride = false;
+    if (csvProduct.handle) {
+      const siblings = csvHandleMap.get(csvProduct.handle) || [];
+      // If ANY sibling (including self) has a valid discount (price < compareAt),
+      // then the parent is legitimately "Clearance".
+      const hasDiscountedVariant = siblings.some(
+        (sib) =>
+          sib.compareAtPrice !== null &&
+          sib.price < sib.compareAtPrice
+      );
+      if (hasDiscountedVariant) {
+        isUseParentClearanceOverride = true;
+      }
+    }
 
     if (shopifyVariants) {
       processedShopifySkus.add(csvProduct.sku.toLowerCase());
@@ -186,7 +266,12 @@ export async function runAuditComparison(
         summary.duplicate_in_shopify++;
 
         const duplicateReportItems = shopifyVariants.map((variant) => {
-          const mismatches = findMismatches(csvProduct, variant, csvFileName);
+          const mismatches = findMismatches(
+            csvProduct,
+            variant,
+            csvFileName,
+            isUseParentClearanceOverride
+          );
           return {
             sku: csvProduct.sku,
             csvProducts: [csvProduct],
@@ -212,7 +297,12 @@ export async function runAuditComparison(
         report.push(...duplicateReportItems);
       } else {
         const shopifyProduct = shopifyVariants[0];
-        const mismatches = findMismatches(csvProduct, shopifyProduct, csvFileName);
+        const mismatches = findMismatches(
+          csvProduct,
+          shopifyProduct,
+          csvFileName,
+          isUseParentClearanceOverride
+        );
 
         if (mismatches.length > 0) {
           report.push({
@@ -335,14 +425,15 @@ export async function runAuditComparison(
     return a.sku.localeCompare(b.sku);
   });
 
-  console.log('Audit comparison complete. Matched:', matchedCount, 'Summary:', summary);
+  logger.info(`Audit comparison complete. Matched: ${matchedCount} Summary:`, summary);
 
   return { report, summary: { ...summary, matched: matchedCount } };
 }
 
 export async function runAudit(
   csvFileName: string,
-  ftpData: FormData
+  ftpData: FormData,
+  locationId?: number
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
   let csvProducts: Product[] = [];
 
@@ -351,12 +442,12 @@ export async function runAudit(
     const parsedData = await parseCsvFromStream(readableStream);
     csvProducts = parsedData.products;
   } catch (error) {
-    console.error('Failed to download or parse CSV from FTP', error);
+    logger.error('Failed to download or parse CSV from FTP', error);
     throw new Error(`Could not download or process file '${csvFileName}' from FTP.`);
   }
 
   if (csvProducts.length === 0) {
-    console.log('No products found in the CSV file. Aborting audit.');
+    logger.info('No products found in the CSV file. Aborting audit.');
     return {
       report: [],
       summary: {
@@ -373,10 +464,10 @@ export async function runAudit(
 
   // Fetch Shopify products based on SKUs from the CSV
   const skusFromCsv = csvProducts.map((p) => p.sku);
-  const allShopifyProducts = await getShopifyProductsBySku(skusFromCsv);
+  const allShopifyProducts = await getShopifyProductsBySku(skusFromCsv, locationId);
 
   if (!allShopifyProducts) {
-    console.error('Audit cannot run because Shopify product data could not be fetched.');
+    logger.error('Audit cannot run because Shopify product data could not be fetched.');
     return null;
   }
 

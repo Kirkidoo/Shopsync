@@ -2,51 +2,23 @@ import { Readable } from 'stream';
 import { parse } from 'csv-parse';
 import { Product } from '@/lib/types';
 import { getCsvStreamFromFtp } from './ftp';
+import { logger } from '@/lib/logger';
 
-export async function parseCsvFromStream(stream: Readable): Promise<{ products: Product[] }> {
-  console.log('Parsing CSV from stream...');
-  const records: Product[] = [];
+export async function* parseCsvGenerator(stream: Readable): AsyncGenerator<Product> {
+  logger.info('Parsing CSV from stream (generator)...');
   const handledHandles = new Set<string>();
-
-  // Handle BOM if present
-  let isFirstChunk = true;
-  const bomStripper = new Readable({
-    read() {
-      const chunk = stream.read();
-      if (chunk) {
-        if (
-          isFirstChunk &&
-          chunk.length >= 3 &&
-          chunk[0] === 0xef &&
-          chunk[1] === 0xbb &&
-          chunk[2] === 0xbf
-        ) {
-          this.push(chunk.slice(3));
-        } else {
-          this.push(chunk);
-        }
-        isFirstChunk = false;
-      } else {
-        this.push(null);
-      }
-    },
-  });
-
-  // If stream is already flowing, we might need a different approach, but for now assuming fresh stream
-  // Actually, simpler approach: use the 'bom' option in csv-parse if available, or just strip it manually from string if we were reading string.
-  // Since we are piping stream, let's use the bom option from csv-parse which handles this gracefully.
 
   const parser = stream.pipe(
     parse({
       columns: true,
       skip_empty_lines: true,
       trim: true,
-      bom: true, // Enable BOM stripping
+      bom: true,
     })
   );
 
   stream.on('error', (err) => {
-    console.error('Input stream error:', err);
+    logger.error('Input stream error:', err);
     parser.destroy(err);
   });
 
@@ -96,15 +68,13 @@ export async function parseCsvFromStream(stream: Readable): Promise<{ products: 
 
     if (handle && handledHandles.has(handle) && isDefaultTitleVariant) {
       const newHandle = `${handle}-${sku}`;
-      console.log(
-        `Handle collision detected for '${handle}'. Creating unique handle: '${newHandle}' for SKU ${sku}.`
-      );
+      // logger.debug(`Handle collision for '${handle}'. Using '${newHandle}'.`); // Reduced log noise
       handle = newHandle;
     }
     // --- End Handle Collision Logic ---
 
     if (handle && sku && title && !isNaN(price)) {
-      records.push({
+      yield {
         id: '', // Shopify only
         variantId: '', // Shopify only
         inventoryItemId: '', // Shopify only
@@ -131,17 +101,20 @@ export async function parseCsvFromStream(stream: Readable): Promise<{ products: 
         option3Value: record['Option3 Value'] || null,
         imageId: null, // Shopify only
         templateSuffix: null, // Shopify only
-      });
+        rawCsvData: record,
+      };
       handledHandles.add(handle);
-    } else {
-      console.warn(
-        `Skipping record due to missing fields: Handle=${handle}, SKU=${sku}, Title=${title}, Price=${price}`
-      );
     }
   }
-  console.log(`Parsed ${records.length} products from CSV.`);
+}
 
-  return { products: records };
+export async function parseCsvFromStream(stream: Readable): Promise<{ products: Product[] }> {
+  const products: Product[] = [];
+  for await (const product of parseCsvGenerator(stream)) {
+    products.push(product);
+  }
+  logger.info(`Parsed ${products.length} products from CSV.`);
+  return { products };
 }
 
 export async function getCsvProducts(
@@ -156,7 +129,7 @@ export async function getCsvProducts(
     }
     return parsedData.products;
   } catch (error) {
-    console.error('Failed to download or parse CSV from FTP', error);
+    logger.error('Failed to download or parse CSV from FTP', error);
     throw new Error(`Could not download or process file '${csvFileName}' from FTP.`);
   }
 }

@@ -86,12 +86,5 @@ describe('Audit Service', () => {
     expect(result.report[0].status).toBe('not_in_csv');
   });
 
-  it('should flag heavy products', async () => {
-    const heavyProduct = { ...mockCsvProduct, weight: 23000 }; // > 50lbs (22679.6g)
-    const result = await runAuditComparison([heavyProduct], [], 'test.csv');
 
-    expect(result.report[0].mismatches).toContainEqual(
-      expect.objectContaining({ field: 'heavy_product_flag' })
-    );
-  });
 });

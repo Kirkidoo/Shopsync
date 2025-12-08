@@ -1,5 +1,6 @@
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
+import { logger } from '@/lib/logger';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
 
@@ -12,21 +13,21 @@ export async function getFtpClient(data: FormData) {
   // client.ftp.verbose = true;
   try {
     // First, try a secure connection
-    console.log('Attempting secure FTP connection...');
+    logger.info('Attempting secure FTP connection...');
     await client.access({ host, user, password, secure: true });
-    console.log('Secure FTP connection successful.');
+    logger.info('Secure FTP connection successful.');
   } catch (secureErr) {
-    console.log('Secure FTP connection failed. Trying non-secure.', secureErr);
+    logger.info('Secure FTP connection failed. Trying non-secure.', secureErr);
     // If secure fails, close the potentially broken connection and try non-secure
     client.close();
     const nonSecureClient = new Client(30000); // 30 second timeout
     try {
-      console.log('Attempting non-secure FTP connection...');
+      logger.info('Attempting non-secure FTP connection...');
       await nonSecureClient.access({ host, user, password, secure: false });
-      console.log('Non-secure FTP connection successful.');
+      logger.info('Non-secure FTP connection successful.');
       return nonSecureClient;
     } catch (nonSecureErr) {
-      console.error('Non-secure FTP connection also failed.', nonSecureErr);
+      logger.error('Non-secure FTP connection also failed.', nonSecureErr);
       throw new Error('Invalid FTP credentials or failed to connect.');
     }
   }
@@ -40,18 +41,22 @@ export async function connectToFtp(data: FormData) {
 }
 
 export async function listCsvFiles(data: FormData) {
-  console.log('Listing CSV files from FTP...');
+  logger.info('Listing CSV files from FTP...');
   const client = await getFtpClient(data);
   try {
     await client.cd(FTP_DIRECTORY);
     const files = await client.list();
     const csvFiles = files
       .filter((file: any) => file.name.toLowerCase().endsWith('.csv'))
-      .map((file: any) => file.name);
-    console.log(`Found ${csvFiles.length} CSV files.`);
+      .map((file: any) => ({
+        name: file.name,
+        size: file.size,
+        modifiedAt: file.modifiedAt,
+      }));
+    logger.info(`Found ${csvFiles.length} CSV files.`);
     return csvFiles;
   } catch (error) {
-    console.error('Failed to list CSV files:', error);
+    logger.error('Failed to list CSV files:', error);
     throw error;
   } finally {
     if (!client.closed) {
@@ -66,13 +71,13 @@ export async function getCsvStreamFromFtp(
 ): Promise<Readable> {
   const client = await getFtpClient(ftpData);
   try {
-    console.log('Navigating to FTP directory:', FTP_DIRECTORY);
+    logger.info('Navigating to FTP directory:', FTP_DIRECTORY);
     await client.cd(FTP_DIRECTORY);
-    console.log(`Downloading file: ${csvFileName}`);
+    logger.info(`Downloading file: ${csvFileName}`);
 
     // Create a PassThrough stream to pipe the download into
     const passThrough = new Readable({
-      read() {},
+      read() { },
     });
 
     // We need to keep the client open while the stream is being read.
@@ -96,11 +101,11 @@ export async function getCsvStreamFromFtp(
     // Start the download asynchronously
     client.downloadTo(stream, csvFileName).then(
       () => {
-        console.log('File download completed.');
+        logger.info('File download completed.');
         client.close();
       },
       (err) => {
-        console.error('File download failed:', err);
+        logger.error('File download failed:', err);
         stream.destroy(err);
         client.close();
       }
