@@ -688,8 +688,9 @@ export function MediaManager({
                               className="pointer-events-auto h-6 w-6"
                               disabled={isSubmitting}
                               onClick={(e) => e.stopPropagation()}
+                              aria-label={`Delete image ${image.id}`}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
