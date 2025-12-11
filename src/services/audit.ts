@@ -141,33 +141,6 @@ export async function runAuditComparison(
     duplicate_in_shopify: 0,
     duplicate_handle: 0,
   };
-  const handledDuplicateHandles = new Set<string>();
-
-  for (const [handle, products] of shopifyHandleMap.entries()) {
-    if (products.length > 1) {
-      // Check if all products with this handle have unique SKUs
-      const uniqueSkus = new Set(products.map((p) => p.sku));
-      if (uniqueSkus.size < products.length) {
-        // This is a more complex issue (duplicate SKUs within a duplicate handle)
-        // Let the duplicate SKU logic handle this.
-      } else {
-        // This is a valid multi-variant product (multiple variants, unique SKUs).
-        // Do NOT flag as duplicate_handle.
-      }
-    }
-  }
-
-  const shopifyProductsForSkuComparison = shopifyProducts.filter(
-    (p) => !handledDuplicateHandles.has(p.handle)
-  );
-  const shopifyProductMapForSkuComparison = new Map<string, Product[]>();
-  for (const p of shopifyProductsForSkuComparison) {
-    const skuLower = p.sku.toLowerCase();
-    if (!shopifyProductMapForSkuComparison.has(skuLower)) {
-      shopifyProductMapForSkuComparison.set(skuLower, []);
-    }
-    shopifyProductMapForSkuComparison.get(skuLower)!.push(p);
-  }
 
   const shopifyHandleSet = new Set(shopifyProducts.map((p) => p.handle));
 
@@ -177,7 +150,7 @@ export async function runAuditComparison(
   const processedShopifySkus = new Set<string>();
 
   for (const csvProduct of csvProducts) {
-    const shopifyVariants = shopifyProductMapForSkuComparison.get(csvProduct.sku.toLowerCase());
+    const shopifyVariants = shopifyProductMap.get(csvProduct.sku.toLowerCase());
 
     if (shopifyVariants) {
       processedShopifySkus.add(csvProduct.sku.toLowerCase());
@@ -305,7 +278,7 @@ export async function runAuditComparison(
     }
   }
 
-  for (const [sku, variants] of shopifyProductMapForSkuComparison.entries()) {
+  for (const [sku, variants] of shopifyProductMap.entries()) {
     // Note: sku here is already lowercase from the map key
     // We need to check if we processed this SKU (using the original CSV SKU casing if possible, but here we only have the map key)
     // The processedShopifySkus set should also store lowercase SKUs to match.
