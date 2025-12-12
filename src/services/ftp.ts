@@ -9,6 +9,9 @@ export async function getFtpClient(data: FormData) {
   const user = data.get('username') as string;
   const password = data.get('password') as string;
 
+  // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
+  const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
+
   const client = new Client(30000); // 30 second timeout
   // client.ftp.verbose = true;
   try {
@@ -17,19 +20,30 @@ export async function getFtpClient(data: FormData) {
     await client.access({ host, user, password, secure: true });
     logger.info('Secure FTP connection successful.');
   } catch (secureErr) {
-    logger.info('Secure FTP connection failed. Trying non-secure.', secureErr);
-    // If secure fails, close the potentially broken connection and try non-secure
-    client.close();
-    const nonSecureClient = new Client(30000); // 30 second timeout
-    try {
-      logger.info('Attempting non-secure FTP connection...');
-      await nonSecureClient.access({ host, user, password, secure: false });
-      logger.info('Non-secure FTP connection successful.');
-      return nonSecureClient;
-    } catch (nonSecureErr) {
-      logger.error('Non-secure FTP connection also failed.', nonSecureErr);
-      throw new Error('Invalid FTP credentials or failed to connect.');
+    logger.info('Secure FTP connection failed.', secureErr);
+
+    // Sentinel Security Fix: Removed automatic fallback to non-secure FTP.
+    // Downgrade attacks can intercept the secure handshake and force the client
+    // to send credentials in cleartext.
+
+    if (allowInsecure) {
+      logger.warn('⚠️ SECURITY WARNING: Falling back to non-secure FTP because ALLOW_INSECURE_FTP is enabled.');
+      // If secure fails, close the potentially broken connection and try non-secure
+      client.close();
+      const nonSecureClient = new Client(30000); // 30 second timeout
+      try {
+        logger.info('Attempting non-secure FTP connection...');
+        await nonSecureClient.access({ host, user, password, secure: false });
+        logger.info('Non-secure FTP connection successful.');
+        return nonSecureClient;
+      } catch (nonSecureErr) {
+        logger.error('Non-secure FTP connection also failed.', nonSecureErr);
+        throw new Error('Invalid FTP credentials or failed to connect (Secure & Insecure).');
+      }
     }
+
+    client.close();
+    throw new Error('Secure FTP connection failed. Automatic fallback to insecure FTP is disabled for security.');
   }
   return client;
 }

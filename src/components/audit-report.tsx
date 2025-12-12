@@ -1,10 +1,17 @@
 'use client';
 
-import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
+import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AuditResult, AuditStatus, DuplicateSku, Summary, MismatchDetail, Product } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 
 // Components
@@ -22,8 +29,8 @@ import { useAuditData } from '@/hooks/use-audit-data';
 import { useAuditActions } from '@/hooks/use-audit-actions';
 
 // Utils
-import { downloadCsv, clearAuditMemory } from '@/lib/utils';
-import { AlertTriangle, PlusCircle, XCircle, Copy, FileWarning, CheckCircle2, Siren, Loader2, ArrowLeft, RefreshCw, Download } from 'lucide-react';
+import { downloadCsv, clearAuditMemory, cn } from '@/lib/utils';
+import { AlertTriangle, PlusCircle, XCircle, Copy, FileWarning, CheckCircle2, Siren, Loader2, ArrowLeft, RefreshCw, Download, Check, Wrench, Eye, DollarSign, List, MapPin, Trash2, Bot, ChevronDown, ImageIcon } from 'lucide-react';
 
 const statusConfig: {
   [key in AuditStatus]: {
@@ -70,6 +77,303 @@ const statusConfig: {
   },
 };
 
+const getHandle = (item: AuditResult) =>
+  item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || `no-handle-${item.sku}`;
+
+const hasAllExpectedTags = (
+  shopifyTags: string | undefined | null,
+  csvTags: string | undefined | null,
+  category: string | undefined | null,
+  customTag: string
+): boolean => {
+  if (!shopifyTags) return false;
+
+  const currentTags = new Set(
+    shopifyTags.split(',').map((t) => t.trim().toLowerCase())
+  );
+
+  // 1. Check CSV Tags (first 3)
+  if (csvTags) {
+    const expectedCsvTags = csvTags
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 3);
+
+    for (const tag of expectedCsvTags) {
+      if (!currentTags.has(tag)) return false;
+    }
+  }
+
+  // 2. Check Category
+  if (category) {
+    if (!currentTags.has(category.trim().toLowerCase())) return false;
+  }
+
+  // 3. Check Custom Tag
+  if (customTag) {
+    if (!currentTags.has(customTag.trim().toLowerCase())) return false;
+  }
+
+  return true;
+};
+
+const MismatchDetails = ({
+  mismatches,
+  onFix,
+  onMarkAsFixed,
+  disabled,
+  sku,
+}: {
+  mismatches: MismatchDetail[];
+  onFix: (fixType: MismatchDetail['field']) => void;
+  onMarkAsFixed: (fixType: MismatchDetail['field']) => void;
+  disabled: boolean;
+  sku: string;
+}) => {
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {mismatches.map((mismatch, index) => {
+        const canBeFixed =
+          mismatch.field !== 'duplicate_in_shopify' && mismatch.field !== 'heavy_product_flag';
+        const isWarningOnly = mismatch.field === 'heavy_product_flag';
+
+        return (
+          <div
+            key={`${sku}-${mismatch.field}-${index}`}
+            className="flex items-center gap-2 rounded-md bg-yellow-50 p-2 text-xs dark:bg-yellow-900/20"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
+            <div className="flex-grow">
+              <span className="font-semibold capitalize">
+                {mismatch.field.replace(/_/g, ' ')}:{' '}
+              </span>
+              {mismatch.field === 'h1_tag' && (
+                <span className="text-muted-foreground">
+                  Product description contains an H1 tag.
+                </span>
+              )}
+              {mismatch.field === 'duplicate_in_shopify' && (
+                <span className="text-muted-foreground">SKU exists multiple times in Shopify.</span>
+              )}
+              {mismatch.field === 'heavy_product_flag' && (
+                <span className="text-muted-foreground">
+                  Product is over 50lbs ({mismatch.csvValue}).
+                </span>
+              )}
+
+              {mismatch.field === 'clearance_price_mismatch' && (
+                <span className="text-muted-foreground">
+                  Price equals Compare At Price. Not a valid clearance item.
+                </span>
+              )}
+              {mismatch.field !== 'h1_tag' &&
+                mismatch.field !== 'duplicate_in_shopify' &&
+                mismatch.field !== 'heavy_product_flag' &&
+                mismatch.field !== 'clearance_price_mismatch' && (
+                  <>
+                    <span className="mr-2 text-red-500 line-through">
+                      {mismatch.shopifyValue ?? 'N/A'}
+                    </span>
+                    <span className="text-green-500">{mismatch.csvValue ?? 'N/A'}</span>
+                  </>
+                )}
+            </div>
+            <div className="flex items-center gap-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => onMarkAsFixed(mismatch.field)}
+                      disabled={disabled}
+                      aria-label="Mark as fixed"
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Mark as fixed (hide from report)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              {canBeFixed && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => onFix(mismatch.field)}
+                  disabled={disabled}
+                >
+                  <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                  Fix
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MissingProductDetailsDialog = ({ product }: { product: Product }) => {
+  const dataMap: { label: string; value: any; notes?: string }[] = [
+    // Product Level
+    { label: 'Shopify Product Title', value: product.name, notes: "From 'Title' column" },
+    { label: 'Shopify Product Handle', value: product.handle, notes: "From 'Handle' column" },
+    {
+      label: 'Product Description',
+      value: product.descriptionHtml || 'N/A',
+      notes: "From 'Body (HTML)' column. H1 tags will be converted to H2.",
+    },
+    { label: 'Vendor', value: product.vendor, notes: "From 'Vendor' column" },
+    { label: 'Product Type', value: product.productType, notes: "From 'Tags' column (3rd tag)" },
+    {
+      label: 'Collection',
+      value: product.category,
+      notes: "From 'Category' column. Will be linked to a collection with this title.",
+    },
+    {
+      label: 'Tags',
+      value: 'N/A',
+      notes: "'Clearance' tag added if filename contains 'clearance'",
+    },
+
+    // Variant Level
+    { label: 'Variant SKU', value: product.sku, notes: "From 'SKU' column" },
+    {
+      label: 'Variant Image',
+      value: product.mediaUrl,
+      notes: "From 'Variant Image' column. Will be assigned to this variant.",
+    },
+    {
+      label: 'Variant Price',
+      value: `$${product.price?.toFixed(2)}`,
+      notes: "From 'Price' column",
+    },
+    {
+      label: 'Variant Compare At Price',
+      value: product.compareAtPrice ? `$${product.compareAtPrice.toFixed(2)}` : 'N/A',
+      notes: "From 'Compare At Price' column",
+    },
+    {
+      label: 'Variant Cost',
+      value: product.costPerItem ? `$${product.costPerItem.toFixed(2) ?? 'N/A'}` : 'N/A',
+      notes: "From 'Cost Per Item' column",
+    },
+    {
+      label: 'Variant Barcode (GTIN)',
+      value: product.barcode || 'N/A',
+      notes: "From 'Variant Barcode' column",
+    },
+    {
+      label: 'Variant Inventory',
+      value: product.inventory,
+      notes: "From 'Variant Inventory Qty'. Will be set at 'Gamma Warehouse' location.",
+    },
+
+    // Options
+    {
+      label: 'Option 1',
+      value: product.option1Name ? `${product.option1Name}: ${product.option1Value}` : 'N/A',
+      notes: "From 'Option1 Name' and 'Option1 Value'",
+    },
+    {
+      label: 'Option 2',
+      value: product.option2Name ? `${product.option2Name}: ${product.option2Value}` : 'N/A',
+      notes: "From 'Option2 Name' and 'Option2 Value'",
+    },
+    {
+      label: 'Option 3',
+      value: product.option3Name ? `${product.option3Name}: ${product.option3Value}` : 'N/A',
+      notes: "From 'Option3 Name' and 'Option3 Value'",
+    },
+  ];
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="h-7">
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          View Details
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Product Creation Preview</DialogTitle>
+          <DialogDescription>
+            This is the data that will be sent to Shopify to create the new product variant with
+            SKU: <span className="font-bold text-foreground">{product.sku}</span>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto pr-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-1/3">Shopify Field</TableHead>
+                <TableHead>Value from FTP File</TableHead>
+                <TableHead>Notes / Source Column</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {dataMap.map(({ label, value, notes }) => (
+                <TableRow key={label}>
+                  <TableCell className="font-medium">{label}</TableCell>
+                  <TableCell>
+                    {typeof value === 'string' && value.startsWith('http') ? (
+                      <a
+                        href={value}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block max-w-xs truncate text-primary underline hover:text-primary/80"
+                      >
+                        {value}
+                      </a>
+                    ) : (
+                      <span className="truncate">{value ?? 'N/A'}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{notes}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const gToLbs = (grams: number | null | undefined): string => {
+  if (grams === null || grams === undefined) return 'N/A';
+  const lbs = grams * 0.00220462;
+  return `${lbs.toFixed(2)} lbs`;
+};
+
+const ProductDetails = ({ product }: { product: Product | null }) => {
+  if (!product) return null;
+  return (
+    <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <DollarSign className="h-3.5 w-3.5" /> Price:{' '}
+        <span className="font-medium text-foreground">${product.price.toFixed(2)}</span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <List className="h-3.5 w-3.5" /> Stock:{' '}
+        <span className="font-medium text-foreground">{product.inventory ?? 'N/A'}</span>
+      </span>
+      <span className="flex items-center gap-1.5" title={product.locationIds?.join(', ')}>
+        <MapPin className="h-3.5 w-3.5" /> Locs: {product.locationIds?.length || 0}
+        {product.locationIds?.includes('gid://shopify/Location/86376317245') && (
+          <span className="ml-1 font-bold text-blue-500">(Garage)</span>
+        )}
+      </span>
+    </div>
+  );
+};
 const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = [
   'price',
   'inventory',
@@ -89,6 +393,18 @@ interface AuditReportProps {
   onReset: () => void;
   onRefresh: () => void;
 }
+
+const MismatchIcons = ({ mismatches }: { mismatches: MismatchDetail[] }) => {
+  const fields = Array.from(new Set(mismatches.map(m => m.field)));
+  return (
+    <div className="flex items-center gap-1">
+      {fields.slice(0, 3).map(f => (
+        <AlertTriangle key={f} className="h-4 w-4 text-yellow-500" />
+      ))}
+      {fields.length > 3 && <span className="text-xs text-muted-foreground">+{fields.length - 3}</span>}
+    </div>
+  );
+};
 
 export default function AuditReport({
   data,
@@ -125,7 +441,8 @@ export default function AuditReport({
     currentSummary,
     columnFilters,
     setColumnFilters,
-    availableCsvColumns
+    availableCsvColumns,
+    filteredGroupedByHandle
   } = useAuditData({ initialData: data, initialSummary: summary });
 
   // Component Local State (UI)
@@ -325,7 +642,7 @@ export default function AuditReport({
     ? groupedByHandle[editingMissingMedia]?.map(i => i.csvProducts[0]).filter(Boolean) || []
     : [];
 
-  const memoizedMissingVariants = editingMissingVariantMedia?.items.map(i => i.csvProducts[0]).filter(Boolean) || [];
+
 
   const handleOpenMissingVariantMediaManager = (items: AuditResult[]) => {
     if (items.length === 0) return;
@@ -335,8 +652,481 @@ export default function AuditReport({
     }
   };
 
-  const hasSelectionWithMismatches = selectedHandles.size > 0 && Array.from(selectedHandles).some(h =>
-    groupedByHandle[h]?.some(i => i.status === 'mismatched' && i.mismatches.length > 0)
+  const memoizedMissingVariants = useMemo(() => {
+    if (!editingMissingVariantMedia) return [];
+    return editingMissingVariantMedia.items
+      .map((i) => i.csvProducts[0])
+      .filter((p): p is Product => !!p);
+  }, [editingMissingVariantMedia]);
+
+
+  const renderRegularReport = () => (
+    <Accordion type="single" collapsible className="w-full">
+      {paginatedHandleKeys.map((handle) => {
+        const items = filteredGroupedByHandle[handle];
+        const productTitle =
+          items[0].csvProducts[0]?.name || items[0].shopifyProducts[0]?.name || handle;
+        const hasMismatch = items.some((i) => i.status === 'mismatched' && i.mismatches.length > 0);
+        const isMissing = items.every((i) => i.status === 'missing_in_shopify');
+        const notInCsv = items.every((i) => i.status === 'not_in_csv');
+
+        const allMismatches = items.flatMap((i) => i.mismatches);
+
+        const overallStatus: AuditStatus | 'matched' = hasMismatch
+          ? 'mismatched'
+          : isMissing
+            ? 'missing_in_shopify'
+            : notInCsv
+              ? 'not_in_csv'
+              : 'matched';
+
+        if (overallStatus === 'matched') {
+          return null;
+        }
+
+        const config = statusConfig[overallStatus];
+
+        const allVariantsForHandleInShopify = data.filter(
+          (d) => d.shopifyProducts[0]?.handle === handle
+        );
+        const isOnlyVariantNotInCsv =
+          notInCsv && allVariantsForHandleInShopify.length === items.length;
+
+        const productId = items[0].shopifyProducts[0]?.id;
+        const imageCount = productId ? imageCounts[productId] : undefined;
+        const isLoadingImages = productId ? loadingImageCounts.has(productId) : false;
+        const canHaveUnlinkedImages = imageCount !== undefined && items.length < imageCount;
+
+        const isMissingProductCase =
+          isMissing && items.every((i) => i.mismatches.some((m) => m.missingType === 'product'));
+        const isMissingVariantCase = isMissing && !isMissingProductCase;
+
+        return (
+          <AccordionItem value={handle} key={handle} className="border-b last:border-b-0">
+            <AccordionHeader className="flex items-center p-0">
+              {(filter === 'mismatched' ||
+                (filter === 'missing_in_shopify' && isMissingProductCase) ||
+                filter === 'all') && (
+                  <div className="p-3 pl-4">
+                    <Checkbox
+                      checked={selectedHandles.has(handle)}
+                      onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                      aria-label={`Select product ${handle} `}
+                      disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
+                    />
+                  </div>
+                )}
+              <AccordionTrigger
+                className="flex-grow p-3 text-left"
+                disabled={isFixing || isAutoRunning || isAutoCreating}
+              >
+                <div className="flex flex-grow items-center gap-4">
+                  <config.icon
+                    className={`h - 5 w - 5 shrink - 0 ${overallStatus === 'mismatched'
+                      ? 'text-yellow-500'
+                      : overallStatus === 'missing_in_shopify'
+                        ? 'text-red-500'
+                        : 'text-blue-500'
+                      } `}
+                  />
+                  <div className="flex-grow text-left">
+                    <p className="font-semibold">{productTitle}</p>
+                    <p className="text-sm text-muted-foreground">{handle}</p>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <div className="flex items-center gap-2 p-3">
+                {hasMismatch && <MismatchIcons mismatches={allMismatches} />}
+                {canHaveUnlinkedImages && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Unlinked ({imageCount! - items.length})
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Unlinked Images?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This product has {imageCount} images but only {items.length} variants
+                          (SKUs). This action will permanently delete the{' '}
+                          {imageCount! - items.length} unlinked images from Shopify. This cannot be
+                          undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteUnlinked(productId!);
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Yes, Delete Images
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                {items.some((i) => i.status === 'mismatched' && i.mismatches.length > 0) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Bot className="mr-2 h-4 w-4" />
+                        Fix Selected
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBulkFix(new Set([handle]));
+                        }}
+                      >
+                        Fix All Mismatches
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Fix Specific Field</DropdownMenuLabel>
+                      {MISMATCH_FILTER_TYPES.filter(
+                        (t) => t !== 'duplicate_in_shopify' && t !== 'heavy_product_flag'
+                      ).map((type) => (
+                        <DropdownMenuItem
+                          key={type}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBulkFix(new Set([handle]), [type]);
+                          }}
+                        >
+                          Fix {type.replace(/_/g, ' ')} Only
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuItem
+                        key="incorrect_template_suffix"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBulkFix(new Set([handle]), ['incorrect_template_suffix']);
+                        }}
+                      >
+                        Fix Incorrect Template Suffix Only
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFixDialogHandles(new Set([handle]));
+                          setShowFixDialog(true);
+                        }}
+                      >
+                        Custom Fix...
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {isMissingProductCase && (
+                  <>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkAsCreated(handle);
+                            }}
+                            disabled={isFixing || isAutoRunning || isAutoCreating}
+                            aria-label="Mark as created"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Mark as created (hide from report)</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <Button
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCreate(items[0]);
+                      }}
+                      disabled={isFixing || isAutoRunning || isAutoCreating}
+                    >
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Create Product
+                    </Button>
+                  </>
+                )}
+                {isMissingVariantCase && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenMissingVariantMediaManager(items);
+                      }}
+                    >
+                      <ImageIcon className="mr-2 h-4 w-4" /> Manage Media
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBulkCreateVariants(items);
+                      }}
+                      disabled={isFixing}
+                    >
+                      <PlusCircle className="mr-2 h-4 w-4" /> Add All {items.length} Variants
+                    </Button>
+                  </>
+                )}
+                <Badge variant="outline" className="w-[80px] justify-center">
+                  {items.length} SKU{items.length > 1 ? 's' : ''}
+                </Badge>
+
+                {productId && !isMissingVariantCase && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-[180px]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingMediaFor(productId);
+                    }}
+                    disabled={isAutoRunning || isAutoCreating}
+                  >
+                    {isLoadingImages ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                    )}
+                    Manage Media{' '}
+                    {imageCount !== undefined && (
+                      <span
+                        className={cn(imageCount > items.length ? 'font-bold text-yellow-400' : '')}
+                      >
+                        ({imageCount})
+                      </span>
+                    )}
+                  </Button>
+                )}
+                {isMissingProductCase && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-[160px]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingMissingMedia(handle);
+                    }}
+                    disabled={isAutoRunning || isAutoCreating}
+                  >
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    Manage Media
+                  </Button>
+                )}
+              </div>
+            </AccordionHeader>
+
+            <AccordionContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[150px]">SKU</TableHead>
+                    <TableHead className="w-[180px]">Status</TableHead>
+                    <TableHead>Details</TableHead>
+                    <TableHead className="w-[240px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item, index) => {
+                    // We use 'let' instead of 'const' to allow fallback assignment
+                    let itemConfig = statusConfig[item.status as Exclude<AuditStatus, 'matched'>];
+
+                    // If status is 'matched' (or unknown), itemConfig will be undefined.
+                    // We provide a fallback to prevent the crash.
+                    if (!itemConfig) {
+                      itemConfig = {
+                        icon: CheckCircle2,
+                        text: 'Matched',
+                        badgeClass:
+                          'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                      };
+                    }
+                    const productForDetails = item.csvProducts[0] || item.shopifyProducts[0];
+
+                    if (item.status === 'mismatched' && item.mismatches.length === 0) return null;
+                    if (
+                      item.status === 'missing_in_shopify' &&
+                      !item.mismatches.some((m) => m.field === 'missing_in_shopify')
+                    )
+                      return null;
+
+                    return (
+                      <TableRow
+                        key={item.sku}
+                        className={
+                          item.status === 'mismatched'
+                            ? 'bg-yellow-50/50 dark:bg-yellow-900/10'
+                            : item.status === 'missing_in_shopify'
+                              ? 'bg-red-50/50 dark:bg-red-900/10'
+                              : item.status === 'not_in_csv'
+                                ? 'bg-blue-50/50 dark:bg-blue-900/10'
+                                : ''
+                        }
+                      >
+                        <TableCell className="font-medium">{item.sku}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`whitespace - nowrap ${itemConfig.badgeClass} `}
+                          >
+                            <itemConfig.icon className="mr-1.5 h-3.5 w-3.5" />
+                            {itemConfig.text}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            {item.status === 'mismatched' && item.mismatches.length > 0 && (
+                              <MismatchDetails
+                                sku={item.sku}
+                                mismatches={item.mismatches}
+                                onFix={(fixType) => handleFixSingleMismatch(item, fixType)}
+                                onMarkAsFixed={(fixType) => handleMarkAsFixed(item.sku, fixType)}
+                                disabled={isFixing || isAutoRunning || isAutoCreating}
+                              />
+                            )}
+                            {item.status === 'missing_in_shopify' && (
+                              <p className="text-sm text-muted-foreground">
+                                This SKU is a{' '}
+                                <span className="font-semibold text-foreground">
+                                  {item.mismatches.find((m) => m.field === 'missing_in_shopify')
+                                    ?.missingType === 'product'
+                                    ? 'Missing Product'
+                                    : 'Missing Variant'}
+                                </span>
+                                .
+                                {item.mismatches.some((m) => m.field === 'heavy_product_flag') && (
+                                  <span className="mt-1 block">
+                                    {' '}
+                                    <AlertTriangle className="mr-1 inline-block h-4 w-4 text-yellow-500" />{' '}
+                                    This is a heavy product.
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                            {item.status === 'not_in_csv' && (
+                              <p className="text-sm text-muted-foreground">
+                                This product exists in Shopify but not in your CSV file.
+                              </p>
+                            )}
+                            <ProductDetails product={productForDetails} />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
+                              <>
+                                <MissingProductDetailsDialog product={item.csvProducts[0]} />
+                              </>
+                            )}
+
+                            {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={isFixing || isAutoRunning || isAutoCreating}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Variant
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete the variant with SKU &quot;{item.sku}&quot;
+                                      from Shopify. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleDeleteVariant(item)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Yes, delete variant
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {notInCsv && isOnlyVariantNotInCsv && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="p-2 text-right">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={isFixing || isAutoRunning || isAutoCreating}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete Entire Product
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                All variants for &quot;{productTitle}&quot; are not in the CSV. This will
+                                permanently delete the entire product and its {items.length}{' '}
+                                variants from Shopify. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteProduct(items[0])}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Yes, delete product
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </AccordionContent>
+          </AccordionItem>
+        );
+      })}
+    </Accordion>
+
   );
 
   const hasSelectionWithUnlinkedImages = selectedHandles.size > 0 && Array.from(selectedHandles).some(h => {
@@ -345,6 +1135,11 @@ export default function AuditReport({
     const count = pid ? imageCounts[pid] : undefined;
     return count !== undefined && items && count > items.length;
   });
+
+
+  const hasSelectionWithMismatches = selectedHandles.size > 0 && Array.from(selectedHandles).some(h =>
+    groupedByHandle[h]?.some(i => i.status === 'mismatched' && i.mismatches.length > 0)
+  );
 
   return (
     <>

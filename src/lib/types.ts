@@ -49,7 +49,8 @@ export interface MismatchDetail {
   | 'clearance_price_mismatch'
   | 'heavy_product_flag'
   | 'missing_oversize_tag'
-  | 'compare_at_price';
+  | 'compare_at_price'
+  | 'h1_tag';
   csvValue: string | number | null;
   shopifyValue: string | number | null;
   missingType?: 'product' | 'variant';

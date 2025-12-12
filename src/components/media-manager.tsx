@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition, useMemo, useCallback } from 'react';
+import { useState, useEffect, useTransition, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import {
   Dialog,
@@ -25,7 +25,6 @@ import {
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -33,12 +32,8 @@ import {
 import {
   Loader2,
   Trash2,
-  UploadCloud,
-  X,
-  AlertTriangle,
   Blocks,
-  CheckSquare,
-  Square,
+  AlertTriangle,
   Link,
 } from 'lucide-react';
 import {
@@ -63,6 +58,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { cn } from '@/lib/utils';
+import { VariantRow } from './media-manager-variant-row';
 
 interface MediaManagerProps {
   productId: string;
@@ -96,6 +92,11 @@ export function MediaManager({
   const [bulkAssignOption, setBulkAssignOption] = useState<string>('');
   const [bulkAssignValue, setBulkAssignValue] = useState<string>('');
   const [isBulkAssignDialogOpen, setIsBulkAssignDialogOpen] = useState(false);
+
+  const variantsRef = useRef(variants);
+  useEffect(() => {
+    variantsRef.current = variants;
+  }, [variants]);
 
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
@@ -164,29 +165,45 @@ export function MediaManager({
     });
   };
 
-  const handleAssignImage = (variantId: string, imageId: number | null) => {
-    const originalVariants = [...variants];
-    const newVariants = variants.map((v) =>
-      v.variantId === variantId ? { ...v, imageId: imageId } : v
-    );
-    setVariants(newVariants);
+  const handleAssignImage = useCallback(
+    (variantId: string, imageId: number | null) => {
+      // Get the state before this update for potential rollback
+      const previousVariant = variantsRef.current.find((v) => v.variantId === variantId);
+      const previousImageId = previousVariant?.imageId ?? null;
 
-    startSubmitting(async () => {
-      const result = await assignImageToVariant(variantId, imageId!);
-      if (result.success) {
-        toast({ title: 'Success!', description: 'Image assigned to variant.' });
-        // Refetch to confirm variant_ids on images
-        fetchMediaData();
-      } else {
-        setVariants(originalVariants);
-        toast({ title: 'Error', description: result.message, variant: 'destructive' });
-      }
-    });
-  };
+      // Optimistic update
+      setVariants((prev) =>
+        prev.map((v) => (v.variantId === variantId ? { ...v, imageId: imageId } : v))
+      );
 
-  const handleAssignImageToMissingVariant = (sku: string, imageId: number | null) => {
-    setLocalMissingVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, imageId } : v)));
-  };
+      startSubmitting(async () => {
+        const result = await assignImageToVariant(variantId, imageId!);
+        if (result.success) {
+          toast({ title: 'Success!', description: 'Image assigned to variant.' });
+          // Refetch to confirm variant_ids on images
+          fetchMediaData();
+        } else {
+          // Rollback specifically this change
+          setVariants((prev) =>
+            prev.map((v) =>
+              v.variantId === variantId ? { ...v, imageId: previousImageId } : v
+            )
+          );
+          toast({ title: 'Error', description: result.message, variant: 'destructive' });
+        }
+      });
+    },
+    [fetchMediaData, toast]
+  );
+
+  const handleAssignImageToMissingVariant = useCallback(
+    (sku: string, imageId: number | null) => {
+      setLocalMissingVariants((prev) =>
+        prev.map((v) => (v.sku === sku ? { ...v, imageId } : v))
+      );
+    },
+    []
+  );
 
   const handleDeleteImage = (imageId: number) => {
     const imageToDelete = images.find((img) => img.id === imageId);
@@ -688,8 +705,9 @@ export function MediaManager({
                               className="pointer-events-auto h-6 w-6"
                               disabled={isSubmitting}
                               onClick={(e) => e.stopPropagation()}
+                              aria-label={`Delete image ${image.id}`}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -781,90 +799,24 @@ export function MediaManager({
                 <TableBody>
                   {isMissingVariantMode
                     ? localMissingVariants.map((variant) => (
-                        <TableRow key={variant.sku}>
-                          <TableCell className="font-medium">{variant.sku}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {[variant.option1Value, variant.option2Value, variant.option3Value]
-                              .filter(Boolean)
-                              .join(' / ')}
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={variant.imageId?.toString() ?? 'none'}
-                              onValueChange={(value) =>
-                                handleAssignImageToMissingVariant(
-                                  variant.sku,
-                                  value === 'none' ? null : parseInt(value)
-                                )
-                              }
-                              disabled={isSubmitting}
-                            >
-                              <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Select image..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No Image</SelectItem>
-                                {images.map((image) => (
-                                  <SelectItem key={image.id} value={image.id.toString()}>
-                                    <div className="flex items-center gap-2">
-                                      <Image
-                                        src={image.src}
-                                        alt=""
-                                        width={20}
-                                        height={20}
-                                        className="rounded-sm"
-                                      />
-                                      <span>Image #{image.id}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                        </TableRow>
+                        <VariantRow
+                          key={variant.sku}
+                          variant={variant}
+                          images={images}
+                          isSubmitting={isSubmitting}
+                          onAssign={handleAssignImageToMissingVariant}
+                          idType="sku"
+                        />
                       ))
                     : variants.map((variant) => (
-                        <TableRow key={variant.variantId}>
-                          <TableCell className="font-medium">{variant.sku}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {[variant.option1Value, variant.option2Value, variant.option3Value]
-                              .filter(Boolean)
-                              .join(' / ')}
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={variant.imageId?.toString() ?? 'none'}
-                              onValueChange={(value) =>
-                                handleAssignImage(
-                                  variant.variantId!,
-                                  value === 'none' ? null : parseInt(value)
-                                )
-                              }
-                              disabled={isSubmitting}
-                            >
-                              <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Select image..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No Image</SelectItem>
-                                {images.map((image) => (
-                                  <SelectItem key={image.id} value={image.id.toString()}>
-                                    <div className="flex items-center gap-2">
-                                      <Image
-                                        src={image.src}
-                                        alt=""
-                                        width={20}
-                                        height={20}
-                                        className="rounded-sm"
-                                      />
-                                      <span>Image #{image.id}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                        </TableRow>
+                        <VariantRow
+                          key={variant.variantId}
+                          variant={variant}
+                          images={images}
+                          isSubmitting={isSubmitting}
+                          onAssign={handleAssignImage}
+                          idType="variantId"
+                        />
                       ))}
                 </TableBody>
               </Table>
