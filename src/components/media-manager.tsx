@@ -34,7 +34,6 @@ import {
   Trash2,
   Blocks,
   AlertTriangle,
-  Link,
 } from 'lucide-react';
 import {
   getProductWithImages,
@@ -56,9 +55,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { cn } from '@/lib/utils';
 import { VariantRow } from './media-manager-variant-row';
+import { MediaManagerImageCard } from './media-manager-image-card';
 
 interface MediaManagerProps {
   productId: string;
@@ -117,15 +115,17 @@ export function MediaManager({
     fetchMediaData();
   }, [fetchMediaData]);
 
-  const handleImageSelection = (imageId: number, checked: boolean) => {
-    const newSet = new Set(selectedImageIds);
-    if (checked) {
-      newSet.add(imageId);
-    } else {
-      newSet.delete(imageId);
-    }
-    setSelectedImageIds(newSet);
-  };
+  const handleImageSelection = useCallback((imageId: number, checked: boolean) => {
+    setSelectedImageIds((prev) => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(imageId);
+      } else {
+        newSet.delete(imageId);
+      }
+      return newSet;
+    });
+  }, []);
 
   const unlinkedImages = useMemo(
     () => images.filter((img) => !img.variant_ids || img.variant_ids.length === 0),
@@ -205,29 +205,32 @@ export function MediaManager({
     []
   );
 
-  const handleDeleteImage = (imageId: number) => {
-    const imageToDelete = images.find((img) => img.id === imageId);
-    if (imageToDelete && imageToDelete.variant_ids.length > 0) {
-      toast({
-        title: 'Cannot Delete',
-        description:
-          'This image is currently assigned to one or more variants. Please unassign it first.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    startSubmitting(async () => {
-      const result = await deleteImage(productId, imageId);
-      if (result.success) {
-        toast({ title: 'Success!', description: 'Image has been deleted.' });
-        const newImages = images.filter((img) => img.id !== imageId);
-        setImages(newImages);
-        onImageCountChange(newImages.length);
-      } else {
-        toast({ title: 'Error', description: result.message, variant: 'destructive' });
+  const handleDeleteImage = useCallback(
+    (imageId: number) => {
+      const imageToDelete = images.find((img) => img.id === imageId);
+      if (imageToDelete && imageToDelete.variant_ids.length > 0) {
+        toast({
+          title: 'Cannot Delete',
+          description:
+            'This image is currently assigned to one or more variants. Please unassign it first.',
+          variant: 'destructive',
+        });
+        return;
       }
-    });
-  };
+      startSubmitting(async () => {
+        const result = await deleteImage(productId, imageId);
+        if (result.success) {
+          toast({ title: 'Success!', description: 'Image has been deleted.' });
+          const newImages = images.filter((img) => img.id !== imageId);
+          setImages(newImages);
+          onImageCountChange(newImages.length);
+        } else {
+          toast({ title: 'Error', description: result.message, variant: 'destructive' });
+        }
+      });
+    },
+    [images, productId, onImageCountChange, toast]
+  );
 
   const handleBulkDelete = () => {
     const assignedImages = Array.from(selectedImageIds).filter((id) => {
@@ -667,96 +670,16 @@ export function MediaManager({
                   const isAssigned = image.variant_ids && image.variant_ids.length > 0;
                   const isSelected = selectedImageIds.has(image.id);
                   return (
-                    <div
+                    <MediaManagerImageCard
                       key={image.id}
-                      className="group relative cursor-pointer overflow-hidden rounded-md border"
-                      onClick={() =>
-                        !isMissingVariantMode && handleImageSelection(image.id, !isSelected)
-                      }
-                    >
-                      <Image
-                        src={image.src}
-                        alt={`Product image ${image.id}`}
-                        width={150}
-                        height={150}
-                        className="aspect-square w-full object-cover"
-                      />
-                      <div
-                        className={cn(
-                          'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
-                          isSelected || isSubmitting
-                            ? 'opacity-100'
-                            : 'opacity-0 group-hover:opacity-100',
-                          isSubmitting ? 'pointer-events-none' : 'pointer-events-auto',
-                          isMissingVariantMode && 'hidden'
-                        )}
-                      >
-                        <Checkbox
-                          id={`image-select-${image.id}`}
-                          className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
-                          checked={isSelected}
-                          onCheckedChange={(checked) => handleImageSelection(image.id, !!checked)}
-                        />
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="destructive"
-                              size="icon"
-                              className="pointer-events-auto h-6 w-6"
-                              disabled={isSubmitting}
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label={`Delete image ${image.id}`}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete this image?</AlertDialogTitle>
-                            </AlertDialogHeader>
-                            <AlertDialogDescription>
-                              This will permanently delete the image from Shopify. This action
-                              cannot be undone.
-                              {isAssigned && (
-                                <span className="mt-2 block font-bold text-destructive-foreground">
-                                  Warning: This image is assigned to {image.variant_ids.length}{' '}
-                                  variant(s).
-                                </span>
-                              )}
-                            </AlertDialogDescription>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteImage(image.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Delete Image
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                      {isAssigned && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                                  !isSelected && 'group-hover:hidden',
-                                  isMissingVariantMode && 'hidden'
-                                )}
-                              >
-                                <Link className="h-3.5 w-3.5" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Assigned to {image.variant_ids.length} variant(s)</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                    </div>
+                      image={image}
+                      isSelected={isSelected}
+                      isAssigned={isAssigned!}
+                      isMissingVariantMode={isMissingVariantMode}
+                      isSubmitting={isSubmitting}
+                      onSelectionChange={handleImageSelection}
+                      onDelete={handleDeleteImage}
+                    />
                   );
                 })}
               </div>
