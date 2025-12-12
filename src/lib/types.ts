@@ -47,8 +47,9 @@ export interface MismatchDetail {
   | 'missing_clearance_tag'
   | 'incorrect_template_suffix'
   | 'clearance_price_mismatch'
-  | 'heavy_product_flag'
+  | 'missing_category_tag'
   | 'missing_oversize_tag'
+  | 'heavy_product_flag'
   | 'compare_at_price'
   | 'h1_tag';
   csvValue: string | number | null;

@@ -380,8 +380,9 @@ const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = [
   'missing_clearance_tag',
   'incorrect_template_suffix',
   'clearance_price_mismatch',
-  'heavy_product_flag',
+  'missing_category_tag',
   'missing_oversize_tag',
+  'heavy_product_flag',
   'compare_at_price',
 ];
 
@@ -441,8 +442,7 @@ export default function AuditReport({
     currentSummary,
     columnFilters,
     setColumnFilters,
-    availableCsvColumns,
-    filteredGroupedByHandle
+    availableCsvColumns
   } = useAuditData({ initialData: data, initialSummary: summary });
 
   // Component Local State (UI)
@@ -663,7 +663,7 @@ export default function AuditReport({
   const renderRegularReport = () => (
     <Accordion type="single" collapsible className="w-full">
       {paginatedHandleKeys.map((handle) => {
-        const items = filteredGroupedByHandle[handle];
+        const items = groupedByHandle[handle];
         const productTitle =
           items[0].csvProducts[0]?.name || items[0].shopifyProducts[0]?.name || handle;
         const hasMismatch = items.some((i) => i.status === 'mismatched' && i.mismatches.length > 0);

@@ -74,10 +74,11 @@ export async function listCsvFiles(data: FormData) {
 }
 
 export async function getFtpCredentials() {
+  const defaultHost = 'ftp.gammapowersports.com'; // New default
   return {
-    host: process.env.FTP_HOST || '',
-    username: process.env.FTP_USER || '',
-    password: process.env.FTP_PASSWORD || '',
+    host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
+    username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
+    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
   };
 }
 
@@ -360,6 +361,10 @@ async function _fixSingleMismatch(
         // Fix: Remove 'Clearance' tag and reset template to default
         await removeProductTags(fixPayload.id, ['Clearance', 'clearance']);
         await updateProduct(fixPayload.id, { templateSuffix: '' });
+        break;
+      case 'missing_oversize_tag':
+        await addProductTags(fixPayload.id, ['OVERSIZE']);
+        await updateProduct(fixPayload.id, { templateSuffix: 'heavy-products' });
         break;
       case 'duplicate_in_shopify':
       case 'duplicate_handle':

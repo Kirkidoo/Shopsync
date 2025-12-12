@@ -156,6 +156,24 @@ export function findMismatches(
     }
   }
 
+  // Category Tag Check
+  if (csvProduct.category) {
+    const tags = shopifyProduct.tags
+      ? shopifyProduct.tags
+        .toLowerCase()
+        .split(',')
+        .map((t) => t.trim())
+      : [];
+
+    const categoryLower = csvProduct.category.toLowerCase().trim();
+    if (!tags.includes(categoryLower)) {
+      mismatches.push({
+        field: 'missing_category_tag',
+        csvValue: csvProduct.category,
+        shopifyValue: shopifyProduct.tags || 'No Tags',
+      });
+    }
+  }
   return mismatches;
 }
 
