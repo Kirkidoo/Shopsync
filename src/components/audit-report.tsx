@@ -599,7 +599,7 @@ export default function AuditReport({
     } else if (!isFixing) {
       processingRef.current = false;
     }
-  }, [isAutoRunning, isFixing, filteredData, handleBulkFix, setIsAutoRunning]);
+  }, [isAutoRunning, isFixing, filteredData, handleBulkFix, setIsAutoRunning, toast]);
 
   useEffect(() => {
     if (isAutoCreating && !isFixing && !processingRef.current) {
@@ -620,7 +620,7 @@ export default function AuditReport({
     } else if (!isFixing) {
       processingRef.current = false;
     }
-  }, [isAutoCreating, isFixing, filteredData, handleCreate, setIsAutoCreating]);
+  }, [isAutoCreating, isFixing, filteredData, handleCreate, setIsAutoCreating, toast]);
 
   // Tag Auto Update Logic
   const startAutoTagUpdate = () => setIsAutoUpdatingTags(true);
