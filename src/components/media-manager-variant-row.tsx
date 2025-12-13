@@ -62,7 +62,10 @@ export const VariantRow = memo(
             }
             disabled={isSubmitting}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger
+              className="w-[180px]"
+              aria-label={`Assign image for variant ${variant.sku}`}
+            >
               <SelectValue placeholder="Select image..." />
             </SelectTrigger>
             <ImageSelectContent images={images} />
