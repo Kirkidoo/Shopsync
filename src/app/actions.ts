@@ -76,9 +76,10 @@ export async function listCsvFiles(data: FormData) {
 export async function getFtpCredentials() {
   const defaultHost = 'ftp.gammapowersports.com'; // New default
   return {
-    host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
-    username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    // Sentinel Security Fix: Removed NEXT_PUBLIC_ fallbacks to prevent exposing credentials in client-side bundles.
+    host: process.env.FTP_HOST || defaultHost,
+    username: process.env.FTP_USER || '',
+    password: process.env.FTP_PASSWORD || '',
   };
 }
 
