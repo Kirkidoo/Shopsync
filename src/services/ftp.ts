@@ -5,9 +5,15 @@ import { logger } from '@/lib/logger';
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
 
 export async function getFtpClient(data: FormData) {
-  const host = data.get('host') as string;
-  const user = data.get('username') as string;
-  const password = data.get('password') as string;
+  let host = data.get('host') as string;
+  let user = data.get('username') as string;
+  let password = data.get('password') as string;
+
+  // Sentinel Security Fix: Fallback to server-side env vars if missing or masked.
+  // This prevents sending secrets to the client.
+  if (!host) host = process.env.FTP_HOST || '';
+  if (!user) user = process.env.FTP_USER || '';
+  if (!password || password === '********') password = process.env.FTP_PASSWORD || '';
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
