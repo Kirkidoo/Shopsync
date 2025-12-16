@@ -45,6 +45,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { PreCreationVariantRow } from './pre-creation-variant-row';
+import { useCallback } from 'react';
 
 interface PreCreationMediaManagerProps {
   variants: Product[];
@@ -141,9 +143,9 @@ export function PreCreationMediaManager({
     setSelectedImageUrls(new Set());
   };
 
-  const handleAssignImage = (sku: string, url: string | null) => {
+  const handleAssignImage = useCallback((sku: string, url: string | null) => {
     setLocalVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, mediaUrl: url } : v)));
-  };
+  }, []);
 
   const availableOptions = useMemo(() => {
     const options = new Map<string, Set<string>>();
@@ -464,43 +466,12 @@ export function PreCreationMediaManager({
             </TableHeader>
             <TableBody>
               {localVariants.map((variant) => (
-                <TableRow key={variant.sku}>
-                  <TableCell className="font-medium">{variant.sku}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {[variant.option1Value, variant.option2Value, variant.option3Value]
-                      .filter(Boolean)
-                      .join(' / ')}
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={variant.mediaUrl || 'none'}
-                      onValueChange={(value) =>
-                        handleAssignImage(variant.sku, value === 'none' ? null : value)
-                      }
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Select image..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No Image</SelectItem>
-                        {imageUrls.map((url, index) => (
-                          <SelectItem key={url} value={url}>
-                            <div className="flex items-center gap-2">
-                              <Image
-                                src={url}
-                                alt=""
-                                width={20}
-                                height={20}
-                                className="rounded-sm object-cover"
-                              />
-                              <span className="max-w-[120px] truncate">Image {index + 1}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                </TableRow>
+                <PreCreationVariantRow
+                  key={variant.sku}
+                  variant={variant}
+                  imageUrls={imageUrls}
+                  onAssign={handleAssignImage}
+                />
               ))}
             </TableBody>
           </Table>
