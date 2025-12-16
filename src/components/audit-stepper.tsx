@@ -507,11 +507,12 @@ export default function AuditStepper() {
               <CardContent className="max-h-[60vh] overflow-y-auto pr-2">
                 <div className="grid gap-3">
                   {csvFiles.map((file) => (
-                    <div
+                    <button
+                      type="button"
                       key={file.name}
                       onClick={() => handleSelectChange(file.name)}
                       className={cn(
-                        "relative flex cursor-pointer items-center gap-4 rounded-lg border p-4 transition-all hover:bg-accent/5",
+                        "relative flex w-full cursor-pointer items-center gap-4 rounded-lg border p-4 text-left transition-all hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
                         selectedCsv === file.name
                           ? "border-primary bg-primary/5 ring-1 ring-primary"
                           : "border-border hover:border-primary/50"
@@ -536,7 +537,7 @@ export default function AuditStepper() {
                           <Check className="h-5 w-5 text-primary" />
                         </div>
                       )}
-                    </div>
+                    </button>
                   ))}
                   {csvFiles.length === 0 && (
                     <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed text-center text-muted-foreground">
