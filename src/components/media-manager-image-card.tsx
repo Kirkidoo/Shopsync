@@ -56,7 +56,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
           isSelected || isSubmitting
             ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100',
+            : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
           isSubmitting ? 'pointer-events-none' : 'pointer-events-auto',
           isMissingVariantMode && 'hidden'
         )}
@@ -114,7 +114,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
               <div
                 className={cn(
                   'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                  !isSelected && 'group-hover:hidden',
+                  !isSelected && 'group-hover:hidden group-focus-within:hidden',
                   isMissingVariantMode && 'hidden'
                 )}
               >
