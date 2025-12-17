@@ -96,6 +96,16 @@ export function MediaManager({
     variantsRef.current = variants;
   }, [variants]);
 
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  const onImageCountChangeRef = useRef(onImageCountChange);
+  useEffect(() => {
+    onImageCountChangeRef.current = onImageCountChange;
+  }, [onImageCountChange]);
+
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -207,7 +217,8 @@ export function MediaManager({
 
   const handleDeleteImage = useCallback(
     (imageId: number) => {
-      const imageToDelete = images.find((img) => img.id === imageId);
+      const currentImages = imagesRef.current;
+      const imageToDelete = currentImages.find((img) => img.id === imageId);
       if (imageToDelete && imageToDelete.variant_ids.length > 0) {
         toast({
           title: 'Cannot Delete',
@@ -221,15 +232,15 @@ export function MediaManager({
         const result = await deleteImage(productId, imageId);
         if (result.success) {
           toast({ title: 'Success!', description: 'Image has been deleted.' });
-          const newImages = images.filter((img) => img.id !== imageId);
+          const newImages = imagesRef.current.filter((img) => img.id !== imageId);
           setImages(newImages);
-          onImageCountChange(newImages.length);
+          onImageCountChangeRef.current(newImages.length);
         } else {
           toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
       });
     },
-    [images, productId, onImageCountChange, toast]
+    [productId, toast]
   );
 
   const handleBulkDelete = () => {
@@ -283,6 +294,9 @@ export function MediaManager({
   };
 
   const availableOptions = useMemo(() => {
+    if (!isBulkAssignDialogOpen) {
+      return new Map<string, Set<string>>();
+    }
     const optionsSource = isMissingVariantMode ? missingVariants : variants;
     const options = new Map<string, Set<string>>();
     if (optionsSource.length === 0) {
@@ -311,7 +325,7 @@ export function MediaManager({
     });
 
     return options;
-  }, [variants, missingVariants, isMissingVariantMode]);
+  }, [variants, missingVariants, isMissingVariantMode, isBulkAssignDialogOpen]);
 
   const handleBulkAssign = () => {
     const imageId = parseInt(bulkAssignImageId);
