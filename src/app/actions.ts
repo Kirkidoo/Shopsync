@@ -78,7 +78,11 @@ export async function getFtpCredentials() {
   return {
     host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
     username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    // Sentinel Security Fix: Mask the password to prevent exposure.
+    // If a password is set on the server, we return '********' to indicate it's configured.
+    // The client will display this mask, and if the user submits it, the server will
+    // use the stored environment variable.
+    password: (process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD) ? '********' : '',
   };
 }
 
