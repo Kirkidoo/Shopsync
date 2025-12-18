@@ -75,10 +75,11 @@ export async function listCsvFiles(data: FormData) {
 
 export async function getFtpCredentials() {
   const defaultHost = 'ftp.gammapowersports.com'; // New default
+  const password = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '';
   return {
     host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
     username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    password: password ? '********' : '',
   };
 }
 
