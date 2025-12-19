@@ -1111,8 +1111,12 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
 }
 // --- LOGGING ACTIONS ---
 
-export async function fetchActivityLogs() {
-  return await getLogs();
+export async function fetchActivityLogs(lastKnownId?: string) {
+  const logs = await getLogs();
+  if (lastKnownId && logs.length > 0 && logs[0].id === lastKnownId) {
+    return null;
+  }
+  return logs;
 }
 
 export async function clearActivityLogs() {
