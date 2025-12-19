@@ -56,13 +56,14 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
           isSelected || isSubmitting
             ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100',
+            : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
           isSubmitting ? 'pointer-events-none' : 'pointer-events-auto',
           isMissingVariantMode && 'hidden'
         )}
       >
         <Checkbox
           id={`image-select-${image.id}`}
+          aria-label={`Select image ${image.id}`}
           className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
           checked={isSelected}
           onCheckedChange={(checked) => onSelectionChange(image.id, !!checked)}
