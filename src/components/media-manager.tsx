@@ -283,6 +283,10 @@ export function MediaManager({
   };
 
   const availableOptions = useMemo(() => {
+    if (!isBulkAssignDialogOpen) {
+      return new Map<string, Set<string>>();
+    }
+
     const optionsSource = isMissingVariantMode ? missingVariants : variants;
     const options = new Map<string, Set<string>>();
     if (optionsSource.length === 0) {
@@ -311,7 +315,7 @@ export function MediaManager({
     });
 
     return options;
-  }, [variants, missingVariants, isMissingVariantMode]);
+  }, [variants, missingVariants, isMissingVariantMode, isBulkAssignDialogOpen]);
 
   const handleBulkAssign = () => {
     const imageId = parseInt(bulkAssignImageId);
