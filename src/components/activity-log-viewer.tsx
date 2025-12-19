@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,11 +22,18 @@ export function ActivityLogViewer() {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
+  // Use a ref to access the latest logs state inside the interval closure
+  // without adding it to the dependency array (which would reset the interval).
+  const logsRef = useRef(logs);
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
+
   const loadLogs = async () => {
     setLoading(true);
     try {
       const data = await fetchActivityLogs();
-      setLogs(data);
+      if (data) setLogs(data);
     } catch (error) {
       logger.error('Failed to load logs', error);
     } finally {
@@ -45,7 +52,10 @@ export function ActivityLogViewer() {
     loadLogs();
     const interval = setInterval(() => {
       if (autoRefresh) {
-        fetchActivityLogs().then(setLogs);
+        const latestId = logsRef.current.length > 0 ? logsRef.current[0].id : undefined;
+        fetchActivityLogs(latestId).then((data) => {
+          if (data) setLogs(data);
+        });
       }
     }, 5000);
     return () => clearInterval(interval);
