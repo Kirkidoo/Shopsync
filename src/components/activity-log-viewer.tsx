@@ -22,15 +22,34 @@ export function ActivityLogViewer() {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const loadLogs = async () => {
-    setLoading(true);
+  const loadLogs = async (isPoll = false) => {
+    if (!isPoll) setLoading(true);
     try {
-      const data = await fetchActivityLogs();
-      setLogs(data);
+      const lastId = isPoll ? logs[0]?.id : undefined;
+      const result = await fetchActivityLogs(lastId);
+
+      if (!result) return; // No changes or null
+
+      // Check if result is array (old way / full replace) or object (incremental)
+      // Actually fetchActivityLogs return type is tricky now if I didn't enforce specific return type in action.
+      // But getLogs returns LogEntry[], getLogsSince returns object.
+      // fetchActivityLogs returns Union.
+
+      if (Array.isArray(result)) {
+        // Full replace
+        setLogs(result as LogEntry[]);
+      } else if (result && 'method' in result) {
+         if (result.method === 'replace') {
+           setLogs(result.logs as LogEntry[]);
+         } else if (result.method === 'incremental') {
+           setLogs(prev => [...(result.logs as LogEntry[]), ...prev]);
+         }
+      }
+
     } catch (error) {
       logger.error('Failed to load logs', error);
     } finally {
-      setLoading(false);
+      if (!isPoll) setLoading(false);
     }
   };
 
@@ -45,7 +64,7 @@ export function ActivityLogViewer() {
     loadLogs();
     const interval = setInterval(() => {
       if (autoRefresh) {
-        fetchActivityLogs().then(setLogs);
+        loadLogs(true);
       }
     }, 5000);
     return () => clearInterval(interval);
@@ -91,7 +110,7 @@ export function ActivityLogViewer() {
             <RefreshCw className={`mr-2 h-4 w-4 ${autoRefresh ? 'animate-spin' : ''}`} />
             {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
           </Button>
-          <Button variant="ghost" size="sm" onClick={loadLogs} disabled={loading}>
+          <Button variant="ghost" size="sm" onClick={() => loadLogs(false)} disabled={loading}>
             Refresh
           </Button>
           <Button variant="destructive" size="sm" onClick={handleClearLogs}>

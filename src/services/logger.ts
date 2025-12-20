@@ -68,6 +68,33 @@ export async function getLogs(): Promise<LogEntry[]> {
   }
 }
 
+export async function getLogsSince(lastKnownId: string): Promise<{ logs: LogEntry[], method: 'incremental' | 'replace' } | null> {
+  await ensureLogFile();
+  try {
+    const content = await fs.readFile(LOG_FILE_PATH, 'utf-8');
+    const allLogs: LogEntry[] = JSON.parse(content);
+
+    if (allLogs.length === 0) {
+      return { logs: [], method: 'replace' };
+    }
+
+    if (allLogs[0].id === lastKnownId) {
+      return null;
+    }
+
+    const lastKnownIndex = allLogs.findIndex(log => log.id === lastKnownId);
+
+    if (lastKnownIndex === -1) {
+      return { logs: allLogs, method: 'replace' };
+    }
+
+    return { logs: allLogs.slice(0, lastKnownIndex), method: 'incremental' };
+  } catch (error) {
+    logger.error('Failed to read logs:', error);
+    return { logs: [], method: 'replace' };
+  }
+}
+
 export async function clearLogs() {
   await ensureLogFile();
   await fs.writeFile(LOG_FILE_PATH, JSON.stringify([]));
