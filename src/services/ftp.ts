@@ -7,7 +7,16 @@ const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
-  const password = data.get('password') as string;
+  let password = data.get('password') as string;
+
+  // Sentinel Security Fix: Check if password is masked and replace with env var if so.
+  if (password === '********') {
+    password = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '';
+    if (!password) {
+      logger.error('Masked password provided but no environment variable found.');
+      throw new Error('Authentication failed: Missing credentials.');
+    }
+  }
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
@@ -27,7 +36,9 @@ export async function getFtpClient(data: FormData) {
     // to send credentials in cleartext.
 
     if (allowInsecure) {
-      logger.warn('⚠️ SECURITY WARNING: Falling back to non-secure FTP because ALLOW_INSECURE_FTP is enabled.');
+      logger.warn(
+        '⚠️ SECURITY WARNING: Falling back to non-secure FTP because ALLOW_INSECURE_FTP is enabled.'
+      );
       // If secure fails, close the potentially broken connection and try non-secure
       client.close();
       const nonSecureClient = new Client(30000); // 30 second timeout
@@ -43,7 +54,9 @@ export async function getFtpClient(data: FormData) {
     }
 
     client.close();
-    throw new Error('Secure FTP connection failed. Automatic fallback to insecure FTP is disabled for security.');
+    throw new Error(
+      'Secure FTP connection failed. Automatic fallback to insecure FTP is disabled for security.'
+    );
   }
   return client;
 }
@@ -91,7 +104,7 @@ export async function getCsvStreamFromFtp(
 
     // Create a PassThrough stream to pipe the download into
     const passThrough = new Readable({
-      read() { },
+      read() {},
     });
 
     // We need to keep the client open while the stream is being read.

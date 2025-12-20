@@ -45,9 +45,6 @@ import * as auditService from '@/services/audit';
 import { log, getLogs, clearLogs } from '@/services/logger';
 import { logger } from '@/lib/logger';
 
-
-
-
 const GAMMA_WAREhouse_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
   ? parseInt(process.env.GAMMA_WAREHOUSE_LOCATION_ID, 10)
   : 93998154045;
@@ -75,10 +72,12 @@ export async function listCsvFiles(data: FormData) {
 
 export async function getFtpCredentials() {
   const defaultHost = 'ftp.gammapowersports.com'; // New default
+  const envPassword = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD;
+
   return {
     host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
     username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    password: envPassword ? '********' : '', // Mask password if present in env
   };
 }
 
@@ -117,8 +116,12 @@ import { downloadBulkOperationResultToFile } from '@/lib/shopify';
 
 // --- Helper: JSONL Generator ---
 // --- Helper: JSONL Generator ---
-async function* parseJsonlGenerator(filePath: string, locationId?: number): AsyncGenerator<Product> {
-  const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+async function* parseJsonlGenerator(
+  filePath: string,
+  locationId?: number
+): AsyncGenerator<Product> {
+  const GAMMA_LOCATION_ID =
+    locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
   const TARGET_LOCATION_URL_SUFFIX = `Location/${GAMMA_LOCATION_ID}`;
 
   // Pass 1: Build Inventory Map
@@ -223,18 +226,20 @@ async function* parseJsonlGenerator(filePath: string, locationId?: number): Asyn
             mediaUrl: null,
             category: null,
             option1Name: null,
-            option1Value: obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
+            option1Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
             option2Name: null,
-            option2Value: obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
+            option2Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
             option3Name: null,
-            option3Value: obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
+            option3Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
             imageId: null,
             templateSuffix: parent.templateSuffix,
             locationIds: [], // We filtered, so implied it's at this location. We don't need full list for audit purposes right now.
           } as Product;
         }
       }
-
     } catch (e) {
       logger.error('Error parsing JSONL line:', e);
     }
@@ -269,11 +274,17 @@ export async function checkBulkOperationStatus(
   return await checkShopifyBulkOpStatus(id);
 }
 
-export async function getBulkOperationResultAndParse(url: string, locationId?: number): Promise<Product[] | null> {
+export async function getBulkOperationResultAndParse(
+  url: string,
+  locationId?: number
+): Promise<Product[] | null> {
   await ensureCacheDirExists();
   try {
     await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
-    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+    await fsPromises.writeFile(
+      CACHE_INFO_PATH,
+      JSON.stringify({ lastModified: new Date().toISOString() })
+    );
 
     // Convert to array for compatibility (Step 1)
     const products: Product[] = [];
@@ -395,11 +406,11 @@ export async function fixMultipleMismatches(
   const itemsToProcess =
     targetFields && targetFields.length > 0
       ? items
-        .map((item) => ({
-          ...item,
-          mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
-        }))
-        .filter((item) => item.mismatches.length > 0)
+          .map((item) => ({
+            ...item,
+            mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
+          }))
+          .filter((item) => item.mismatches.length > 0)
       : items;
 
   // Group items by product ID to process fixes for the same product together
@@ -441,11 +452,13 @@ export async function fixMultipleMismatches(
 
         for (const mismatch of item.mismatches) {
           fixPromises.push(
-            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then((result) => ({
-              sku: item.sku,
-              field: mismatch.field,
-              ...result,
-            }))
+            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then(
+              (result) => ({
+                sku: item.sku,
+                field: mismatch.field,
+                ...result,
+              })
+            )
           );
         }
       }
@@ -505,7 +518,11 @@ export async function bulkUpdateTags(
       const shopifyProduct = item.shopifyProducts[0];
 
       if (!shopifyProduct) {
-        itemResults.push({ sku: item.sku, success: false, message: 'Product not found in Shopify.' });
+        itemResults.push({
+          sku: item.sku,
+          success: false,
+          message: 'Product not found in Shopify.',
+        });
         continue;
       }
 
@@ -523,7 +540,7 @@ export async function bulkUpdateTags(
           .map((t) => t.trim())
           .filter(Boolean)
           .slice(0, 3)
-          .forEach(t => tagSet.add(t));
+          .forEach((t) => tagSet.add(t));
       }
 
       if (csvProduct.category) {
@@ -550,9 +567,7 @@ export async function bulkUpdateTags(
     }
   };
 
-  const workers = Array(Math.min(items.length, CONCURRENCY_LIMIT))
-    .fill(null)
-    .map(worker);
+  const workers = Array(Math.min(items.length, CONCURRENCY_LIMIT)).fill(null).map(worker);
   await Promise.all(workers);
 
   if (successCount > 0) {
@@ -1118,5 +1133,3 @@ export async function fetchActivityLogs() {
 export async function clearActivityLogs() {
   return await clearLogs();
 }
-
-

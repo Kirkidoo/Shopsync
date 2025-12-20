@@ -85,6 +85,4 @@ describe('Audit Service', () => {
     expect(result.summary.not_in_csv).toBe(1);
     expect(result.report[0].status).toBe('not_in_csv');
   });
-
-
 });
