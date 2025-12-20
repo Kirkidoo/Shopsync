@@ -1,0 +1,32 @@
+
+> nextn@0.1.0 dev /app
+> next dev --turbopack -p 9002
+
+   ▲ Next.js 15.3.3 (Turbopack)
+   - Local:        http://localhost:9002
+   - Network:      http://192.168.0.2:9002
+
+ ✓ Starting...
+ ✓ Ready in 1313ms
+ ○ Compiling / ...
+ ✓ Compiled / in 13.1s
+ GET / 200 in 14771ms
+ POST / 200 in 157ms
+ POST / 200 in 381ms
+[2025-12-20T22:05:10.481Z] [ERROR] Shopify environment variables are not set.
+ ⨯ Error: Shopify environment variables are not set. Please create a .env.local file.
+    at getShopifyRestClient (src/lib/shopify.ts:487:10)
+    at getShopifyLocations (src/lib/shopify.ts:785:24)
+    at getAvailableLocations (src/app/actions.ts:86:33)
+  485 |   if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
+  486 |     logger.error('Shopify environment variables are not set.');
+> 487 |     throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
+      |          ^
+  488 |   }
+  489 |
+  490 |   const shopify = shopifyApi({ {
+  digest: '2042495894'
+}
+ POST / 500 in 966ms
+ POST / 200 in 78ms
+ POST / 200 in 59ms
