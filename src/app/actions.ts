@@ -42,7 +42,7 @@ import path from 'path';
 import * as ftpService from '@/services/ftp';
 import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
-import { log, getLogs, clearLogs } from '@/services/logger';
+import { log, getLogs, getLogsSince, clearLogs } from '@/services/logger';
 import { logger } from '@/lib/logger';
 
 
@@ -1111,12 +1111,13 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
 }
 // --- LOGGING ACTIONS ---
 
-export async function fetchActivityLogs() {
+export async function fetchActivityLogs(lastKnownId?: string) {
+  if (lastKnownId) {
+    return await getLogsSince(lastKnownId);
+  }
   return await getLogs();
 }
 
 export async function clearActivityLogs() {
   return await clearLogs();
 }
-
-
