@@ -394,18 +394,16 @@ export function PreCreationMediaManager({
             {imageUrls.map((url, i) => {
               const isSelected = selectedImageUrls.has(url);
               return (
-                <div
-                  key={url}
-                  className="group relative cursor-pointer overflow-hidden rounded-md border"
-                  onClick={() => handleImageSelection(url, !isSelected)}
-                >
-                  <Image
-                    src={url}
-                    alt={`Product image`}
-                    width={150}
-                    height={150}
-                    className="aspect-square w-full object-cover"
-                  />
+                <div key={url} className="group relative overflow-hidden rounded-md border">
+                  <label htmlFor={`pre-image-select-${i}`} className="block cursor-pointer">
+                    <Image
+                      src={url}
+                      alt={`Product image`}
+                      width={150}
+                      height={150}
+                      className="aspect-square w-full object-cover"
+                    />
+                  </label>
                   <div
                     className={cn(
                       'pointer-events-none absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 opacity-0 transition-opacity group-hover:opacity-100',
@@ -417,6 +415,7 @@ export function PreCreationMediaManager({
                       className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
                       checked={isSelected}
                       onCheckedChange={(checked) => handleImageSelection(url, !!checked)}
+                      aria-label={`Select image`}
                     />
                     <a
                       href={url}
@@ -424,6 +423,7 @@ export function PreCreationMediaManager({
                       rel="noopener noreferrer"
                       className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary"
                       onClick={(e) => e.stopPropagation()}
+                      aria-label="View full image in new tab"
                     >
                       <Link className="h-3.5 w-3.5" />
                     </a>

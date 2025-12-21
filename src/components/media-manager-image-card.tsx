@@ -38,26 +38,31 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
   onDelete,
 }: MediaManagerImageCardProps) {
   return (
-    <div
-      className="group relative cursor-pointer overflow-hidden rounded-md border"
-      onClick={() =>
-        !isMissingVariantMode && onSelectionChange(image.id, !isSelected)
-      }
-    >
-      <Image
-        src={image.src}
-        alt={`Product image ${image.id}`}
-        width={150}
-        height={150}
-        className="aspect-square w-full object-cover"
-      />
+    <div className="group relative overflow-hidden rounded-md border">
+      <label
+        htmlFor={`image-select-${image.id}`}
+        className="block cursor-pointer"
+        aria-label={
+          isMissingVariantMode
+            ? undefined
+            : `Select image ${image.id}, assigned to ${image.variant_ids.length} variants`
+        }
+      >
+        <Image
+          src={image.src}
+          alt={`Product image ${image.id}`}
+          width={150}
+          height={150}
+          className="aspect-square w-full object-cover"
+        />
+      </label>
       <div
         className={cn(
           'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
           isSelected || isSubmitting
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-          isSubmitting ? 'pointer-events-none' : 'pointer-events-auto',
+          isSubmitting ? 'pointer-events-none' : 'pointer-events-none',
           isMissingVariantMode && 'hidden'
         )}
       >
@@ -67,7 +72,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
           checked={isSelected}
           onCheckedChange={(checked) => onSelectionChange(image.id, !!checked)}
-          onClick={(e) => e.stopPropagation()}
+          disabled={isMissingVariantMode}
         />
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -76,13 +81,13 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
               size="icon"
               className="pointer-events-auto h-6 w-6"
               disabled={isSubmitting}
-              onClick={(e) => e.stopPropagation()}
+              // No need for stopPropagation on click unless we have a parent click handler
               aria-label={`Delete image ${image.id}`}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this image?</AlertDialogTitle>
             </AlertDialogHeader>
