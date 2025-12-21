@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,37 +21,40 @@ export function ActivityLogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const logsRef = useRef(logs); // Optimization: Store latest logs for polling without stale closures
 
-  const loadLogs = async (isPoll = false) => {
-    if (!isPoll) setLoading(true);
-    try {
-      const lastId = isPoll ? logs[0]?.id : undefined;
-      const result = await fetchActivityLogs(lastId);
+  // Keep ref in sync
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
 
-      if (!result) return; // No changes or null
+  const loadLogs = useCallback(
+    async (isPoll = false) => {
+      if (!isPoll) setLoading(true);
+      try {
+        const lastId = isPoll ? logsRef.current[0]?.id : undefined;
+        const result = await fetchActivityLogs(lastId);
 
-      // Check if result is array (old way / full replace) or object (incremental)
-      // Actually fetchActivityLogs return type is tricky now if I didn't enforce specific return type in action.
-      // But getLogs returns LogEntry[], getLogsSince returns object.
-      // fetchActivityLogs returns Union.
+        if (!result) return; // No changes or null
 
-      if (Array.isArray(result)) {
-        // Full replace
-        setLogs(result as LogEntry[]);
-      } else if (result && 'method' in result) {
-         if (result.method === 'replace') {
-           setLogs(result.logs as LogEntry[]);
-         } else if (result.method === 'incremental') {
-           setLogs(prev => [...(result.logs as LogEntry[]), ...prev]);
-         }
+        if (Array.isArray(result)) {
+          // Full replace
+          setLogs(result as LogEntry[]);
+        } else if (result && 'method' in result) {
+          if (result.method === 'replace') {
+            setLogs(result.logs as LogEntry[]);
+          } else if (result.method === 'incremental') {
+            setLogs((prev) => [...(result.logs as LogEntry[]), ...prev]);
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to load logs', error);
+      } finally {
+        if (!isPoll) setLoading(false);
       }
-
-    } catch (error) {
-      logger.error('Failed to load logs', error);
-    } finally {
-      if (!isPoll) setLoading(false);
-    }
-  };
+    },
+    [] // Dependencies are intentionally empty or stable; using ref for mutable data
+  );
 
   const handleClearLogs = async () => {
     if (confirm('Are you sure you want to clear all logs?')) {
@@ -68,7 +71,7 @@ export function ActivityLogViewer() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, loadLogs]);
 
   const getIcon = (level: string) => {
     switch (level) {
