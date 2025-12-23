@@ -35,6 +35,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -553,12 +554,12 @@ export default function AuditStepper() {
                 </Button>
                 <div className="border-t p-4">
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-foreground">Filter by Shopify Location</span>
+                    <Label htmlFor="location-select">Filter by Shopify Location</Label>
                     <Select
                       value={selectedLocationId}
                       onValueChange={setSelectedLocationId}
                     >
-                      <SelectTrigger className="w-full bg-background/50">
+                      <SelectTrigger id="location-select" className="w-full bg-background/50">
                         <SelectValue placeholder="Select a location..." />
                       </SelectTrigger>
                       <SelectContent>
