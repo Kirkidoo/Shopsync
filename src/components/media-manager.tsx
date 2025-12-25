@@ -521,9 +521,9 @@ export function MediaManager({
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label>1. Select Image to Assign</Label>
+                          <Label htmlFor="bulk-assign-image">1. Select Image to Assign</Label>
                           <Select value={bulkAssignImageId} onValueChange={setBulkAssignImageId}>
-                            <SelectTrigger>
+                            <SelectTrigger id="bulk-assign-image">
                               <SelectValue placeholder="Select an image..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -545,7 +545,7 @@ export function MediaManager({
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label>2. Select Target Variants</Label>
+                          <Label htmlFor="bulk-assign-option">2. Select Target Variants</Label>
                           <Select
                             value={bulkAssignOption}
                             onValueChange={(val) => {
@@ -553,7 +553,7 @@ export function MediaManager({
                               setBulkAssignValue('');
                             }}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger id="bulk-assign-option">
                               <SelectValue placeholder="Group by option or select all..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -568,9 +568,9 @@ export function MediaManager({
                         </div>
                         {bulkAssignOption && bulkAssignOption !== 'All Variants' && (
                           <div className="space-y-2">
-                            <Label>3. Select Value to Match</Label>
+                            <Label htmlFor="bulk-assign-value">3. Select Value to Match</Label>
                             <Select value={bulkAssignValue} onValueChange={setBulkAssignValue}>
-                              <SelectTrigger>
+                              <SelectTrigger id="bulk-assign-value">
                                 <SelectValue placeholder="Select a value..." />
                               </SelectTrigger>
                               <SelectContent>
