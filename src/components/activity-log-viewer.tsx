@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,58 @@ interface LogEntry {
   message: string;
   details?: any;
 }
+
+// Optimization: Memoize individual log items to prevent re-rendering the entire list
+// when new logs are added via polling (since the 'logs' array reference changes).
+const ActivityLogItem = memo(({ log }: { log: LogEntry }) => {
+  const getIcon = (level: string) => {
+    switch (level) {
+      case 'ERROR':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      case 'SUCCESS':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'WARN':
+        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+      default:
+        return <Info className="h-4 w-4 text-blue-500" />;
+    }
+  };
+
+  const getVariant = (level: string) => {
+    switch (level) {
+      case 'ERROR':
+        return 'destructive';
+      case 'SUCCESS':
+        return 'default';
+      case 'WARN':
+        return 'secondary';
+      default:
+        return 'outline';
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1 border-b pb-2 last:border-0">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {getIcon(log.level)}
+          <span className="text-sm font-semibold">
+            {new Date(log.timestamp).toLocaleTimeString()}
+          </span>
+          <Badge variant={getVariant(log.level) as any}>{log.level}</Badge>
+        </div>
+      </div>
+      <p className="pl-6 text-sm text-foreground/90">{log.message}</p>
+      {log.details && (
+        <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 pl-6 text-xs">
+          {JSON.stringify(log.details, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+});
+
+ActivityLogItem.displayName = 'ActivityLogItem';
 
 export function ActivityLogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -73,32 +125,6 @@ export function ActivityLogViewer() {
     return () => clearInterval(interval);
   }, [autoRefresh, loadLogs]);
 
-  const getIcon = (level: string) => {
-    switch (level) {
-      case 'ERROR':
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
-      case 'SUCCESS':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'WARN':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
-      default:
-        return <Info className="h-4 w-4 text-blue-500" />;
-    }
-  };
-
-  const getVariant = (level: string) => {
-    switch (level) {
-      case 'ERROR':
-        return 'destructive';
-      case 'SUCCESS':
-        return 'default'; // Greenish usually, or use custom class
-      case 'WARN':
-        return 'secondary';
-      default:
-        return 'outline';
-    }
-  };
-
   return (
     <Card className="mt-8 w-full">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -131,23 +157,7 @@ export function ActivityLogViewer() {
           ) : (
             <div className="space-y-4">
               {logs.map((log) => (
-                <div key={log.id} className="flex flex-col gap-1 border-b pb-2 last:border-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {getIcon(log.level)}
-                      <span className="text-sm font-semibold">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </span>
-                      <Badge variant={getVariant(log.level) as any}>{log.level}</Badge>
-                    </div>
-                  </div>
-                  <p className="pl-6 text-sm text-foreground/90">{log.message}</p>
-                  {log.details && (
-                    <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 pl-6 text-xs">
-                      {JSON.stringify(log.details, null, 2)}
-                    </pre>
-                  )}
-                </div>
+                <ActivityLogItem key={log.id} log={log} />
               ))}
             </div>
           )}
