@@ -75,6 +75,7 @@ export const MismatchDetails = ({
                                             className="h-7 w-7"
                                             onClick={() => onMarkAsFixed(mismatch.field)}
                                             disabled={disabled}
+                                            aria-label="Mark as fixed"
                                         >
                                             <Check className="h-4 w-4" />
                                         </Button>

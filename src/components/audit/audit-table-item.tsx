@@ -221,6 +221,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                                 handleMarkAsCreated(handle);
                                             }}
                                             disabled={isFixing || isAutoRunning || isAutoCreating}
+                                            aria-label="Mark as created"
                                         >
                                             <Check className="h-4 w-4" />
                                         </Button>
