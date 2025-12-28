@@ -44,7 +44,12 @@ export function ActivityLogViewer() {
           if (result.method === 'replace') {
             setLogs(result.logs as LogEntry[]);
           } else if (result.method === 'incremental') {
-            setLogs((prev) => [...(result.logs as LogEntry[]), ...prev]);
+            // Deduplicate by ID when merging incrementally
+            setLogs((prev) => {
+              const existingIds = new Set(prev.map(log => log.id));
+              const newLogs = (result.logs as LogEntry[]).filter(log => !existingIds.has(log.id));
+              return [...newLogs, ...prev];
+            });
           }
         }
       } catch (error) {

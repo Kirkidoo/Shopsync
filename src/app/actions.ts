@@ -188,15 +188,16 @@ async function* parseJsonlGenerator(filePath: string, locationId?: number): Asyn
         const parentId = obj.__parentId;
         const parent = parentProducts.get(parentId);
         const inventoryItemId = obj.inventoryItem?.id;
+        const variantId = obj.id; // The variant's own ID
 
         // FILTER: Check if this variant is stocked at the target location
-        // If inventoryItemId is NOT in inventoryMap, it means this variant has NO inventory record at the target location.
-        // Thus, it should be excluded.
+        // The inventoryMap is keyed by ProductVariant ID (from InventoryLevel's __parentId)
+        // So we need to look up using the variant's ID, not the inventoryItemId
         let finalInventory = 0;
         let isAtLocation = false;
 
-        if (inventoryItemId && inventoryMap.has(inventoryItemId)) {
-          finalInventory = inventoryMap.get(inventoryItemId)!;
+        if (variantId && inventoryMap.has(variantId)) {
+          finalInventory = inventoryMap.get(variantId)!;
           isAtLocation = true;
         }
 
@@ -241,14 +242,159 @@ async function* parseJsonlGenerator(filePath: string, locationId?: number): Asyn
   }
 }
 
-export async function getShopifyProductsFromCache(): Promise<Product[] | null> {
+// Parse JSONL and return both filtered products AND a set of all SKUs in Shopify
+async function parseJsonlWithAllSkus(filePath: string, locationId?: number): Promise<{
+  products: Product[];
+  allSkusInShopify: Set<string>;
+}> {
+  const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+  const TARGET_LOCATION_URL_SUFFIX = `Location/${GAMMA_LOCATION_ID}`;
+
+  // Pass 1: Build Inventory Map AND collect all SKUs
+  const inventoryMap = new Map<string, number>();
+  const allSkusInShopify = new Set<string>();
+
+  const stream1 = createReadStream(filePath);
+  const rl1 = createInterface({
+    input: stream1,
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl1) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      // Check for InventoryLevel nodes
+      if (obj.location && obj.location.id && obj.__parentId) {
+        if (obj.location.id.endsWith(TARGET_LOCATION_URL_SUFFIX)) {
+          let quantity = 0;
+          if (obj.quantities) {
+            const available = obj.quantities.find((q: any) => q.name === 'available');
+            if (available) {
+              quantity = available.quantity;
+            }
+          } else if (typeof obj.inventoryQuantity === 'number') {
+            quantity = obj.inventoryQuantity;
+          }
+          inventoryMap.set(obj.__parentId, quantity);
+        }
+      }
+      // Collect ALL SKUs from variant nodes (regardless of location)
+      if ((obj.sku !== undefined || obj.price !== undefined) && obj.sku) {
+        allSkusInShopify.add(obj.sku.toLowerCase());
+      }
+    } catch (e) {
+      // Ignore errors in pass 1
+    }
+  }
+
+  // Pass 2: Build Products list
+  const stream2 = createReadStream(filePath);
+  const rl2 = createInterface({
+    input: stream2,
+    crlfDelay: Infinity,
+  });
+
+  const parentProducts = new Map<string, any>();
+  const products: Product[] = [];
+
+  for await (const line of rl2) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+
+      // For "Product" node (Parent):
+      if (obj.id && obj.id.includes('gid://shopify/Product/') && !obj.__parentId) {
+        parentProducts.set(obj.id, {
+          title: obj.title,
+          handle: obj.handle,
+          bodyHtml: obj.bodyHtml,
+          vendor: obj.vendor,
+          productType: obj.productType,
+          tags: obj.tags ? obj.tags.join(', ') : '',
+          templateSuffix: obj.templateSuffix,
+        });
+      }
+      // For Variant node:
+      else if (obj.sku !== undefined || obj.price !== undefined) {
+        const parentId = obj.__parentId;
+        const parent = parentProducts.get(parentId);
+        const inventoryItemId = obj.inventoryItem?.id;
+        const variantId = obj.id;
+
+        let finalInventory = 0;
+        let isAtLocation = false;
+
+        if (variantId && inventoryMap.has(variantId)) {
+          finalInventory = inventoryMap.get(variantId)!;
+          isAtLocation = true;
+        }
+
+        if (!isAtLocation) continue;
+
+        if (parent) {
+          products.push({
+            id: parentId,
+            variantId: obj.id,
+            inventoryItemId: inventoryItemId || '',
+            handle: parent.handle,
+            sku: obj.sku || '',
+            name: parent.title,
+            price: parseFloat(obj.price || '0'),
+            inventory: finalInventory,
+            descriptionHtml: parent.bodyHtml,
+            productType: parent.productType,
+            vendor: parent.vendor,
+            tags: parent.tags,
+            compareAtPrice: obj.compareAtPrice ? parseFloat(obj.compareAtPrice) : null,
+            costPerItem: null,
+            barcode: obj.barcode,
+            weight: obj.inventoryItem?.measurement?.weight?.value || 0,
+            mediaUrl: null,
+            category: null,
+            option1Name: null,
+            option1Value: obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
+            option2Name: null,
+            option2Value: obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
+            option3Name: null,
+            option3Value: obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
+            imageId: null,
+            templateSuffix: parent.templateSuffix,
+            locationIds: [],
+          } as Product);
+        }
+      }
+
+    } catch (e) {
+      logger.error('Error parsing JSONL line:', e);
+    }
+  }
+
+  return { products, allSkusInShopify };
+}
+
+export async function getShopifyProductsFromCache(locationId?: number): Promise<Product[] | null> {
   try {
     await fsPromises.access(CACHE_FILE_PATH);
     const products: Product[] = [];
-    for await (const product of parseJsonlGenerator(CACHE_FILE_PATH)) {
+    for await (const product of parseJsonlGenerator(CACHE_FILE_PATH, locationId)) {
       products.push(product);
     }
     return products;
+  } catch (error) {
+    logger.error('Failed to read or parse cache file.', error);
+    return null;
+  }
+}
+
+// Get products from cache along with all SKUs in Shopify (for identifying products at other locations)
+export async function getShopifyProductsFromCacheWithAllSkus(locationId?: number): Promise<{
+  products: Product[];
+  allSkusInShopify: Set<string>;
+} | null> {
+  try {
+    await fsPromises.access(CACHE_FILE_PATH);
+    return await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
   } catch (error) {
     logger.error('Failed to read or parse cache file.', error);
     return null;
@@ -287,14 +433,68 @@ export async function getBulkOperationResultAndParse(url: string, locationId?: n
   }
 }
 
+// Download and parse bulk result, also returning all SKUs in Shopify
+export async function getBulkOperationResultAndParseWithAllSkus(url: string, locationId?: number): Promise<{
+  products: Product[];
+  allSkusInShopify: Set<string>;
+} | null> {
+  await ensureCacheDirExists();
+  try {
+    await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
+    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+    return await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
+  } catch (error) {
+    logger.error('Failed to download or parse bulk result', error);
+    return null;
+  }
+}
+
+
 export async function runBulkAuditComparison(
   csvProducts: Product[],
   shopifyProducts: Product[],
   csvFileName: string,
-  locationId?: number
+  allSkusInShopify?: Set<string>
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] }> {
-  // Pass locationId if we need it for post-processing, though parsing should have handled it mostly.
-  return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName);
+  return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+}
+
+// Run bulk audit entirely on server - reads cache, runs comparison, returns results
+// This avoids passing large datasets (allSkusInShopify) through client-server boundaries
+export async function runBulkAuditFromCache(
+  csvProducts: Product[],
+  csvFileName: string,
+  locationId?: number
+): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
+  try {
+    await fsPromises.access(CACHE_FILE_PATH);
+    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
+    logger.info(`Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`);
+    return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+  } catch (error) {
+    logger.error('Failed to run bulk audit from cache', error);
+    return null;
+  }
+}
+
+// Run bulk audit from fresh download - downloads, parses, runs comparison
+export async function runBulkAuditFromDownload(
+  csvProducts: Product[],
+  csvFileName: string,
+  resultUrl: string,
+  locationId?: number
+): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
+  await ensureCacheDirExists();
+  try {
+    await downloadBulkOperationResultToFile(resultUrl, CACHE_FILE_PATH);
+    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
+    logger.info(`Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`);
+    return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+  } catch (error) {
+    logger.error('Failed to run bulk audit from download', error);
+    return null;
+  }
 }
 
 // --- FIX ACTIONS ---

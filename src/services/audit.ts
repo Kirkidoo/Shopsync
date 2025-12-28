@@ -180,7 +180,8 @@ export function findMismatches(
 export async function runAuditComparison(
   csvProducts: Product[],
   shopifyProducts: Product[],
-  csvFileName: string
+  csvFileName: string,
+  allSkusInShopify?: Set<string>
 ): Promise<{ report: AuditResult[]; summary: any }> {
   const csvProductMap = new Map(csvProducts.map((p) => [p.sku, p]));
   logger.info(`Created map with ${csvProductMap.size} products from CSV.`);
@@ -316,6 +317,13 @@ export async function runAuditComparison(
         }
       }
     } else {
+      // Check if this SKU exists in Shopify at a different location
+      // If so, skip it - it's not truly missing, just not at the selected location
+      if (allSkusInShopify && allSkusInShopify.has(csvProduct.sku.toLowerCase())) {
+        // Product exists at another location - skip it, don't mark as missing
+        continue;
+      }
+
       // Check if handle exists in Shopify even if SKU is missing
       const productsWithHandle = shopifyHandleMap.get(csvProduct.handle);
 
@@ -478,9 +486,10 @@ export async function runAudit(
 export async function runBulkAuditComparison(
   csvProducts: Product[],
   shopifyProducts: Product[],
-  csvFileName: string
+  csvFileName: string,
+  allSkusInShopify?: Set<string>
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] }> {
-  const { report, summary } = await runAuditComparison(csvProducts, shopifyProducts, csvFileName);
+  const { report, summary } = await runAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
   const duplicatesForCard: DuplicateSku[] = report
     .filter((d) => d.status === 'duplicate_in_shopify')
     .map((d) => ({ sku: d.sku, count: d.shopifyProducts.length }));

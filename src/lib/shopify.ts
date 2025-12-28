@@ -1208,18 +1208,33 @@ export async function disconnectInventoryFromLocation(inventoryItemId: string, l
   const shopifyClient = getShopifyRestClient();
   const numericInventoryItemId = inventoryItemId.split('/').pop();
 
+  // Skip if no valid inventory item ID
+  if (!numericInventoryItemId) {
+    console.warn('disconnectInventoryFromLocation: No valid inventory item ID provided');
+    return;
+  }
+
   try {
     await retryOperation(async () => {
       await shopifyClient.delete({
         path: 'inventory_levels',
         query: {
-          inventory_item_id: numericInventoryItemId || '',
+          inventory_item_id: numericInventoryItemId,
           location_id: locationId,
         },
       });
     });
   } catch (error: unknown) {
-    console.error(`Error disconnecting inventory:`, error);
+    // Shopify DELETE often returns empty body which causes "invalid-json" parsing error
+    // This is expected and not a real error - the operation likely succeeded
+    if (typeof error === 'object' && error !== null && 'type' in error) {
+      if ((error as any).type === 'invalid-json') {
+        // This is expected for DELETE requests that return empty body
+        return;
+      }
+    }
+    // Log but don't throw - this is a non-critical operation
+    console.warn(`Warning: Could not disconnect inventory from location:`, error);
   }
 }
 

@@ -14,11 +14,10 @@ import {
   runAudit,
   checkBulkCacheStatus,
   getCsvProducts,
-  getShopifyProductsFromCache,
   startBulkOperation,
   checkBulkOperationStatus,
-  getBulkOperationResultAndParse,
-  runBulkAuditComparison,
+  runBulkAuditFromCache,
+  runBulkAuditFromDownload,
   getFtpCredentials,
   getAvailableLocations,
 } from '@/app/actions';
@@ -295,12 +294,14 @@ export default function AuditStepper() {
         }
         addLog(`Found ${csvProducts.length} products in CSV.`);
 
-        let shopifyProducts: Product[] | null = [];
+        const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
+        let result;
 
         if (useCache) {
           addLog('Using cached Shopify data...');
-          shopifyProducts = await getShopifyProductsFromCache();
-          if (!shopifyProducts) {
+          addLog('Running audit comparison on server...');
+          result = await runBulkAuditFromCache(csvProducts, selectedCsv, locationId);
+          if (!result) {
             addLog('Cache miss or error. Fetching fresh data...');
             useCache = false; // Force fetch
           }
@@ -329,19 +330,9 @@ export default function AuditStepper() {
             throw new Error(`Shopify bulk operation completed, but did not provide a result URL.`);
           }
 
-          addLog('Downloading and parsing exported data from Shopify...');
-          const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
-          shopifyProducts = await getBulkOperationResultAndParse(operation.resultUrl, locationId);
-          addLog('Caching complete.');
+          addLog('Downloading, parsing, and running audit on server...');
+          result = await runBulkAuditFromDownload(csvProducts, selectedCsv, operation.resultUrl, locationId);
         }
-
-        if (!shopifyProducts) {
-          throw new Error('Could not retrieve products from Shopify.');
-        }
-
-        addLog(`Found ${shopifyProducts.length} products in Shopify.`);
-        addLog('Generating audit report...');
-        const result = await runBulkAuditComparison(csvProducts, shopifyProducts, selectedCsv);
 
         if (!result || !result.report || !result.summary || !result.duplicates) {
           throw new Error('An unexpected response was received from the server after bulk audit.');
