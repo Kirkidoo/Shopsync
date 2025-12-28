@@ -84,3 +84,11 @@ export interface ShopifyProductImage {
   src: string;
   variant_ids: number[];
 }
+
+export interface LogEntry {
+  id: string;
+  timestamp: string;
+  level: 'INFO' | 'ERROR' | 'WARN' | 'SUCCESS';
+  message: string;
+  details?: any;
+}

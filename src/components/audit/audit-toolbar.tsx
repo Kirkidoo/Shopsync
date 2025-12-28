@@ -78,6 +78,7 @@ export function AuditToolbar({
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         placeholder="Filter by Handle, SKU, or Title..."
+                        aria-label="Filter by Handle, SKU, or Title"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10"
