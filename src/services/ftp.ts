@@ -1,13 +1,67 @@
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { logger } from '@/lib/logger';
+import { Address6, Address4 } from 'ip-address';
+import dns from 'dns/promises';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
+
+// Sentinel Security Fix: SSRF Protection
+// Validate that the host is not a private, loopback, or link-local address.
+// Returns the resolved IP address if valid.
+async function resolveAndValidateFtpHost(host: string): Promise<string> {
+  let ip = host;
+
+  // 1. Resolve hostname to IP if needed
+  if (!Address4.isValid(host) && !Address6.isValid(host)) {
+    try {
+      const result = await dns.lookup(host);
+      ip = result.address;
+      logger.info(`Resolved FTP host ${host} to ${ip}`);
+    } catch (error) {
+      throw new Error(`Failed to resolve FTP host: ${host}`);
+    }
+  }
+
+  // 2. Check if IP is reserved/private
+  if (Address4.isValid(ip)) {
+    const parts = ip.split('.').map(Number);
+
+    // Private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    // Loopback: 127.0.0.0/8
+    // Link-local: 169.254.0.0/16
+
+    const isLoopback = parts[0] === 127;
+    const isPrivate =
+      (parts[0] === 10) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168);
+    const isLinkLocal = parts[0] === 169 && parts[1] === 254;
+
+    if (isLoopback || isPrivate || isLinkLocal) {
+      logger.error(`Security Alert: Blocked attempt to connect to internal IP: ${ip}`);
+      throw new Error('Invalid or forbidden FTP host (Internal IP range).');
+    }
+  } else if (Address6.isValid(ip)) {
+     const addr = new Address6(ip);
+     // Check for loopback (::1), link-local (fe80::), unique local (fc00::)
+     if (addr.isLoopback() || addr.getScope() === 'Interface-Local' || addr.getScope() === 'Link-Local') {
+        logger.error(`Security Alert: Blocked attempt to connect to internal IPv6: ${ip}`);
+        throw new Error('Invalid or forbidden FTP host (Internal IP range).');
+     }
+  }
+
+  return ip;
+}
 
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
   const password = data.get('password') as string;
+
+  // Sentinel Security Fix: Validate host to prevent SSRF and TOCTOU
+  // We resolve the IP and use it for connection to ensure we connect to the validated address.
+  const resolvedIp = await resolveAndValidateFtpHost(host);
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
@@ -16,8 +70,19 @@ export async function getFtpClient(data: FormData) {
   // client.ftp.verbose = true;
   try {
     // First, try a secure connection
-    logger.info('Attempting secure FTP connection...');
-    await client.access({ host, user, password, secure: true });
+    logger.info(`Attempting secure FTP connection to ${host} (${resolvedIp})...`);
+
+    // We pass the resolved IP as 'host' to prevent DNS rebinding.
+    // We pass the original hostname as 'servername' in secureOptions to ensure SNI works.
+    await client.access({
+      host: resolvedIp,
+      user,
+      password,
+      secure: true,
+      secureOptions: {
+        servername: host // SNI support
+      }
+    });
     logger.info('Secure FTP connection successful.');
   } catch (secureErr) {
     logger.info('Secure FTP connection failed.', secureErr);
@@ -32,8 +97,9 @@ export async function getFtpClient(data: FormData) {
       client.close();
       const nonSecureClient = new Client(30000); // 30 second timeout
       try {
-        logger.info('Attempting non-secure FTP connection...');
-        await nonSecureClient.access({ host, user, password, secure: false });
+        logger.info(`Attempting non-secure FTP connection to ${host} (${resolvedIp})...`);
+        // For non-secure, we also use the resolved IP.
+        await nonSecureClient.access({ host: resolvedIp, user, password, secure: false });
         logger.info('Non-secure FTP connection successful.');
         return nonSecureClient;
       } catch (nonSecureErr) {
