@@ -1523,6 +1523,20 @@ export async function getBulkOperationResult(url: string): Promise<string> {
 }
 
 export async function downloadBulkOperationResultToFile(url: string, destPath: string): Promise<void> {
+  // Sentinel Security Fix: Validate URL to prevent SSRF
+  const parsedUrl = new URL(url);
+
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('Security Error: Only HTTPS URLs are allowed.');
+  }
+
+  // Shopify bulk operations are stored on Google Cloud Storage
+  // Reference: https://shopify.dev/docs/api/usage/bulk-operations/queries
+  // We allow storage.googleapis.com and its subdomains (like shopify-staged-uploads)
+  if (!parsedUrl.hostname.endsWith('storage.googleapis.com')) {
+    throw new Error('Security Error: URL host is not allowed.');
+  }
+
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
