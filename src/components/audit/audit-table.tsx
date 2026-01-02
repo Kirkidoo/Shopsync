@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Accordion } from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DuplicateAuditTable } from './duplicate-audit-table';
@@ -52,6 +53,22 @@ export function AuditTable({
     onSelectAllPage, isAllPageSelected
 }: AuditTableProps) {
 
+    // Optimization: Pre-calculate variants by handle to avoid O(N*M) lookups in the render loop.
+    // This reduces complexity to O(M) where M is the total number of variants in data.
+    const variantsByHandle = useMemo(() => {
+        const map = new Map<string, AuditResult[]>();
+        data.forEach((item) => {
+            const handle = item.shopifyProducts[0]?.handle;
+            if (handle) {
+                if (!map.has(handle)) {
+                    map.set(handle, []);
+                }
+                map.get(handle)!.push(item);
+            }
+        });
+        return map;
+    }, [data]);
+
     if (paginatedHandleKeys.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
@@ -104,10 +121,7 @@ export function AuditTable({
                 {paginatedHandleKeys.map((handle) => {
                     const items = filteredGroupedByHandle[handle];
 
-                    // Optimization: calculate these here instead of inside the item or passing large data
-                    const allVariantsForHandleInShopify = data.filter(
-                        (d) => d.shopifyProducts[0]?.handle === handle
-                    );
+                    const allVariantsForHandleInShopify = variantsByHandle.get(handle) || [];
                     const notInCsv = items?.every((i) => i.status === 'not_in_csv');
                     const isOnlyVariantNotInCsv =
                         !!(notInCsv && items && allVariantsForHandleInShopify.length === items.length);
