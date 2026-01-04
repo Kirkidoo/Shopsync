@@ -509,22 +509,26 @@ export default function AuditReport({
     paginatedHandleKeys.every((handle) => selectedHandles.has(handle));
 
   // Selection Logic
-  const handleSelectHandle = (handle: string, checked: boolean) => {
-    const newSelected = new Set(selectedHandles);
-    if (checked) newSelected.add(handle);
-    else newSelected.delete(handle);
-    setSelectedHandles(newSelected);
-  };
+  const handleSelectHandle = useCallback((handle: string, checked: boolean) => {
+    setSelectedHandles((prev) => {
+      const newSelected = new Set(prev);
+      if (checked) newSelected.add(handle);
+      else newSelected.delete(handle);
+      return newSelected;
+    });
+  }, []);
 
   const toggleSelectAllPage = useCallback(() => {
-    const newSelected = new Set(selectedHandles);
-    if (isAllOnPageSelected) {
-      paginatedHandleKeys.forEach((handle) => newSelected.delete(handle));
-    } else {
-      paginatedHandleKeys.forEach((handle) => newSelected.add(handle));
-    }
-    setSelectedHandles(newSelected);
-  }, [isAllOnPageSelected, paginatedHandleKeys, selectedHandles]);
+    setSelectedHandles((prev) => {
+      const newSelected = new Set(prev);
+      if (isAllOnPageSelected) {
+        paginatedHandleKeys.forEach((handle) => newSelected.delete(handle));
+      } else {
+        paginatedHandleKeys.forEach((handle) => newSelected.add(handle));
+      }
+      return newSelected;
+    });
+  }, [isAllOnPageSelected, paginatedHandleKeys]);
 
   const handleClearAuditMemory = () => {
     clearAuditMemory();
