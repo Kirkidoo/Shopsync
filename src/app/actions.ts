@@ -75,10 +75,16 @@ export async function listCsvFiles(data: FormData) {
 
 export async function getFtpCredentials() {
   const defaultHost = 'ftp.gammapowersports.com'; // New default
+
+  // Sentinel Security Fix: Do not expose raw password to client.
+  // If a password is set on the server, return a mask.
+  // The FTP service will interpret this mask and fallback to the server-side env var.
+  const hasPassword = !!(process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD);
+
   return {
     host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
     username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    password: hasPassword ? '********' : '',
   };
 }
 
