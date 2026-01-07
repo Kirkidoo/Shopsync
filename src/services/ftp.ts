@@ -27,7 +27,9 @@ export async function getFtpClient(data: FormData) {
     // to send credentials in cleartext.
 
     if (allowInsecure) {
-      logger.warn('⚠️ SECURITY WARNING: Falling back to non-secure FTP because ALLOW_INSECURE_FTP is enabled.');
+      logger.warn(
+        '⚠️ SECURITY WARNING: Falling back to non-secure FTP because ALLOW_INSECURE_FTP is enabled.'
+      );
       // If secure fails, close the potentially broken connection and try non-secure
       client.close();
       const nonSecureClient = new Client(30000); // 30 second timeout
@@ -43,7 +45,9 @@ export async function getFtpClient(data: FormData) {
     }
 
     client.close();
-    throw new Error('Secure FTP connection failed. Automatic fallback to insecure FTP is disabled for security.');
+    throw new Error(
+      'Secure FTP connection failed. Automatic fallback to insecure FTP is disabled for security.'
+    );
   }
   return client;
 }
@@ -91,7 +95,7 @@ export async function getCsvStreamFromFtp(
 
     // Create a PassThrough stream to pipe the download into
     const passThrough = new Readable({
-      read() { },
+      read() {},
     });
 
     // We need to keep the client open while the stream is being read.
