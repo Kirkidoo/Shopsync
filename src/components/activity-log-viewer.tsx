@@ -60,7 +60,8 @@ const ActivityLogItem = memo(({ log }: { log: LogEntry }) => {
 
 ActivityLogItem.displayName = 'ActivityLogItem';
 
-export function ActivityLogViewer() {
+// Wrapped in memo to prevent unnecessary re-renders when the parent (AuditStepper) updates its timer every second.
+export const ActivityLogViewer = memo(function ActivityLogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -161,4 +162,4 @@ export function ActivityLogViewer() {
       </CardContent>
     </Card>
   );
-}
+});
