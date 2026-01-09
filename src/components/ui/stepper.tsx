@@ -1,5 +1,6 @@
 import { Check, CircleDot, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { memo } from 'react';
 
 export interface Step {
     id: string;
@@ -14,7 +15,9 @@ interface StepperProps {
     className?: string;
 }
 
-export function Stepper({ steps, currentStepId, onStepClick, className }: StepperProps) {
+// Optimized: Wrapped in React.memo to prevent unnecessary re-renders when parent state updates
+// (e.g., timer ticks in AuditStepper) but props remain referentially stable.
+export const Stepper = memo(({ steps, currentStepId, onStepClick, className }: StepperProps) => {
     const currentStepIndex = steps.findIndex((s) => s.id === currentStepId);
 
     return (
@@ -80,4 +83,5 @@ export function Stepper({ steps, currentStepId, onStepClick, className }: Steppe
             </div>
         </div>
     );
-}
+});
+Stepper.displayName = 'Stepper';
