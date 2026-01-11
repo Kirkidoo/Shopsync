@@ -59,6 +59,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AuditTimer } from './audit-timer';
 
 interface FileInfo {
   name: string;
@@ -123,7 +124,6 @@ export default function AuditStepper() {
   const { toast } = useToast();
   const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null } | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,26 +133,12 @@ export default function AuditStepper() {
   });
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
     if (step === 'auditing') {
-      const start = Date.now();
-      setStartTime(start);
-      setElapsedSeconds(0);
-      interval = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
-      }, 1000);
+      setStartTime(Date.now());
     } else {
       setStartTime(null);
-      setElapsedSeconds(0);
     }
-    return () => clearInterval(interval);
   }, [step]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -704,12 +690,7 @@ export default function AuditStepper() {
                     </div>
                   </div>
 
-                  <div className="mb-6 flex flex-col items-center gap-1">
-                    <div className="text-3xl font-bold font-mono text-foreground">
-                      {formatTime(elapsedSeconds)}
-                    </div>
-                    <span className="text-xs uppercase tracking-widest text-muted-foreground">Time Elapsed</span>
-                  </div>
+                  {startTime && <AuditTimer startTime={startTime} />}
 
                   <p className="animate-pulse text-sm font-medium text-muted-foreground">
                     {activityLog[activityLog.length - 1] || 'Initializing...'}
