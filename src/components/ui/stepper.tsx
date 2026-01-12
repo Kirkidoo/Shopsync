@@ -1,5 +1,6 @@
 import { Check, CircleDot, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { memo } from 'react';
 
 export interface Step {
     id: string;
@@ -14,7 +15,7 @@ interface StepperProps {
     className?: string;
 }
 
-export function Stepper({ steps, currentStepId, onStepClick, className }: StepperProps) {
+export const Stepper = memo(function Stepper({ steps, currentStepId, onStepClick, className }: StepperProps) {
     const currentStepIndex = steps.findIndex((s) => s.id === currentStepId);
 
     return (
@@ -80,4 +81,4 @@ export function Stepper({ steps, currentStepId, onStepClick, className }: Steppe
             </div>
         </div>
     );
-}
+});
