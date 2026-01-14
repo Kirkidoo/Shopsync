@@ -509,12 +509,14 @@ export default function AuditReport({
     paginatedHandleKeys.every((handle) => selectedHandles.has(handle));
 
   // Selection Logic
-  const handleSelectHandle = (handle: string, checked: boolean) => {
-    const newSelected = new Set(selectedHandles);
-    if (checked) newSelected.add(handle);
-    else newSelected.delete(handle);
-    setSelectedHandles(newSelected);
-  };
+  const handleSelectHandle = useCallback((handle: string, checked: boolean) => {
+    setSelectedHandles((prev) => {
+      const newSelected = new Set(prev);
+      if (checked) newSelected.add(handle);
+      else newSelected.delete(handle);
+      return newSelected;
+    });
+  }, []);
 
   const toggleSelectAllPage = useCallback(() => {
     const newSelected = new Set(selectedHandles);
@@ -644,13 +646,13 @@ export default function AuditReport({
 
 
 
-  const handleOpenMissingVariantMediaManager = (items: AuditResult[]) => {
+  const handleOpenMissingVariantMediaManager = useCallback((items: AuditResult[]) => {
     if (items.length === 0) return;
     const parentId = items[0].shopifyProducts[0]?.id; // Assuming valid parent
     if (parentId) {
       setEditingMissingVariantMedia({ items, parentProductId: parentId });
     }
-  };
+  }, []);
 
   const memoizedMissingVariants = useMemo(() => {
     if (!editingMissingVariantMedia) return [];
@@ -1225,7 +1227,7 @@ export default function AuditReport({
 
             handleSelectHandle={handleSelectHandle}
             handleDeleteUnlinked={handleDeleteUnlinked}
-            handleBulkFix={(h, t) => handleBulkFix(h, t)}
+            handleBulkFix={handleBulkFix}
             handleMarkAsCreated={handleMarkAsCreated}
             handleCreate={handleCreate}
             handleOpenMissingVariantMediaManager={handleOpenMissingVariantMediaManager}
@@ -1233,7 +1235,7 @@ export default function AuditReport({
             setEditingMediaFor={setEditingMediaFor}
             setEditingMissingMedia={setEditingMissingMedia}
             handleFixSingleMismatch={handleFixSingleMismatch}
-            handleMarkAsFixed={(sku, type) => handleMarkAsFixed(sku, type)}
+            handleMarkAsFixed={handleMarkAsFixed}
             handleDeleteVariant={handleDeleteVariant}
             handleDeleteProduct={handleDeleteProduct}
 

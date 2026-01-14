@@ -7,9 +7,9 @@
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
+ ✓ Ready in 1374ms
  ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+ ✓ Compiled / in 14.1s
+ GET / 200 in 16037ms
+ POST / 200 in 130ms
+ POST / 200 in 423ms
