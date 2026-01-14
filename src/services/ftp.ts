@@ -4,6 +4,13 @@ import { logger } from '@/lib/logger';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
 
+function validateFilename(filename: string) {
+  // Sentinel Security Fix: Prevent Path Traversal
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    throw new Error('Invalid filename. Path traversal characters are not allowed.');
+  }
+}
+
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
@@ -83,6 +90,7 @@ export async function getCsvStreamFromFtp(
   csvFileName: string,
   ftpData: FormData
 ): Promise<Readable> {
+  validateFilename(csvFileName);
   const client = await getFtpClient(ftpData);
   try {
     logger.info('Navigating to FTP directory:', FTP_DIRECTORY);
