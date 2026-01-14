@@ -7,9 +7,27 @@
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
+ ✓ Ready in 1350ms
  ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+ ✓ Compiled / in 14.5s
+ GET / 200 in 16141ms
+ POST / 200 in 286ms
+ POST / 200 in 201ms
+ GET / 200 in 193ms
+ POST / 200 in 119ms
+ POST / 200 in 70ms
+[2026-01-14T22:49:16.514Z] [ERROR] Shopify environment variables are not set.
+ ⨯ Error: Shopify environment variables are not set. Please create a .env.local file.
+    at getShopifyRestClient (src/lib/shopify.ts:513:10)
+    at getShopifyLocations (src/lib/shopify.ts:822:24)
+    at getAvailableLocations (src/app/actions.ts:83:33)
+  511 |   if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
+  512 |     logger.error('Shopify environment variables are not set.');
+> 513 |     throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
+      |          ^
+  514 |   }
+  515 |
+  516 |   const shopify = shopifyApi({ {
+  digest: '2084268254'
+}
+ POST / 500 in 857ms

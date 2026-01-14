@@ -39,19 +39,19 @@ export type AuditStatus =
 
 export interface MismatchDetail {
   field:
-  | 'price'
-  | 'inventory'
-  | 'missing_in_shopify'
-  | 'duplicate_in_shopify'
-  | 'duplicate_handle'
-  | 'missing_clearance_tag'
-  | 'incorrect_template_suffix'
-  | 'clearance_price_mismatch'
-  | 'missing_category_tag'
-  | 'missing_oversize_tag'
-  | 'heavy_product_flag'
-  | 'compare_at_price'
-  | 'h1_tag';
+    | 'price'
+    | 'inventory'
+    | 'missing_in_shopify'
+    | 'duplicate_in_shopify'
+    | 'duplicate_handle'
+    | 'missing_clearance_tag'
+    | 'incorrect_template_suffix'
+    | 'clearance_price_mismatch'
+    | 'missing_category_tag'
+    | 'missing_oversize_tag'
+    | 'heavy_product_flag'
+    | 'compare_at_price'
+    | 'h1_tag';
   csvValue: string | number | null;
   shopifyValue: string | number | null;
   missingType?: 'product' | 'variant';

@@ -69,7 +69,15 @@ const ShopifyRestProductSchema = z.object({
   tags: z.string(),
   admin_graphql_api_id: z.string(),
   variants: z.array(ShopifyRestVariantSchema),
-  options: z.array(z.object({ id: z.number(), product_id: z.number(), name: z.string(), position: z.number(), values: z.array(z.string()) })),
+  options: z.array(
+    z.object({
+      id: z.number(),
+      product_id: z.number(),
+      name: z.string(),
+      position: z.number(),
+      values: z.array(z.string()),
+    })
+  ),
   images: z.array(ShopifyRestImageSchema),
   image: ShopifyRestImageSchema.nullable(),
 });
@@ -78,28 +86,35 @@ const ShopifyGraphQLErrorSchema = z.object({
   message: z.string(),
   locations: z.array(z.object({ line: z.number(), column: z.number() })).optional(),
   path: z.array(z.string().or(z.number())).optional(),
-  extensions: z.object({
-    code: z.string().optional(),
-    documentation: z.string().optional(),
-  }).optional(),
+  extensions: z
+    .object({
+      code: z.string().optional(),
+      documentation: z.string().optional(),
+    })
+    .optional(),
 });
 
 // Helper for generic GraphQL response validation
-const createGraphQLResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) => z.object({
-  data: dataSchema.optional(),
-  errors: z.array(ShopifyGraphQLErrorSchema).optional(),
-  extensions: z.object({
-    cost: z.object({
-      requestedQueryCost: z.number(),
-      actualQueryCost: z.number(),
-      throttleStatus: z.object({
-        maximumAvailable: z.number(),
-        currentlyAvailable: z.number(),
-        restoreRate: z.number(),
-      }),
-    }).optional(),
-  }).optional(),
-});
+const createGraphQLResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
+  z.object({
+    data: dataSchema.optional(),
+    errors: z.array(ShopifyGraphQLErrorSchema).optional(),
+    extensions: z
+      .object({
+        cost: z
+          .object({
+            requestedQueryCost: z.number(),
+            actualQueryCost: z.number(),
+            throttleStatus: z.object({
+              maximumAvailable: z.number(),
+              currentlyAvailable: z.number(),
+              restoreRate: z.number(),
+            }),
+          })
+          .optional(),
+      })
+      .optional(),
+  });
 
 const ShopifyRestErrorSchema = z.object({
   errors: z.union([z.string(), z.record(z.union([z.string(), z.array(z.string())]))]),
@@ -107,25 +122,33 @@ const ShopifyRestErrorSchema = z.object({
 
 // Helper for generic REST response validation
 // Note: Shopify REST responses usually wrap the object in a key, e.g. { product: ... }
-const createRestResponseSchema = <T extends z.ZodTypeAny>(bodySchema: T) => z.object({
-  body: bodySchema.and(ShopifyRestErrorSchema.partial()), // Errors might be present mixed in or exclusively
-  headers: z.record(z.union([z.string(), z.array(z.string()), z.undefined()])),
-});
+const createRestResponseSchema = <T extends z.ZodTypeAny>(bodySchema: T) =>
+  z.object({
+    body: bodySchema.and(ShopifyRestErrorSchema.partial()), // Errors might be present mixed in or exclusively
+    headers: z.record(z.union([z.string(), z.array(z.string()), z.undefined()])),
+  });
 
 // Specific GraphQL Response Schemas
 
 const InventoryItemMeasurementSchema = z.object({
-  weight: z.object({
-    value: z.number(),
-    unit: z.string(),
-  }).nullable().optional(),
+  weight: z
+    .object({
+      value: z.number(),
+      unit: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const InventoryLevelSchema = z.object({
-  quantities: z.array(z.object({
-    name: z.string(),
-    quantity: z.number()
-  })).optional(),
+  quantities: z
+    .array(
+      z.object({
+        name: z.string(),
+        quantity: z.number(),
+      })
+    )
+    .optional(),
   location: z.object({
     id: z.string(),
   }),
@@ -134,9 +157,11 @@ const InventoryLevelSchema = z.object({
 const InventoryItemSchema = z.object({
   id: z.string(),
   measurement: InventoryItemMeasurementSchema.nullable().optional(),
-  inventoryLevels: z.object({
-    edges: z.array(z.object({ node: InventoryLevelSchema }))
-  }).optional(),
+  inventoryLevels: z
+    .object({
+      edges: z.array(z.object({ node: InventoryLevelSchema })),
+    })
+    .optional(),
 });
 
 const ProductVariantNodeSchema = z.object({
@@ -159,13 +184,13 @@ const ProductVariantNodeSchema = z.object({
 });
 
 const ProductVariantsEdgeSchema = z.object({
-  node: ProductVariantNodeSchema
+  node: ProductVariantNodeSchema,
 });
 
 const GetVariantsBySkuQuerySchema = z.object({
   productVariants: z.object({
-    edges: z.array(ProductVariantsEdgeSchema)
-  })
+    edges: z.array(ProductVariantsEdgeSchema),
+  }),
 });
 
 // --- Helper function to introduce a delay ---
@@ -174,7 +199,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 function isThrottleError(error: unknown): boolean {
   if (typeof error === 'object' && error !== null) {
     const errorString = JSON.stringify(error);
-    if (errorString.includes('Throttled') || errorString.includes('Exceeded 2 calls per second')) return true;
+    if (errorString.includes('Throttled') || errorString.includes('Exceeded 2 calls per second'))
+      return true;
     if ('response' in error && (error as any).response?.statusCode === 429) return true;
     if (error instanceof Error && error.message.includes('Throttled')) return true;
   }
@@ -198,9 +224,11 @@ function updateRateLimitState(extensions: any) {
 
 async function checkRateLimit(cost = 100) {
   if (rateLimitState.currentlyAvailable < cost * 2) {
-    const deficit = (cost * 2) - rateLimitState.currentlyAvailable;
+    const deficit = cost * 2 - rateLimitState.currentlyAvailable;
     const waitTime = Math.ceil((deficit / rateLimitState.restoreRate) * 1000);
-    logger.info(`Rate limit tight (Available: ${rateLimitState.currentlyAvailable}). Sleeping ${waitTime}ms...`);
+    logger.info(
+      `Rate limit tight (Available: ${rateLimitState.currentlyAvailable}). Sleeping ${waitTime}ms...`
+    );
     await sleep(waitTime);
   }
 }
@@ -239,8 +267,6 @@ async function retryOperation<T>(operation: () => Promise<T>, maxRetries: number
     }
   }
 }
-
-
 
 // --- GraphQL Queries & Mutations ---
 
@@ -532,7 +558,10 @@ const convertWeightToGrams = (
   return weight; // Default to returning the value if unit is unknown or missing
 };
 
-export async function getShopifyProductsBySku(skus: string[], locationId?: number): Promise<Product[]> {
+export async function getShopifyProductsBySku(
+  skus: string[],
+  locationId?: number
+): Promise<Product[]> {
   const shopifyClient = getShopifyGraphQLClient();
   const allProducts: Product[] = [];
 
@@ -587,13 +616,14 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
             let locationInventory = 0;
             let isAtGamma = false;
             // Gamma Warehouse ID: 93998154045
-            const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+            const GAMMA_LOCATION_ID =
+              locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
             const TARGET_LOCATION_GID = `gid://shopify/Location/${GAMMA_LOCATION_ID}`;
 
             if (variant.inventoryItem?.inventoryLevels?.edges) {
               for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
                 if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
-                  const available = levelEdge.node.quantities?.find(q => q.name === 'available');
+                  const available = levelEdge.node.quantities?.find((q) => q.name === 'available');
                   if (available) {
                     locationInventory = available.quantity;
                   }
@@ -697,14 +727,18 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
     const verifySku = async (sku: string) => {
       try {
         const query = `sku:"${sku.replace(/"/g, '\\"')}"`;
-        const rawResponse = await shopifyClient.request(GET_VARIANTS_BY_SKU_QUERY, { variables: { query } });
+        const rawResponse = await shopifyClient.request(GET_VARIANTS_BY_SKU_QUERY, {
+          variables: { query },
+        });
         const parsed = ResponseSchema.parse(rawResponse);
         const edges = parsed.data?.productVariants?.edges || [];
         const match = edges.find(
           (e) => e.node.sku?.trim().toLowerCase() === sku.trim().toLowerCase()
         );
         return match?.node;
-      } catch (e) { return null; }
+      } catch (e) {
+        return null;
+      }
     };
 
     const VERIFY_CONCURRENCY = 10;
@@ -719,7 +753,8 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
           const node = await verifySku(sku);
           if (node && node.product && node.sku) {
             let isAtGamma = false;
-            const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+            const GAMMA_LOCATION_ID =
+              locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
             const TARGET_LOCATION_GID = `gid://shopify/Location/${GAMMA_LOCATION_ID}`;
 
             if (node.inventoryItem?.inventoryLevels?.edges) {
@@ -771,7 +806,9 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
       }
     };
 
-    const verifyWorkers = Array(Math.min(missingSkus.length, VERIFY_CONCURRENCY)).fill(null).map(verifyWorker);
+    const verifyWorkers = Array(Math.min(missingSkus.length, VERIFY_CONCURRENCY))
+      .fill(null)
+      .map(verifyWorker);
     await Promise.all(verifyWorkers);
     if (verifiedProducts.length > 0) {
       exactMatchProducts.push(...verifiedProducts);
@@ -785,11 +822,13 @@ export async function getShopifyLocations(): Promise<{ id: number; name: string 
   const shopifyClient = getShopifyRestClient();
   const LocationSchema = z.object({
     id: z.number(),
-    name: z.string()
+    name: z.string(),
   });
-  const LocationsResponseSchema = createRestResponseSchema(z.object({
-    locations: z.array(LocationSchema)
-  }));
+  const LocationsResponseSchema = createRestResponseSchema(
+    z.object({
+      locations: z.array(LocationSchema),
+    })
+  );
 
   try {
     const response = await shopifyClient.get({ path: 'locations' });
@@ -806,9 +845,11 @@ export async function getProductByHandle(handle: string): Promise<any> {
   // Keeping logic similar but using Zod validation
   const shopifyClient = getShopifyGraphQLClient();
   // Simplified schema for what's needed
-  const Schema = createGraphQLResponseSchema(z.object({
-    productByHandle: z.any()
-  }));
+  const Schema = createGraphQLResponseSchema(
+    z.object({
+      productByHandle: z.any(),
+    })
+  );
   try {
     const response = await shopifyClient.request(GET_PRODUCT_BY_HANDLE_QUERY, {
       variables: { handle },
@@ -899,7 +940,10 @@ export async function createProduct(
   let tags = firstVariant.tags || '';
 
   if (tags) {
-    const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean);
+    const tagList = tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
     if (tagList.length > 3) {
       tags = tagList.slice(0, 3).join(', ');
     }
@@ -939,9 +983,11 @@ export async function createProduct(
     productPayload.product.template_suffix = 'heavy-products';
   }
 
-  const CreateProductResponseSchema = createRestResponseSchema(z.object({
-    product: ShopifyRestProductSchema
-  }));
+  const CreateProductResponseSchema = createRestResponseSchema(
+    z.object({
+      product: ShopifyRestProductSchema,
+    })
+  );
 
   try {
     const response = await retryOperation(async () => {
@@ -954,7 +1000,6 @@ export async function createProduct(
     // Validate with Zod
     const parsed = CreateProductResponseSchema.parse(response);
     return parsed.body.product;
-
   } catch (error: unknown) {
     if (typeof error === 'object' && error !== null && 'response' in error) {
       console.error('Error creating product:', (error as any).response?.body);
@@ -978,16 +1023,24 @@ export async function addProductVariant(product: Product): Promise<any> {
   });
 
   // Minimal schema validation for this lookup
-  const LookupSchema = createGraphQLResponseSchema(z.object({
-    productByHandle: z.object({
-      id: z.string(),
-      images: z.object({
-        edges: z.array(z.object({
-          node: z.object({ id: z.string(), url: z.string() })
-        }))
-      }).optional()
-    }).nullable()
-  }));
+  const LookupSchema = createGraphQLResponseSchema(
+    z.object({
+      productByHandle: z
+        .object({
+          id: z.string(),
+          images: z
+            .object({
+              edges: z.array(
+                z.object({
+                  node: z.object({ id: z.string(), url: z.string() }),
+                })
+              ),
+            })
+            .optional(),
+        })
+        .nullable(),
+    })
+  );
 
   const parsedLookup = LookupSchema.parse(productResponse);
   const productByHandle = parsedLookup.data?.productByHandle;
@@ -1006,9 +1059,7 @@ export async function addProductVariant(product: Product): Promise<any> {
 
   if (product.mediaUrl && !imageId) {
     const imageFilename = product.mediaUrl.split('/').pop()?.split('?')[0];
-    const existingImage = existingImages.find((img) =>
-      img.url.includes(imageFilename as string)
-    );
+    const existingImage = existingImages.find((img) => img.url.includes(imageFilename as string));
 
     if (existingImage) {
       imageId = parseInt(existingImage.id.split('/').pop()!);
@@ -1040,9 +1091,11 @@ export async function addProductVariant(product: Product): Promise<any> {
     },
   };
 
-  const CreateVariantResponseSchema = createRestResponseSchema(z.object({
-    variant: ShopifyRestVariantSchema
-  }));
+  const CreateVariantResponseSchema = createRestResponseSchema(
+    z.object({
+      variant: ShopifyRestVariantSchema,
+    })
+  );
 
   try {
     const response = await retryOperation(async () => {
@@ -1062,7 +1115,6 @@ export async function addProductVariant(product: Product): Promise<any> {
     });
     const parsedProduct = GetProductResponseSchema.parse(fullProductResponse);
     return parsedProduct.body.product;
-
   } catch (error: unknown) {
     console.error('Error adding variant:', error);
     throw new Error(`Failed to add variant`);
@@ -1195,7 +1247,10 @@ export async function connectInventoryToLocation(inventoryItemId: string, locati
   } catch (error: unknown) {
     if (typeof error === 'object' && error !== null && 'response' in error) {
       const errorBody = (error as any).response?.body;
-      if (errorBody?.errors && JSON.stringify(errorBody.errors).includes('is already stocked at the location')) {
+      if (
+        errorBody?.errors &&
+        JSON.stringify(errorBody.errors).includes('is already stocked at the location')
+      ) {
         return;
       }
     }
@@ -1304,7 +1359,8 @@ export async function linkProductToCollection(productGid: string, collectionGid:
 export async function publishProductToSalesChannels(productGid: string): Promise<void> {
   const shopifyClient = getShopifyGraphQLClient();
   const publicationsResponse = await shopifyClient.request(GET_ALL_PUBLICATIONS_QUERY);
-  const publications = (publicationsResponse as any).data?.publications?.edges.map((edge: any) => edge.node) || [];
+  const publications =
+    (publicationsResponse as any).data?.publications?.edges.map((edge: any) => edge.node) || [];
 
   if (publications.length === 0) return;
 
@@ -1354,15 +1410,19 @@ export async function addProductImage(
 ): Promise<ShopifyProductImage> {
   const shopifyClient = getShopifyRestClient();
 
-  const AddImageResponseSchema = createRestResponseSchema(z.object({
-    image: z.object({
-      id: z.number(),
-      product_id: z.number(),
-      src: z.string(),
-      variant_ids: z.array(z.number()).optional().default([]),
-      // include other fields if needed for ShopifyProductImage generic
-    }).passthrough()
-  }));
+  const AddImageResponseSchema = createRestResponseSchema(
+    z.object({
+      image: z
+        .object({
+          id: z.number(),
+          product_id: z.number(),
+          src: z.string(),
+          variant_ids: z.array(z.number()).optional().default([]),
+          // include other fields if needed for ShopifyProductImage generic
+        })
+        .passthrough(),
+    })
+  );
 
   try {
     const response = await retryOperation(async () => {
@@ -1407,7 +1467,10 @@ export async function startProductExportBulkOperation(): Promise<{ id: string; s
   const currentOpResponse = await shopifyClient.request(GET_CURRENT_BULK_OPERATION_QUERY);
   const currentOperation = (currentOpResponse as any).data?.currentBulkOperation;
 
-  if (currentOperation && (currentOperation.status === 'RUNNING' || currentOperation.status === 'CREATED')) {
+  if (
+    currentOperation &&
+    (currentOperation.status === 'RUNNING' || currentOperation.status === 'CREATED')
+  ) {
     return { id: currentOperation.id, status: currentOperation.status };
   }
 
@@ -1522,7 +1585,10 @@ export async function getBulkOperationResult(url: string): Promise<string> {
   return response.text();
 }
 
-export async function downloadBulkOperationResultToFile(url: string, destPath: string): Promise<void> {
+export async function downloadBulkOperationResultToFile(
+  url: string,
+  destPath: string
+): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
@@ -1545,8 +1611,10 @@ export async function downloadBulkOperationResultToFile(url: string, destPath: s
   await pipeline(Readable.fromWeb(response.body), fileStream);
 }
 
-
-export async function parseBulkOperationResult(jsonlContent: string, locationId?: number): Promise<Product[]> {
+export async function parseBulkOperationResult(
+  jsonlContent: string,
+  locationId?: number
+): Promise<Product[]> {
   const lines = jsonlContent.split('\n').filter((line) => line.trim() !== '');
   const products: Product[] = [];
   const parentProducts = new Map<string, any>();
@@ -1569,7 +1637,8 @@ export async function parseBulkOperationResult(jsonlContent: string, locationId?
 
       // 2. Capture Gamma Warehouse Quantity
       // Check if this location is the Target Location
-      const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+      const GAMMA_LOCATION_ID =
+        locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
       if (item.location.id.endsWith(`Location/${GAMMA_LOCATION_ID}`)) {
         let quantity = 0;
         if (item.quantities) {
@@ -1642,15 +1711,17 @@ export async function parseBulkOperationResult(jsonlContent: string, locationId?
           productType: parentProduct.productType,
           vendor: parentProduct.vendor,
           tags: (parentProduct.tags || []).join(', '),
-          compareAtPrice: shopifyProduct.compareAtPrice ? parseFloat(shopifyProduct.compareAtPrice) : null,
+          compareAtPrice: shopifyProduct.compareAtPrice
+            ? parseFloat(shopifyProduct.compareAtPrice)
+            : null,
           costPerItem: shopifyProduct.inventoryItem?.unitCost?.amount
             ? parseFloat(shopifyProduct.inventoryItem.unitCost.amount)
             : null,
           weight: shopifyProduct.inventoryItem?.measurement?.weight?.value
             ? convertWeightToGrams(
-              parseFloat(shopifyProduct.inventoryItem.measurement.weight.value),
-              shopifyProduct.inventoryItem.measurement.weight.unit
-            )
+                parseFloat(shopifyProduct.inventoryItem.measurement.weight.value),
+                shopifyProduct.inventoryItem.measurement.weight.unit
+              )
             : null,
           mediaUrl: null,
           imageId: shopifyProduct.image?.id
