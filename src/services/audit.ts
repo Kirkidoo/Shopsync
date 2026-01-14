@@ -64,17 +64,17 @@ export function findMismatches(
   // Tags preprocessing
   const tags = shopifyProduct.tags
     ? shopifyProduct.tags
-      .toLowerCase()
-      .split(',')
-      .map((t) => t.trim())
+        .toLowerCase()
+        .split(',')
+        .map((t) => t.trim())
     : [];
 
   // 3. Oversize / Heavy Product Logic
   const csvTags = csvProduct.tags
     ? csvProduct.tags
-      .toLowerCase()
-      .split(',')
-      .map((t) => t.trim())
+        .toLowerCase()
+        .split(',')
+        .map((t) => t.trim())
     : [];
 
   const isOversize = tags.includes('oversize') || csvTags.includes('oversize');
@@ -160,9 +160,9 @@ export function findMismatches(
   if (csvProduct.category) {
     const tags = shopifyProduct.tags
       ? shopifyProduct.tags
-        .toLowerCase()
-        .split(',')
-        .map((t) => t.trim())
+          .toLowerCase()
+          .split(',')
+          .map((t) => t.trim())
       : [];
 
     const categoryLower = csvProduct.category.toLowerCase().trim();
@@ -242,9 +242,7 @@ export async function runAuditComparison(
       // If ANY sibling (including self) has a valid discount (price < compareAt),
       // then the parent is legitimately "Clearance".
       const hasDiscountedVariant = siblings.some(
-        (sib) =>
-          sib.compareAtPrice !== null &&
-          sib.price < sib.compareAtPrice
+        (sib) => sib.compareAtPrice !== null && sib.price < sib.compareAtPrice
       );
       if (hasDiscountedVariant) {
         isUseParentClearanceOverride = true;
@@ -489,7 +487,12 @@ export async function runBulkAuditComparison(
   csvFileName: string,
   allSkusInShopify?: Set<string>
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] }> {
-  const { report, summary } = await runAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+  const { report, summary } = await runAuditComparison(
+    csvProducts,
+    shopifyProducts,
+    csvFileName,
+    allSkusInShopify
+  );
   const duplicatesForCard: DuplicateSku[] = report
     .filter((d) => d.status === 'duplicate_in_shopify')
     .map((d) => ({ sku: d.sku, count: d.shopifyProducts.length }));
