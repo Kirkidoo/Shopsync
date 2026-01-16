@@ -55,7 +55,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { VariantRow } from './media-manager-variant-row';
+import { VariantRow, ImageOption } from './media-manager-variant-row';
 import { MediaManagerImageCard } from './media-manager-image-card';
 
 interface MediaManagerProps {
@@ -85,6 +85,10 @@ export function MediaManager({
     JSON.parse(JSON.stringify(missingVariants))
   );
 
+  // Stable options reference for VariantRow to prevent re-renders when only assignments change
+  const [imageOptions, setImageOptions] = useState<ImageOption[]>([]);
+  const imageOptionsRef = useRef<ImageOption[]>([]);
+
   // State for bulk assign dialog
   const [bulkAssignImageId, setBulkAssignImageId] = useState<string>('');
   const [bulkAssignOption, setBulkAssignOption] = useState<string>('');
@@ -95,6 +99,21 @@ export function MediaManager({
   useEffect(() => {
     variantsRef.current = variants;
   }, [variants]);
+
+  // Update image options only when the actual list of images changes (ids/srcs)
+  // This ignores changes to 'variant_ids' property on images, which happens frequently
+  useEffect(() => {
+    const newOptions = images.map(img => ({ id: img.id, src: img.src }));
+    const currentOptions = imageOptionsRef.current;
+
+    const hasChanged = newOptions.length !== currentOptions.length ||
+      newOptions.some((opt, i) => opt.id !== currentOptions[i].id || opt.src !== currentOptions[i].src);
+
+    if (hasChanged) {
+      imageOptionsRef.current = newOptions;
+      setImageOptions(newOptions);
+    }
+  }, [images]);
 
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
@@ -729,7 +748,7 @@ export function MediaManager({
                         <VariantRow
                           key={variant.sku}
                           variant={variant}
-                          images={images}
+                          imageOptions={imageOptions}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImageToMissingVariant}
                           idType="sku"
@@ -739,7 +758,7 @@ export function MediaManager({
                         <VariantRow
                           key={variant.variantId}
                           variant={variant}
-                          images={images}
+                          imageOptions={imageOptions}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImage}
                           idType="variantId"
