@@ -8,21 +8,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { Product, ShopifyProductImage } from '@/lib/types';
+import { Product } from '@/lib/types';
+
+export interface ImageOption {
+  id: number;
+  src: string;
+}
 
 interface VariantRowProps {
   variant: Partial<Product>;
-  images: ShopifyProductImage[];
+  imageOptions: ImageOption[];
   isSubmitting: boolean;
   onAssign: (id: string, imageId: number | null) => void;
   idType?: 'variantId' | 'sku';
 }
 
-const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) => {
+const ImageSelectContent = memo(({ options }: { options: ImageOption[] }) => {
   return (
     <SelectContent>
       <SelectItem value="none">No Image</SelectItem>
-      {images.map((image) => (
+      {options.map((image) => (
         <SelectItem key={image.id} value={image.id.toString()}>
           <div className="flex items-center gap-2">
             <Image
@@ -43,7 +48,7 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
 ImageSelectContent.displayName = 'ImageSelectContent';
 
 export const VariantRow = memo(
-  ({ variant, images, isSubmitting, onAssign, idType = 'variantId' }: VariantRowProps) => {
+  ({ variant, imageOptions, isSubmitting, onAssign, idType = 'variantId' }: VariantRowProps) => {
     const id = idType === 'variantId' ? variant.variantId! : variant.sku!;
 
     return (
@@ -68,7 +73,7 @@ export const VariantRow = memo(
             >
               <SelectValue placeholder="Select image..." />
             </SelectTrigger>
-            <ImageSelectContent images={images} />
+            <ImageSelectContent options={imageOptions} />
           </Select>
         </TableCell>
       </TableRow>
