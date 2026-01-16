@@ -38,16 +38,17 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
   onDelete,
 }: MediaManagerImageCardProps) {
   return (
-    <div className="group relative overflow-hidden rounded-md border">
-      <label
-        htmlFor={`image-select-${image.id}`}
-        className="block cursor-pointer"
-        aria-label={
-          isMissingVariantMode
-            ? undefined
-            : `Select image ${image.id}, assigned to ${image.variant_ids.length} variants`
-        }
-      >
+    <TooltipProvider>
+      <div className="group relative overflow-hidden rounded-md border">
+        <label
+          htmlFor={`image-select-${image.id}`}
+          className="block cursor-pointer"
+          aria-label={
+            isMissingVariantMode
+              ? undefined
+              : `Select image ${image.id}, assigned to ${image.variant_ids.length} variants`
+          }
+        >
         <Image
           src={image.src}
           alt={`Product image ${image.id}`}
@@ -75,18 +76,25 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           disabled={isMissingVariantMode}
         />
         <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="icon"
-              className="pointer-events-auto h-6 w-6"
-              disabled={isSubmitting}
-              // No need for stopPropagation on click unless we have a parent click handler
-              aria-label={`Delete image ${image.id}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            </Button>
-          </AlertDialogTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="pointer-events-auto h-6 w-6"
+                  disabled={isSubmitting}
+                  // No need for stopPropagation on click unless we have a parent click handler
+                  aria-label={`Delete image ${image.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Delete image</p>
+            </TooltipContent>
+          </Tooltip>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this image?</AlertDialogTitle>
@@ -114,25 +122,24 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
         </AlertDialog>
       </div>
       {isAssigned && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                  !isSelected && 'group-hover:hidden',
-                  isMissingVariantMode && 'hidden'
-                )}
-              >
-                <Link className="h-3.5 w-3.5" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Assigned to {image.variant_ids.length} variant(s)</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                'pointer-events-auto absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
+                !isSelected && 'group-hover:hidden',
+                isMissingVariantMode && 'hidden'
+              )}
+            >
+              <Link className="h-3.5 w-3.5" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Assigned to {image.variant_ids.length} variant(s)</p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
+    </TooltipProvider>
   );
 });
