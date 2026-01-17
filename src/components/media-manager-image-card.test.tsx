@@ -6,7 +6,7 @@ import { ShopifyProductImage } from '@/lib/types';
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props: any) => {
-    // eslint-disable-next-line @next/next/no-img-element
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
     return <img {...props} />;
   },
 }));
@@ -18,18 +18,19 @@ jest.mock('lucide-react', () => ({
   Check: () => <svg data-testid="check-icon" />,
 }));
 
+// Mock ResizeObserver for Tooltip
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 describe('MediaManagerImageCard', () => {
   const mockImage: ShopifyProductImage = {
     id: 123,
+    product_id: 1,
     src: 'http://example.com/img.jpg',
     variant_ids: [],
-    position: 1,
-    product_id: 1,
-    width: 100,
-    height: 100,
-    created_at: '',
-    updated_at: '',
-    admin_graphql_api_id: '',
   };
 
   it('renders checkbox with aria-label', () => {
@@ -47,5 +48,22 @@ describe('MediaManagerImageCard', () => {
 
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
+  });
+
+  it('renders delete button with aria-label', () => {
+    render(
+      <MediaManagerImageCard
+        image={mockImage}
+        isSelected={true}
+        isAssigned={false}
+        isMissingVariantMode={false}
+        isSubmitting={false}
+        onSelectionChange={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const deleteButton = screen.getByRole('button', { name: /delete image 123/i });
+    expect(deleteButton).toBeInTheDocument();
   });
 });
