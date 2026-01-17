@@ -1514,8 +1514,24 @@ export async function checkBulkOperationStatus(
   throw new Error(`Could not retrieve status for bulk operation ${id}.`);
 }
 
+function isValidShopifyBulkUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    // Shopify bulk operations are typically stored on GCS
+    if (parsed.hostname === 'storage.googleapis.com') return true;
+    if (parsed.hostname.endsWith('.shopify.com') || parsed.hostname === 'shopify.com') return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function getBulkOperationResult(url: string): Promise<string> {
-  const response = await fetch(url);
+  if (!isValidShopifyBulkUrl(url)) {
+    throw new Error(`Invalid bulk operation URL: ${url}`);
+  }
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
   }
@@ -1523,7 +1539,10 @@ export async function getBulkOperationResult(url: string): Promise<string> {
 }
 
 export async function downloadBulkOperationResultToFile(url: string, destPath: string): Promise<void> {
-  const response = await fetch(url);
+  if (!isValidShopifyBulkUrl(url)) {
+    throw new Error(`Invalid bulk operation URL: ${url}`);
+  }
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
   }
