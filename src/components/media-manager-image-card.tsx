@@ -75,18 +75,27 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           disabled={isMissingVariantMode}
         />
         <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="icon"
-              className="pointer-events-auto h-6 w-6"
-              disabled={isSubmitting}
-              // No need for stopPropagation on click unless we have a parent click handler
-              aria-label={`Delete image ${image.id}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            </Button>
-          </AlertDialogTrigger>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="pointer-events-auto h-6 w-6"
+                    disabled={isSubmitting}
+                    // No need for stopPropagation on click unless we have a parent click handler
+                    aria-label={`Delete image ${image.id}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </AlertDialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Delete Image</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this image?</AlertDialogTitle>
@@ -119,7 +128,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
             <TooltipTrigger asChild>
               <div
                 className={cn(
-                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
+                  'pointer-events-auto absolute right-1.5 bottom-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
                   !isSelected && 'group-hover:hidden',
                   isMissingVariantMode && 'hidden'
                 )}
