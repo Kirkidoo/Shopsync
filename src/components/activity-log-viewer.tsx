@@ -9,6 +9,17 @@ import { fetchActivityLogs, clearActivityLogs } from '@/app/actions';
 import { Loader2, Trash2, RefreshCw, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { LogEntry } from '@/lib/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const getIcon = (level: string) => {
   switch (level) {
@@ -89,8 +100,8 @@ export function ActivityLogViewer() {
           } else if (result.method === 'incremental') {
             // Deduplicate by ID when merging incrementally
             setLogs((prev) => {
-              const existingIds = new Set(prev.map(log => log.id));
-              const newLogs = (result.logs as LogEntry[]).filter(log => !existingIds.has(log.id));
+              const existingIds = new Set(prev.map((log) => log.id));
+              const newLogs = (result.logs as LogEntry[]).filter((log) => !existingIds.has(log.id));
               return [...newLogs, ...prev];
             });
           }
@@ -105,10 +116,8 @@ export function ActivityLogViewer() {
   );
 
   const handleClearLogs = async () => {
-    if (confirm('Are you sure you want to clear all logs?')) {
-      await clearActivityLogs();
-      setLogs([]);
-    }
+    await clearActivityLogs();
+    setLogs([]);
   };
 
   useEffect(() => {
@@ -136,12 +145,35 @@ export function ActivityLogViewer() {
             {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => loadLogs(false)} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Refresh
           </Button>
-          <Button variant="destructive" size="sm" onClick={handleClearLogs}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete all activity logs from
+                  the server.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleClearLogs}
+                  className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                >
+                  Continue
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </CardHeader>
       <CardContent>
