@@ -22,19 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Loader2,
-  Trash2,
-  Blocks,
-  AlertTriangle,
-} from 'lucide-react';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Loader2, Trash2, Blocks, AlertTriangle } from 'lucide-react';
 import {
   getProductWithImages,
   addImageFromUrl,
@@ -185,9 +174,7 @@ export function MediaManager({
         } else {
           // Rollback specifically this change
           setVariants((prev) =>
-            prev.map((v) =>
-              v.variantId === variantId ? { ...v, imageId: previousImageId } : v
-            )
+            prev.map((v) => (v.variantId === variantId ? { ...v, imageId: previousImageId } : v))
           );
           toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
@@ -196,14 +183,9 @@ export function MediaManager({
     [fetchMediaData, toast]
   );
 
-  const handleAssignImageToMissingVariant = useCallback(
-    (sku: string, imageId: number | null) => {
-      setLocalMissingVariants((prev) =>
-        prev.map((v) => (v.sku === sku ? { ...v, imageId } : v))
-      );
-    },
-    []
-  );
+  const handleAssignImageToMissingVariant = useCallback((sku: string, imageId: number | null) => {
+    setLocalMissingVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, imageId } : v)));
+  }, []);
 
   const handleDeleteImage = useCallback(
     (imageId: number) => {
