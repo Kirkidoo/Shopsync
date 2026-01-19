@@ -6,7 +6,7 @@ import { ShopifyProductImage } from '@/lib/types';
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props: any) => {
-    // eslint-disable-next-line @next/next/no-img-element
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
     return <img {...props} />;
   },
 }));
@@ -47,5 +47,27 @@ describe('MediaManagerImageCard', () => {
 
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
+  });
+
+  it('renders assigned indicator at bottom-right and always visible when assigned', () => {
+    render(
+      <MediaManagerImageCard
+        image={mockImage}
+        isSelected={false}
+        isAssigned={true}
+        isMissingVariantMode={false}
+        isSubmitting={false}
+        onSelectionChange={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const linkIcon = screen.getByTestId('link-icon');
+    const indicatorContainer = linkIcon.parentElement;
+
+    expect(indicatorContainer).toHaveClass('bottom-1.5');
+    expect(indicatorContainer).toHaveClass('right-1.5');
+    expect(indicatorContainer).not.toHaveClass('group-hover:hidden');
+    expect(indicatorContainer).not.toHaveClass('top-1.5');
   });
 });
