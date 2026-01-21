@@ -127,6 +127,17 @@ export function MediaManager({
     });
   }, []);
 
+  // Create a stable key based on image content (ID and SRC) to prevent
+  // unnecessary re-renders of VariantRow when the parent 'images' array reference
+  // changes (e.g., during optimistic updates or refetches) but the image list itself is visually identical.
+  const imagesKey = images.map((img) => `${img.id}:${img.src}`).join('|');
+  const imageOptions = useMemo(() => {
+    return images.map((img) => ({ id: img.id, src: img.src }));
+    // We intentionally depend on the stable key 'imagesKey' rather than 'images'
+    // to preserve memoization when image objects are replaced but identical.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagesKey]);
+
   const unlinkedImages = useMemo(
     () => images.filter((img) => !img.variant_ids || img.variant_ids.length === 0),
     [images]
@@ -728,21 +739,37 @@ export function MediaManager({
                     ? localMissingVariants.map((variant) => (
                         <VariantRow
                           key={variant.sku}
-                          variant={variant}
-                          images={images}
+                          id={variant.sku!}
+                          sku={variant.sku!}
+                          optionDisplay={[
+                            variant.option1Value,
+                            variant.option2Value,
+                            variant.option3Value,
+                          ]
+                            .filter(Boolean)
+                            .join(' / ')}
+                          imageId={variant.imageId}
+                          imageOptions={imageOptions}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImageToMissingVariant}
-                          idType="sku"
                         />
                       ))
                     : variants.map((variant) => (
                         <VariantRow
                           key={variant.variantId}
-                          variant={variant}
-                          images={images}
+                          id={variant.variantId!}
+                          sku={variant.sku!}
+                          optionDisplay={[
+                            variant.option1Value,
+                            variant.option2Value,
+                            variant.option3Value,
+                          ]
+                            .filter(Boolean)
+                            .join(' / ')}
+                          imageId={variant.imageId}
+                          imageOptions={imageOptions}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImage}
-                          idType="variantId"
                         />
                       ))}
                 </TableBody>

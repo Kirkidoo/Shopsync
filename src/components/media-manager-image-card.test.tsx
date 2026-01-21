@@ -1,51 +1,100 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MediaManagerImageCard } from './media-manager-image-card';
 import { ShopifyProductImage } from '@/lib/types';
+import userEvent from '@testing-library/user-event';
+import { TooltipProvider } from '@radix-ui/react-tooltip';
+
+// Mock Lucide icons
+jest.mock('lucide-react', () => ({
+  Trash2: () => <div data-testid="trash-icon" />,
+  Link: () => <div data-testid="link-icon" />,
+  Check: () => <div data-testid="check-icon" />,
+}));
+
+// Mock ResizeObserver for Tooltip
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
 
 // Mock next/image
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props: any) => {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img {...props} />;
+    return <img {...props} alt={props.alt || ''} />;
   },
-}));
-
-// Mock lucide-react
-jest.mock('lucide-react', () => ({
-  Trash2: () => <svg data-testid="trash-icon" />,
-  Link: () => <svg data-testid="link-icon" />,
-  Check: () => <svg data-testid="check-icon" />,
 }));
 
 describe('MediaManagerImageCard', () => {
   const mockImage: ShopifyProductImage = {
     id: 123,
-    src: 'http://example.com/img.jpg',
+    product_id: 456,
+    src: 'https://example.com/image.jpg',
     variant_ids: [],
-    position: 1,
-    product_id: 1,
-    width: 100,
-    height: 100,
-    created_at: '',
-    updated_at: '',
-    admin_graphql_api_id: '',
   };
 
-  it('renders checkbox with aria-label', () => {
-    render(
-      <MediaManagerImageCard
-        image={mockImage}
-        isSelected={false}
-        isAssigned={false}
-        isMissingVariantMode={false}
-        isSubmitting={false}
-        onSelectionChange={jest.fn()}
-        onDelete={jest.fn()}
-      />
-    );
+  const defaultProps = {
+    image: mockImage,
+    isSelected: false,
+    isAssigned: false,
+    isMissingVariantMode: false,
+    isSubmitting: false,
+    onSelectionChange: jest.fn(),
+    onDelete: jest.fn(),
+  };
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders image correctly', () => {
+    render(<MediaManagerImageCard {...defaultProps} />);
+    const image = screen.getByRole('img', { name: /product image 123/i });
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute('src', 'https://example.com/image.jpg');
+  });
+
+  it('shows checkbox when hovered or selected', async () => {
+    const user = userEvent.setup();
+    render(<MediaManagerImageCard {...defaultProps} />);
+
+    // Initially checkbox might be hidden via CSS opacity, but it exists in DOM
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
+
+    // Check selection logic
+    await user.click(checkbox);
+    expect(defaultProps.onSelectionChange).toHaveBeenCalledWith(123, true);
+  });
+
+  it('shows delete button and opens confirmation dialog', async () => {
+    const user = userEvent.setup();
+    render(<MediaManagerImageCard {...defaultProps} />);
+
+    const deleteBtn = screen.getByRole('button', { name: /delete image 123/i });
+    await user.click(deleteBtn);
+
+    // Dialog should appear
+    expect(screen.getByText('Delete this image?')).toBeInTheDocument();
+
+    // Click confirm
+    const confirmBtn = screen.getByRole('button', { name: 'Delete Image' });
+    await user.click(confirmBtn);
+
+    expect(defaultProps.onDelete).toHaveBeenCalledWith(123);
+  });
+
+  it('shows assigned indicator when assigned', async () => {
+      // Wrap in TooltipProvider because the component uses Tooltip
+      render(
+        <TooltipProvider>
+          <MediaManagerImageCard {...defaultProps} isAssigned={true} />
+        </TooltipProvider>
+      );
+
+      // The link icon indicates assignment
+      expect(screen.getByTestId('link-icon')).toBeInTheDocument();
   });
 });

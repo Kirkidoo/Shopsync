@@ -8,21 +8,27 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { Product, ShopifyProductImage } from '@/lib/types';
 
-interface VariantRowProps {
-  variant: Partial<Product>;
-  images: ShopifyProductImage[];
-  isSubmitting: boolean;
-  onAssign: (id: string, imageId: number | null) => void;
-  idType?: 'variantId' | 'sku';
+export interface ImageOption {
+  id: number;
+  src: string;
 }
 
-const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) => {
+interface VariantRowProps {
+  id: string;
+  sku: string;
+  optionDisplay: string;
+  imageId: number | null | undefined;
+  imageOptions: ImageOption[];
+  isSubmitting: boolean;
+  onAssign: (id: string, imageId: number | null) => void;
+}
+
+const ImageSelectContent = memo(({ imageOptions }: { imageOptions: ImageOption[] }) => {
   return (
     <SelectContent>
       <SelectItem value="none">No Image</SelectItem>
-      {images.map((image) => (
+      {imageOptions.map((image) => (
         <SelectItem key={image.id} value={image.id.toString()}>
           <div className="flex items-center gap-2">
             <Image
@@ -43,20 +49,16 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
 ImageSelectContent.displayName = 'ImageSelectContent';
 
 export const VariantRow = memo(
-  ({ variant, images, isSubmitting, onAssign, idType = 'variantId' }: VariantRowProps) => {
-    const id = idType === 'variantId' ? variant.variantId! : variant.sku!;
-
+  ({ id, sku, optionDisplay, imageId, imageOptions, isSubmitting, onAssign }: VariantRowProps) => {
     return (
       <TableRow>
-        <TableCell className="font-medium">{variant.sku}</TableCell>
+        <TableCell className="font-medium">{sku}</TableCell>
         <TableCell className="text-xs text-muted-foreground">
-          {[variant.option1Value, variant.option2Value, variant.option3Value]
-            .filter(Boolean)
-            .join(' / ')}
+          {optionDisplay}
         </TableCell>
         <TableCell>
           <Select
-            value={variant.imageId?.toString() ?? 'none'}
+            value={imageId?.toString() ?? 'none'}
             onValueChange={(value) =>
               onAssign(id, value === 'none' ? null : parseInt(value))
             }
@@ -64,11 +66,11 @@ export const VariantRow = memo(
           >
             <SelectTrigger
               className="w-[180px]"
-              aria-label={`Assign image for variant ${variant.sku}`}
+              aria-label={`Assign image for variant ${sku}`}
             >
               <SelectValue placeholder="Select image..." />
             </SelectTrigger>
-            <ImageSelectContent images={images} />
+            <ImageSelectContent imageOptions={imageOptions} />
           </Select>
         </TableCell>
       </TableRow>
