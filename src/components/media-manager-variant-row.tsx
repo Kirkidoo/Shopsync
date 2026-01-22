@@ -18,9 +18,10 @@ interface VariantRowProps {
   idType?: 'variantId' | 'sku';
 }
 
-const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) => {
+// Extracted to defer rendering until SelectContent is open
+const VariantImageOptions = memo(({ images }: { images: ShopifyProductImage[] }) => {
   return (
-    <SelectContent>
+    <>
       <SelectItem value="none">No Image</SelectItem>
       {images.map((image) => (
         <SelectItem key={image.id} value={image.id.toString()}>
@@ -36,6 +37,22 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
           </div>
         </SelectItem>
       ))}
+    </>
+  );
+});
+
+VariantImageOptions.displayName = 'VariantImageOptions';
+
+const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) => {
+  return (
+    <SelectContent>
+      {/*
+        Optimization: We render VariantImageOptions as a child of SelectContent.
+        SelectContent (Radix UI) only renders its children when the dropdown is open.
+        This prevents the expensive mapping of images from executing when the dropdown is closed,
+        significantly improving performance when there are many variants/images.
+      */}
+      <VariantImageOptions images={images} />
     </SelectContent>
   );
 });
