@@ -1,4 +1,4 @@
-import { startTransition, useState } from 'react';
+import { startTransition, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { AuditResult, Product, MismatchDetail } from '@/lib/types';
 import {
@@ -47,17 +47,17 @@ export function useAuditActions({
 
     // --- Helpers ---
 
-    const handleActionStart = (actionName: string) => {
+    const handleActionStart = useCallback((actionName: string) => {
         setIsFixing(true);
-    };
+    }, []);
 
-    const handleActionEnd = () => {
+    const handleActionEnd = useCallback(() => {
         setIsFixing(false);
-    };
+    }, []);
 
     // --- Mismatch Fixes ---
 
-    const handleFixSingleMismatch = (item: AuditResult, fixType: MismatchDetail['field']) => {
+    const handleFixSingleMismatch = useCallback((item: AuditResult, fixType: MismatchDetail['field']) => {
         if (
             fixType === 'duplicate_in_shopify' ||
             fixType === 'heavy_product_flag'
@@ -90,9 +90,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, setFixedMismatches, toast]);
 
-    const handleMarkAsFixed = (sku: string, fixType: MismatchDetail['field']) => {
+    const handleMarkAsFixed = useCallback((sku: string, fixType: MismatchDetail['field']) => {
         setFixedMismatches((prev) => {
             const next = new Set(prev);
             const key = `${sku}-${fixType}`;
@@ -101,9 +101,9 @@ export function useAuditActions({
             return next;
         });
         toast({ title: "Success", description: `Marked ${fixType} as fixed for ${sku}` });
-    };
+    }, [setFixedMismatches, toast]);
 
-    const handleBulkFix = (
+    const handleBulkFix = useCallback((
         targetHandles?: Set<string>,
         targetTypes?: MismatchDetail['field'][]
     ) => {
@@ -159,11 +159,11 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [reportData, handleActionStart, handleActionEnd, setFixedMismatches, setSelectedHandles, toast]);
 
     // --- Creation ---
 
-    const handleCreate = (item: AuditResult) => {
+    const handleCreate = useCallback((item: AuditResult) => {
         const missingType = item.mismatches.find((m) => m.field === 'missing_in_shopify')?.missingType;
 
         if (!missingType) {
@@ -205,9 +205,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [reportData, fileName, onRefresh, handleActionStart, handleActionEnd, setCreatedProductHandles, toast]);
 
-    const handleMarkAsCreated = (handle: string) => {
+    const handleMarkAsCreated = useCallback((handle: string) => {
         setCreatedProductHandles(prev => {
             const next = new Set(prev);
             next.add(handle);
@@ -215,9 +215,9 @@ export function useAuditActions({
         });
         markProductAsCreated(handle);
         toast({ title: "Success", description: `Marked ${handle} as created.` });
-    };
+    }, [setCreatedProductHandles, toast]);
 
-    const handleBulkCreate = (specificHandles?: Set<string>) => {
+    const handleBulkCreate = useCallback((specificHandles?: Set<string>) => {
         const handlesToCreate = specificHandles || new Set();
         if (handlesToCreate.size === 0) return;
 
@@ -278,9 +278,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [reportData, fileName, handleActionStart, handleActionEnd, setCreatedProductHandles, setSelectedHandles, toast]);
 
-    const handleBulkCreateVariants = (items: AuditResult[]) => {
+    const handleBulkCreateVariants = useCallback((items: AuditResult[]) => {
         handleActionStart("Adding variants...");
         startTransition(async () => {
             try {
@@ -299,11 +299,11 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, onRefresh, toast]);
 
     // --- Deletion ---
 
-    const handleDeleteProduct = (item: AuditResult, specificProduct?: Product) => {
+    const handleDeleteProduct = useCallback((item: AuditResult, specificProduct?: Product) => {
         const productToDelete = specificProduct || item.shopifyProducts[0];
         if (!productToDelete) return;
 
@@ -327,9 +327,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, setReportData, toast]);
 
-    const handleDeleteVariant = (item: AuditResult) => {
+    const handleDeleteVariant = useCallback((item: AuditResult) => {
         const variant = item.shopifyProducts[0];
         if (!variant) return;
 
@@ -358,9 +358,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, setReportData, toast]);
 
-    const handleDeleteUnlinked = (productId: string) => {
+    const handleDeleteUnlinked = useCallback((productId: string) => {
         handleActionStart("Deleting unlinked images...");
         startTransition(async () => {
             try {
@@ -377,9 +377,9 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, toast]);
 
-    const handleBulkDeleteUnlinked = (selectedProductIds: string[]) => {
+    const handleBulkDeleteUnlinked = useCallback((selectedProductIds: string[]) => {
         handleActionStart(`Cleaning images for ${selectedProductIds.length} products...`);
         startTransition(async () => {
             try {
@@ -397,11 +397,11 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, setSelectedHandles, toast]);
 
     // --- Tags ---
 
-    const handleUpdateTags = (customTag: string, selectedItems: AuditResult[]) => {
+    const handleUpdateTags = useCallback((customTag: string, selectedItems: AuditResult[]) => {
         handleActionStart("Updating tags...");
         startTransition(async () => {
             try {
@@ -426,14 +426,14 @@ export function useAuditActions({
                 handleActionEnd();
             }
         });
-    };
+    }, [handleActionStart, handleActionEnd, setUpdatedProductHandles, toast]);
 
     // --- Auto Run (Simple Loop) ---
 
-    const startAutoRun = () => setIsAutoRunning(true);
-    const stopAutoRun = () => setIsAutoRunning(false);
-    const startAutoCreate = () => setIsAutoCreating(true);
-    const stopAutoCreate = () => setIsAutoCreating(false);
+    const startAutoRun = useCallback(() => setIsAutoRunning(true), []);
+    const stopAutoRun = useCallback(() => setIsAutoRunning(false), []);
+    const startAutoCreate = useCallback(() => setIsAutoCreating(true), []);
+    const stopAutoCreate = useCallback(() => setIsAutoCreating(false), []);
 
 
     return {
