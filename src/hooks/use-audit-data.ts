@@ -193,6 +193,15 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         }, {} as Record<string, AuditResult[]>);
     }, [filteredData]);
 
+    const allGroupedByHandle = useMemo(() => {
+        return reportData.reduce((acc, item) => {
+            const handle = getHandle(item);
+            if (!acc[handle]) acc[handle] = [];
+            acc[handle].push(item);
+            return acc;
+        }, {} as Record<string, AuditResult[]>);
+    }, [reportData]);
+
     const groupedBySku = useMemo(() => {
         if (filter !== 'duplicate_in_shopify') return {};
         return filteredData.reduce((acc, item) => {
@@ -252,6 +261,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         filteredData,
         uniqueVendors,
         groupedByHandle,
+        allGroupedByHandle,
         groupedBySku,
         handleKeys,
         paginatedHandleKeys,
