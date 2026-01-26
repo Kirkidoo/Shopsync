@@ -1,6 +1,7 @@
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { logger } from '@/lib/logger';
+import path from 'path';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
 
@@ -83,6 +84,16 @@ export async function getCsvStreamFromFtp(
   csvFileName: string,
   ftpData: FormData
 ): Promise<Readable> {
+  // Sentinel Security Fix: Validate filename to prevent path traversal
+  if (
+    csvFileName.includes('/') ||
+    csvFileName.includes('\\') ||
+    csvFileName.includes('..') ||
+    path.basename(csvFileName) !== csvFileName
+  ) {
+    throw new Error('Invalid filename. Path traversal not allowed.');
+  }
+
   const client = await getFtpClient(ftpData);
   try {
     logger.info('Navigating to FTP directory:', FTP_DIRECTORY);
