@@ -184,6 +184,16 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
     }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, searchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters]);
 
     // Grouping
+    const allGroupedByHandle = useMemo(() => {
+        const map = new Map<string, AuditResult[]>();
+        reportData.forEach((item) => {
+            const handle = getHandle(item);
+            if (!map.has(handle)) map.set(handle, []);
+            map.get(handle)!.push(item);
+        });
+        return map;
+    }, [reportData]);
+
     const groupedByHandle = useMemo(() => {
         return filteredData.reduce((acc, item) => {
             const handle = getHandle(item);
@@ -251,6 +261,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         // Derived
         filteredData,
         uniqueVendors,
+        allGroupedByHandle,
         groupedByHandle,
         groupedBySku,
         handleKeys,
