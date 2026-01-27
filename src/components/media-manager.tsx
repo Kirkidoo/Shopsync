@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useTransition, useMemo, useCallback, useRef, FormEvent } from 'react';
 import Image from 'next/image';
 import {
   Dialog,
@@ -142,7 +142,8 @@ export function MediaManager({
     }
   };
 
-  const handleAddImage = () => {
+  const handleAddImage = (e?: FormEvent) => {
+    e?.preventDefault();
     if (!newImageUrl) {
       toast({
         title: 'URL Required',
@@ -692,19 +693,21 @@ export function MediaManager({
                   <Label htmlFor="new-image-url" className="text-base font-medium">
                     Add New Image
                   </Label>
-                  <div className="mt-2 flex gap-2">
+                  <form className="mt-2 flex gap-2" onSubmit={handleAddImage}>
                     <Input
                       id="new-image-url"
+                      type="url"
+                      required
                       placeholder="https://example.com/image.jpg"
                       value={newImageUrl}
                       onChange={(e) => setNewImageUrl(e.target.value)}
                       disabled={isSubmitting}
                     />
-                    <Button onClick={handleAddImage} disabled={isSubmitting}>
+                    <Button type="submit" disabled={isSubmitting}>
                       {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Add
                     </Button>
-                  </div>
+                  </form>
                 </div>
               )}
             </div>
