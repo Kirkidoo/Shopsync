@@ -1514,8 +1514,33 @@ export async function checkBulkOperationStatus(
   throw new Error(`Could not retrieve status for bulk operation ${id}.`);
 }
 
+// Helper to validate URLs to prevent SSRF
+function validateShopifyUrl(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('Invalid protocol: HTTPS is required');
+    }
+
+    const hostname = parsedUrl.hostname;
+    // Allowlist: shopify.com, *.shopify.com, storage.googleapis.com, cdn.shopify.com
+    const isShopify = hostname === 'shopify.com' || hostname.endsWith('.shopify.com');
+    const isGoogleStorage = hostname === 'storage.googleapis.com';
+    const isShopifyCdn = hostname === 'cdn.shopify.com';
+
+    if (!isShopify && !isGoogleStorage && !isShopifyCdn) {
+      throw new Error(`Invalid hostname: ${hostname} is not allowed`);
+    }
+  } catch (error) {
+    logger.error(`SSRF Protection blocked URL: ${url}`, error);
+    throw new Error('Invalid Shopify Bulk URL');
+  }
+}
+
 export async function getBulkOperationResult(url: string): Promise<string> {
-  const response = await fetch(url);
+  validateShopifyUrl(url);
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
   }
@@ -1523,7 +1548,8 @@ export async function getBulkOperationResult(url: string): Promise<string> {
 }
 
 export async function downloadBulkOperationResultToFile(url: string, destPath: string): Promise<void> {
-  const response = await fetch(url);
+  validateShopifyUrl(url);
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
   }
