@@ -7,9 +7,9 @@
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
- ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+ ✓ Ready in 1455ms
+ ○ Compiling /verify-media-form ...
+ ✓ Compiled /verify-media-form in 7.5s
+ GET /verify-media-form 200 in 8401ms
+ ⨯ upstream image response timed out for https://placehold.co/150
+ ✓ Compiled in 182ms
