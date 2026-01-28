@@ -23,13 +23,7 @@ describe('MediaManagerImageCard', () => {
     id: 123,
     src: 'http://example.com/img.jpg',
     variant_ids: [],
-    position: 1,
     product_id: 1,
-    width: 100,
-    height: 100,
-    created_at: '',
-    updated_at: '',
-    admin_graphql_api_id: '',
   };
 
   it('renders checkbox with aria-label', () => {
