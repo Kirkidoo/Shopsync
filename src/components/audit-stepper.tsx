@@ -73,7 +73,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const ftpSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().optional(),
   port: z.coerce.number().default(21),
   secure: z.boolean().default(false),
 });
@@ -112,6 +112,7 @@ export default function AuditStepper() {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string>('');
+  const [hasSystemPassword, setHasSystemPassword] = useState(false);
 
   const [auditData, setAuditData] = useState<{
     report: AuditResult[];
@@ -162,20 +163,28 @@ export default function AuditStepper() {
     const fetchCredentials = async () => {
       try {
         const creds = await getFtpCredentials();
+        setHasSystemPassword(!!creds.hasPassword);
+
         logger.info('Fetched credentials from server:', {
           host: creds.host,
           username: creds.username,
-          hasPassword: !!creds.password,
+          hasPassword: !!creds.hasPassword,
         });
 
         const currentValues = ftpForm.getValues();
         if (
-          (creds.host || creds.username || creds.password) &&
+          (creds.host || creds.username || creds.hasPassword) &&
           !currentValues.host &&
           !currentValues.username &&
           !currentValues.password
         ) {
-          ftpForm.reset(creds);
+          ftpForm.reset({
+            host: creds.host,
+            username: creds.username,
+            password: '',
+            port: 21,
+            secure: false,
+          });
         }
       } catch (error) {
         logger.error('Failed to fetch default credentials:', error);
@@ -454,7 +463,12 @@ export default function AuditStepper() {
                         <FormItem>
                           <FormLabel>Password</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} className="bg-background/50" />
+                            <Input
+                              type="password"
+                              placeholder={hasSystemPassword ? 'Using system password' : 'Required'}
+                              {...field}
+                              className="bg-background/50"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

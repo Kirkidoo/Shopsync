@@ -7,9 +7,29 @@
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+ ✓ Ready in 1508ms
  ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+ ✓ Compiled / in 13.1s
+ GET / 200 in 14794ms
+ POST / 200 in 198ms
+ POST / 200 in 226ms
+[2026-01-29T22:27:49.679Z] [ERROR] Shopify environment variables are not set.
+ ⨯ Error: Shopify environment variables are not set. Please create a .env.local file.
+    at getShopifyRestClient (src/lib/shopify.ts:487:10)
+    at getShopifyLocations (src/lib/shopify.ts:785:24)
+    at getAvailableLocations (src/app/actions.ts:89:33)
+  485 |   if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
+  486 |     logger.error('Shopify environment variables are not set.');
+> 487 |     throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
+      |          ^
+  488 |   }
+  489 |
+  490 |   const shopify = shopifyApi({ {
+  digest: '76259124'
+}
+ POST / 500 in 877ms

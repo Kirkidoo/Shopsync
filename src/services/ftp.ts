@@ -3,11 +3,23 @@ import { Readable, Writable } from 'stream';
 import { logger } from '@/lib/logger';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
+export const DEFAULT_FTP_HOST = 'ftp.gammapowersports.com';
 
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
-  const password = data.get('password') as string;
+  let password = data.get('password') as string;
+
+  // Sentinel Security Fix: If password is empty, try environment fallback
+  // This prevents the need to send the password to the client in the first place.
+  const envHost = process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || DEFAULT_FTP_HOST;
+  const envUser = process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '';
+  const envPass = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '';
+
+  if (!password && host === envHost && user === envUser && envPass) {
+    logger.info('Using FTP password from environment variables.');
+    password = envPass;
+  }
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
