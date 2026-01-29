@@ -44,6 +44,7 @@ import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
 import { log, getLogs, getLogsSince, clearLogs } from '@/services/logger';
 import { logger } from '@/lib/logger';
+import { DEFAULT_FTP_HOST } from '@/services/ftp';
 
 
 
@@ -74,11 +75,13 @@ export async function listCsvFiles(data: FormData) {
 }
 
 export async function getFtpCredentials() {
-  const defaultHost = 'ftp.gammapowersports.com'; // New default
+  const envPassword = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD;
+
   return {
-    host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
+    host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || DEFAULT_FTP_HOST,
     username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-    password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+    password: '', // SENTINEL FIX: Do not return password to client
+    hasPassword: !!envPassword, // Flag to indicate if password exists
   };
 }
 
