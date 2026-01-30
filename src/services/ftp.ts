@@ -7,7 +7,21 @@ const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
-  const password = data.get('password') as string;
+  let password = data.get('password') as string;
+
+  // Sentinel Security Fix: Replace placeholder with env password if host matches.
+  const PLACEHOLDER_PASSWORD = '********';
+  if (password === PLACEHOLDER_PASSWORD) {
+    const defaultHost = 'ftp.gammapowersports.com';
+    const envHost = process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost;
+
+    // Strict check: Only use stored password if the host matches the stored host.
+    if (host.toLowerCase() === envHost.toLowerCase()) {
+      password = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '';
+    } else {
+      throw new Error('Security Error: Cannot use stored password for a different host.');
+    }
+  }
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
