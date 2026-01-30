@@ -184,6 +184,18 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
     }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, searchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters]);
 
     // Grouping
+    const allShopifyVariantsByHandle = useMemo(() => {
+        const map: Record<string, AuditResult[]> = {};
+        reportData.forEach((item) => {
+            const handle = item.shopifyProducts[0]?.handle;
+            if (handle) {
+                if (!map[handle]) map[handle] = [];
+                map[handle].push(item);
+            }
+        });
+        return map;
+    }, [reportData]);
+
     const groupedByHandle = useMemo(() => {
         return filteredData.reduce((acc, item) => {
             const handle = getHandle(item);
@@ -253,6 +265,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         uniqueVendors,
         groupedByHandle,
         groupedBySku,
+        allShopifyVariantsByHandle,
         handleKeys,
         paginatedHandleKeys,
         totalPages,

@@ -12,6 +12,7 @@ interface AuditTableProps {
     filter: string;
     selectedHandles: Set<string>;
     data: AuditResult[];
+    allShopifyVariantsByHandle: Record<string, AuditResult[]>;
     imageCounts: Record<string, number>;
     loadingImageCounts: Set<string>;
     isFixing: boolean;
@@ -44,7 +45,7 @@ interface AuditTableProps {
 
 export function AuditTable({
     paginatedHandleKeys, filteredGroupedByHandle, groupedBySku, filter, selectedHandles, data,
-    imageCounts, loadingImageCounts, isFixing, isAutoRunning, isAutoCreating,
+    allShopifyVariantsByHandle, imageCounts, loadingImageCounts, isFixing, isAutoRunning, isAutoCreating,
     handleSelectHandle, handleDeleteUnlinked, handleBulkFix, handleMarkAsCreated, handleCreate,
     handleOpenMissingVariantMediaManager, handleBulkCreateVariants, setEditingMediaFor, setEditingMissingMedia,
     handleFixSingleMismatch, handleMarkAsFixed, handleDeleteVariant, handleDeleteProduct,
@@ -105,9 +106,7 @@ export function AuditTable({
                     const items = filteredGroupedByHandle[handle];
 
                     // Optimization: calculate these here instead of inside the item or passing large data
-                    const allVariantsForHandleInShopify = data.filter(
-                        (d) => d.shopifyProducts[0]?.handle === handle
-                    );
+                    const allVariantsForHandleInShopify = allShopifyVariantsByHandle[handle] || [];
                     const notInCsv = items?.every((i) => i.status === 'not_in_csv');
                     const isOnlyVariantNotInCsv =
                         !!(notInCsv && items && allVariantsForHandleInShopify.length === items.length);
