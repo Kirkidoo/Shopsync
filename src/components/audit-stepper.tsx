@@ -161,21 +161,25 @@ export default function AuditStepper() {
   useEffect(() => {
     const fetchCredentials = async () => {
       try {
-        const creds = await getFtpCredentials();
+        const { hasPassword, ...creds } = await getFtpCredentials();
         logger.info('Fetched credentials from server:', {
           host: creds.host,
           username: creds.username,
-          hasPassword: !!creds.password,
+          hasPassword,
         });
 
         const currentValues = ftpForm.getValues();
         if (
-          (creds.host || creds.username || creds.password) &&
+          (creds.host || creds.username || hasPassword) &&
           !currentValues.host &&
           !currentValues.username &&
           !currentValues.password
         ) {
-          ftpForm.reset(creds);
+          ftpForm.reset({
+            ...defaultFtpCredentials,
+            ...creds,
+            password: hasPassword ? '********' : '',
+          });
         }
       } catch (error) {
         logger.error('Failed to fetch default credentials:', error);
