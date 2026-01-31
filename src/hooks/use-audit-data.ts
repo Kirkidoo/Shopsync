@@ -204,6 +204,15 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         }, {} as Record<string, Product[]>);
     }, [filteredData, filter]);
 
+    const allGroupedByHandle = useMemo(() => {
+        return reportData.reduce((acc, item) => {
+            const handle = getHandle(item);
+            if (!acc[handle]) acc[handle] = [];
+            acc[handle].push(item);
+            return acc;
+        }, {} as Record<string, AuditResult[]>);
+    }, [reportData]);
+
 
     // Pagination
     const handleKeys = filter === 'duplicate_in_shopify'
@@ -252,6 +261,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         filteredData,
         uniqueVendors,
         groupedByHandle,
+        allGroupedByHandle,
         groupedBySku,
         handleKeys,
         paginatedHandleKeys,
