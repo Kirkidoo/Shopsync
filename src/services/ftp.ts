@@ -7,7 +7,32 @@ const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
-  const password = data.get('password') as string;
+  let password = data.get('password') as string;
+
+  // Sentinel Security Fix: Use stored password if placeholder is provided AND host matches environment.
+  // This prevents the client from knowing the password, but also prevents SSRF/credential leaks
+  // by ensuring we only substitute the password for the authorized host.
+  if (password === '********') {
+    const defaultHost = 'ftp.gammapowersports.com';
+    const envHost = process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost;
+
+    // Simple normalization for comparison
+    const normalizedHost = host ? host.trim().toLowerCase() : '';
+    const normalizedEnvHost = envHost ? envHost.trim().toLowerCase() : '';
+
+    if (normalizedHost === normalizedEnvHost) {
+      const envPassword = process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD;
+      if (envPassword) {
+        password = envPassword;
+        logger.info('Using stored FTP password from environment.');
+      } else {
+         logger.warn('Password placeholder provided but no password found in environment.');
+      }
+    } else {
+      logger.warn('SECURITY ALERT: Password placeholder provided but host does not match configured environment host. Denying credential substitution.');
+      // We purposefully leave password as '********' so authentication fails
+    }
+  }
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
