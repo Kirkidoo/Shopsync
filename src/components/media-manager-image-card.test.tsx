@@ -48,4 +48,21 @@ describe('MediaManagerImageCard', () => {
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
   });
+
+  it('renders assigned indicator with aria-label when assigned', () => {
+    render(
+      <MediaManagerImageCard
+        image={{ ...mockImage, variant_ids: [456, 789] }}
+        isSelected={false}
+        isAssigned={true}
+        isMissingVariantMode={false}
+        isSubmitting={false}
+        onSelectionChange={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const button = screen.getByRole('button', { name: /assigned to 2 variants/i });
+    expect(button).toBeInTheDocument();
+  });
 });
