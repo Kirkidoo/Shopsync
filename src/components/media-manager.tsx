@@ -96,6 +96,11 @@ export function MediaManager({
     variantsRef.current = variants;
   }, [variants]);
 
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -207,7 +212,8 @@ export function MediaManager({
 
   const handleDeleteImage = useCallback(
     (imageId: number) => {
-      const imageToDelete = images.find((img) => img.id === imageId);
+      const currentImages = imagesRef.current;
+      const imageToDelete = currentImages.find((img) => img.id === imageId);
       if (imageToDelete && imageToDelete.variant_ids.length > 0) {
         toast({
           title: 'Cannot Delete',
@@ -221,7 +227,14 @@ export function MediaManager({
         const result = await deleteImage(productId, imageId);
         if (result.success) {
           toast({ title: 'Success!', description: 'Image has been deleted.' });
-          const newImages = images.filter((img) => img.id !== imageId);
+          // We use currentImages here to filter, ensuring we have latest state at time of function execution
+          // But wait, if we are inside async, we should use imagesRef.current AGAIN or rely on functional update?
+          // Functional update is better for state setter, but we need to compute new length.
+
+          // Let's use functional update for setImages to be safe, but we need the count.
+          // Using imagesRef.current is safe enough as it tracks state.
+          const currentImagesRef = imagesRef.current;
+          const newImages = currentImagesRef.filter((img) => img.id !== imageId);
           setImages(newImages);
           onImageCountChange(newImages.length);
         } else {
@@ -229,7 +242,7 @@ export function MediaManager({
         }
       });
     },
-    [images, productId, onImageCountChange, toast]
+    [productId, onImageCountChange, toast]
   );
 
   const handleBulkDelete = () => {
