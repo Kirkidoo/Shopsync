@@ -165,17 +165,23 @@ export default function AuditStepper() {
         logger.info('Fetched credentials from server:', {
           host: creds.host,
           username: creds.username,
-          hasPassword: !!creds.password,
+          hasPassword: creds.hasPassword,
         });
 
         const currentValues = ftpForm.getValues();
         if (
-          (creds.host || creds.username || creds.password) &&
+          (creds.host || creds.username || creds.hasPassword) &&
           !currentValues.host &&
           !currentValues.username &&
           !currentValues.password
         ) {
-          ftpForm.reset(creds);
+          ftpForm.reset({
+            host: creds.host,
+            username: creds.username,
+            password: creds.hasPassword ? '********' : '',
+            port: 21,
+            secure: false,
+          });
         }
       } catch (error) {
         logger.error('Failed to fetch default credentials:', error);
