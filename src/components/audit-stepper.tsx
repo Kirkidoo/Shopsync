@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Frown, Loader2, LogIn, Server, FileText, Database, Check, Clock } from 'lucide-react';
+import { Frown, Loader2, LogIn, Server, FileText, Database, Check, Clock, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { logger } from '@/lib/logger';
 
@@ -124,6 +124,7 @@ export default function AuditStepper() {
   const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null } | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
 
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -454,7 +455,27 @@ export default function AuditStepper() {
                         <FormItem>
                           <FormLabel>Password</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} className="bg-background/50" />
+                            <div className="relative">
+                              <Input
+                                type={showPassword ? 'text' : 'password'}
+                                {...field}
+                                className="bg-background/50 pr-10"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                onClick={() => setShowPassword(!showPassword)}
+                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <Eye className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </Button>
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
