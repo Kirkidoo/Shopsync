@@ -158,13 +158,6 @@ export function findMismatches(
 
   // Category Tag Check
   if (csvProduct.category) {
-    const tags = shopifyProduct.tags
-      ? shopifyProduct.tags
-        .toLowerCase()
-        .split(',')
-        .map((t) => t.trim())
-      : [];
-
     const categoryLower = csvProduct.category.toLowerCase().trim();
     if (!tags.includes(categoryLower)) {
       mismatches.push({
