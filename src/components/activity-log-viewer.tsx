@@ -89,8 +89,8 @@ export function ActivityLogViewer() {
           } else if (result.method === 'incremental') {
             // Deduplicate by ID when merging incrementally
             setLogs((prev) => {
-              const existingIds = new Set(prev.map(log => log.id));
-              const newLogs = (result.logs as LogEntry[]).filter(log => !existingIds.has(log.id));
+              const existingIds = new Set(prev.map((log) => log.id));
+              const newLogs = (result.logs as LogEntry[]).filter((log) => !existingIds.has(log.id));
               return [...newLogs, ...prev];
             });
           }

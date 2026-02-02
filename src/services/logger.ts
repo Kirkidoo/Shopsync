@@ -68,7 +68,9 @@ export async function getLogs(): Promise<LogEntry[]> {
   }
 }
 
-export async function getLogsSince(lastKnownId: string): Promise<{ logs: LogEntry[], method: 'incremental' | 'replace' } | null> {
+export async function getLogsSince(
+  lastKnownId: string
+): Promise<{ logs: LogEntry[]; method: 'incremental' | 'replace' } | null> {
   await ensureLogFile();
   try {
     const content = await fs.readFile(LOG_FILE_PATH, 'utf-8');
@@ -82,7 +84,7 @@ export async function getLogsSince(lastKnownId: string): Promise<{ logs: LogEntr
       return null;
     }
 
-    const lastKnownIndex = allLogs.findIndex(log => log.id === lastKnownId);
+    const lastKnownIndex = allLogs.findIndex((log) => log.id === lastKnownId);
 
     if (lastKnownIndex === -1) {
       return { logs: allLogs, method: 'replace' };

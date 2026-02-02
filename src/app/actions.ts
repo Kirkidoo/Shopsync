@@ -45,9 +45,6 @@ import * as auditService from '@/services/audit';
 import { log, getLogs, getLogsSince, clearLogs } from '@/services/logger';
 import { logger } from '@/lib/logger';
 
-
-
-
 const GAMMA_WAREhouse_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
   ? parseInt(process.env.GAMMA_WAREHOUSE_LOCATION_ID, 10)
   : 93998154045;
@@ -117,8 +114,12 @@ import { downloadBulkOperationResultToFile } from '@/lib/shopify';
 
 // --- Helper: JSONL Generator ---
 // --- Helper: JSONL Generator ---
-async function* parseJsonlGenerator(filePath: string, locationId?: number): AsyncGenerator<Product> {
-  const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+async function* parseJsonlGenerator(
+  filePath: string,
+  locationId?: number
+): AsyncGenerator<Product> {
+  const GAMMA_LOCATION_ID =
+    locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
   const TARGET_LOCATION_URL_SUFFIX = `Location/${GAMMA_LOCATION_ID}`;
 
   // Pass 1: Build Inventory Map
@@ -224,18 +225,20 @@ async function* parseJsonlGenerator(filePath: string, locationId?: number): Asyn
             mediaUrl: null,
             category: null,
             option1Name: null,
-            option1Value: obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
+            option1Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
             option2Name: null,
-            option2Value: obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
+            option2Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
             option3Name: null,
-            option3Value: obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
+            option3Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
             imageId: null,
             templateSuffix: parent.templateSuffix,
             locationIds: [], // We filtered, so implied it's at this location. We don't need full list for audit purposes right now.
           } as Product;
         }
       }
-
     } catch (e) {
       logger.error('Error parsing JSONL line:', e);
     }
@@ -243,11 +246,15 @@ async function* parseJsonlGenerator(filePath: string, locationId?: number): Asyn
 }
 
 // Parse JSONL and return both filtered products AND a set of all SKUs in Shopify
-async function parseJsonlWithAllSkus(filePath: string, locationId?: number): Promise<{
+async function parseJsonlWithAllSkus(
+  filePath: string,
+  locationId?: number
+): Promise<{
   products: Product[];
   allSkusInShopify: Set<string>;
 }> {
-  const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+  const GAMMA_LOCATION_ID =
+    locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
   const TARGET_LOCATION_URL_SUFFIX = `Location/${GAMMA_LOCATION_ID}`;
 
   // Pass 1: Build Inventory Map AND collect all SKUs
@@ -353,18 +360,20 @@ async function parseJsonlWithAllSkus(filePath: string, locationId?: number): Pro
             mediaUrl: null,
             category: null,
             option1Name: null,
-            option1Value: obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
+            option1Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || obj.option1,
             option2Name: null,
-            option2Value: obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
+            option2Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || obj.option2,
             option3Name: null,
-            option3Value: obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
+            option3Value:
+              obj.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || obj.option3,
             imageId: null,
             templateSuffix: parent.templateSuffix,
             locationIds: [],
           } as Product);
         }
       }
-
     } catch (e) {
       logger.error('Error parsing JSONL line:', e);
     }
@@ -415,11 +424,17 @@ export async function checkBulkOperationStatus(
   return await checkShopifyBulkOpStatus(id);
 }
 
-export async function getBulkOperationResultAndParse(url: string, locationId?: number): Promise<Product[] | null> {
+export async function getBulkOperationResultAndParse(
+  url: string,
+  locationId?: number
+): Promise<Product[] | null> {
   await ensureCacheDirExists();
   try {
     await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
-    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+    await fsPromises.writeFile(
+      CACHE_INFO_PATH,
+      JSON.stringify({ lastModified: new Date().toISOString() })
+    );
 
     // Convert to array for compatibility (Step 1)
     const products: Product[] = [];
@@ -434,14 +449,20 @@ export async function getBulkOperationResultAndParse(url: string, locationId?: n
 }
 
 // Download and parse bulk result, also returning all SKUs in Shopify
-export async function getBulkOperationResultAndParseWithAllSkus(url: string, locationId?: number): Promise<{
+export async function getBulkOperationResultAndParseWithAllSkus(
+  url: string,
+  locationId?: number
+): Promise<{
   products: Product[];
   allSkusInShopify: Set<string>;
 } | null> {
   await ensureCacheDirExists();
   try {
     await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
-    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
+    await fsPromises.writeFile(
+      CACHE_INFO_PATH,
+      JSON.stringify({ lastModified: new Date().toISOString() })
+    );
     return await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
   } catch (error) {
     logger.error('Failed to download or parse bulk result', error);
@@ -449,14 +470,18 @@ export async function getBulkOperationResultAndParseWithAllSkus(url: string, loc
   }
 }
 
-
 export async function runBulkAuditComparison(
   csvProducts: Product[],
   shopifyProducts: Product[],
   csvFileName: string,
   allSkusInShopify?: Set<string>
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] }> {
-  return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+  return await auditService.runBulkAuditComparison(
+    csvProducts,
+    shopifyProducts,
+    csvFileName,
+    allSkusInShopify
+  );
 }
 
 // Run bulk audit entirely on server - reads cache, runs comparison, returns results
@@ -468,9 +493,19 @@ export async function runBulkAuditFromCache(
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
   try {
     await fsPromises.access(CACHE_FILE_PATH);
-    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
-    logger.info(`Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`);
-    return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(
+      CACHE_FILE_PATH,
+      locationId
+    );
+    logger.info(
+      `Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`
+    );
+    return await auditService.runBulkAuditComparison(
+      csvProducts,
+      shopifyProducts,
+      csvFileName,
+      allSkusInShopify
+    );
   } catch (error) {
     logger.error('Failed to run bulk audit from cache', error);
     return null;
@@ -487,10 +522,23 @@ export async function runBulkAuditFromDownload(
   await ensureCacheDirExists();
   try {
     await downloadBulkOperationResultToFile(resultUrl, CACHE_FILE_PATH);
-    await fsPromises.writeFile(CACHE_INFO_PATH, JSON.stringify({ lastModified: new Date().toISOString() }));
-    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
-    logger.info(`Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`);
-    return await auditService.runBulkAuditComparison(csvProducts, shopifyProducts, csvFileName, allSkusInShopify);
+    await fsPromises.writeFile(
+      CACHE_INFO_PATH,
+      JSON.stringify({ lastModified: new Date().toISOString() })
+    );
+    const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(
+      CACHE_FILE_PATH,
+      locationId
+    );
+    logger.info(
+      `Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`
+    );
+    return await auditService.runBulkAuditComparison(
+      csvProducts,
+      shopifyProducts,
+      csvFileName,
+      allSkusInShopify
+    );
   } catch (error) {
     logger.error('Failed to run bulk audit from download', error);
     return null;
@@ -595,11 +643,11 @@ export async function fixMultipleMismatches(
   const itemsToProcess =
     targetFields && targetFields.length > 0
       ? items
-        .map((item) => ({
-          ...item,
-          mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
-        }))
-        .filter((item) => item.mismatches.length > 0)
+          .map((item) => ({
+            ...item,
+            mismatches: item.mismatches.filter((m) => targetFields.includes(m.field)),
+          }))
+          .filter((item) => item.mismatches.length > 0)
       : items;
 
   // Group items by product ID to process fixes for the same product together
@@ -641,11 +689,13 @@ export async function fixMultipleMismatches(
 
         for (const mismatch of item.mismatches) {
           fixPromises.push(
-            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then((result) => ({
-              sku: item.sku,
-              field: mismatch.field,
-              ...result,
-            }))
+            _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then(
+              (result) => ({
+                sku: item.sku,
+                field: mismatch.field,
+                ...result,
+              })
+            )
           );
         }
       }
@@ -705,7 +755,11 @@ export async function bulkUpdateTags(
       const shopifyProduct = item.shopifyProducts[0];
 
       if (!shopifyProduct) {
-        itemResults.push({ sku: item.sku, success: false, message: 'Product not found in Shopify.' });
+        itemResults.push({
+          sku: item.sku,
+          success: false,
+          message: 'Product not found in Shopify.',
+        });
         continue;
       }
 
@@ -723,7 +777,7 @@ export async function bulkUpdateTags(
           .map((t) => t.trim())
           .filter(Boolean)
           .slice(0, 3)
-          .forEach(t => tagSet.add(t));
+          .forEach((t) => tagSet.add(t));
       }
 
       if (csvProduct.category) {
@@ -750,9 +804,7 @@ export async function bulkUpdateTags(
     }
   };
 
-  const workers = Array(Math.min(items.length, CONCURRENCY_LIMIT))
-    .fill(null)
-    .map(worker);
+  const workers = Array(Math.min(items.length, CONCURRENCY_LIMIT)).fill(null).map(worker);
   await Promise.all(workers);
 
   if (successCount > 0) {
