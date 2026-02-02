@@ -1,17 +1,61 @@
 'use client';
 
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AuditResult, AuditStatus, DuplicateSku, Summary, MismatchDetail, Product } from '@/lib/types';
+import {
+  AuditResult,
+  AuditStatus,
+  DuplicateSku,
+  Summary,
+  MismatchDetail,
+  Product,
+} from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionHeader,
+} from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 
 // Components
@@ -30,7 +74,29 @@ import { useAuditActions } from '@/hooks/use-audit-actions';
 
 // Utils
 import { downloadCsv, clearAuditMemory, cn } from '@/lib/utils';
-import { AlertTriangle, PlusCircle, XCircle, Copy, FileWarning, CheckCircle2, Siren, Loader2, ArrowLeft, RefreshCw, Download, Check, Wrench, Eye, DollarSign, List, MapPin, Trash2, Bot, ChevronDown, ImageIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  PlusCircle,
+  XCircle,
+  Copy,
+  FileWarning,
+  CheckCircle2,
+  Siren,
+  Loader2,
+  ArrowLeft,
+  RefreshCw,
+  Download,
+  Check,
+  Wrench,
+  Eye,
+  DollarSign,
+  List,
+  MapPin,
+  Trash2,
+  Bot,
+  ChevronDown,
+  ImageIcon,
+} from 'lucide-react';
 
 const statusConfig: {
   [key in AuditStatus]: {
@@ -88,9 +154,7 @@ const hasAllExpectedTags = (
 ): boolean => {
   if (!shopifyTags) return false;
 
-  const currentTags = new Set(
-    shopifyTags.split(',').map((t) => t.trim().toLowerCase())
-  );
+  const currentTags = new Set(shopifyTags.split(',').map((t) => t.trim().toLowerCase()));
 
   // 1. Check CSV Tags (first 3)
   if (csvTags) {
@@ -396,13 +460,15 @@ interface AuditReportProps {
 }
 
 const MismatchIcons = ({ mismatches }: { mismatches: MismatchDetail[] }) => {
-  const fields = Array.from(new Set(mismatches.map(m => m.field)));
+  const fields = Array.from(new Set(mismatches.map((m) => m.field)));
   return (
     <div className="flex items-center gap-1">
-      {fields.slice(0, 3).map(f => (
+      {fields.slice(0, 3).map((f) => (
         <AlertTriangle key={f} className="h-4 w-4 text-yellow-500" />
       ))}
-      {fields.length > 3 && <span className="text-xs text-muted-foreground">+{fields.length - 3}</span>}
+      {fields.length > 3 && (
+        <span className="text-xs text-muted-foreground">+{fields.length - 3}</span>
+      )}
     </div>
   );
 };
@@ -419,19 +485,32 @@ export default function AuditReport({
 
   // Data Logic Hook
   const {
-    reportData, setReportData,
-    reportSummary, setReportSummary,
-    filter, setFilter,
-    searchTerm, setSearchTerm,
-    currentPage, setCurrentPage,
-    handlesPerPage, setHandlesPerPage,
-    mismatchFilters, setMismatchFilters,
-    filterSingleSku, setFilterSingleSku,
-    selectedVendor, setSelectedVendor,
-    filterCustomTag, setFilterCustomTag,
-    fixedMismatches, setFixedMismatches,
-    createdProductHandles, setCreatedProductHandles,
-    updatedProductHandles, setUpdatedProductHandles,
+    reportData,
+    setReportData,
+    reportSummary,
+    setReportSummary,
+    filter,
+    setFilter,
+    searchTerm,
+    setSearchTerm,
+    currentPage,
+    setCurrentPage,
+    handlesPerPage,
+    setHandlesPerPage,
+    mismatchFilters,
+    setMismatchFilters,
+    filterSingleSku,
+    setFilterSingleSku,
+    selectedVendor,
+    setSelectedVendor,
+    filterCustomTag,
+    setFilterCustomTag,
+    fixedMismatches,
+    setFixedMismatches,
+    createdProductHandles,
+    setCreatedProductHandles,
+    updatedProductHandles,
+    setUpdatedProductHandles,
     filteredData,
     uniqueVendors,
     groupedByHandle,
@@ -442,7 +521,7 @@ export default function AuditReport({
     currentSummary,
     columnFilters,
     setColumnFilters,
-    availableCsvColumns
+    availableCsvColumns,
   } = useAuditData({ initialData: data, initialSummary: summary });
 
   // Component Local State (UI)
@@ -488,7 +567,7 @@ export default function AuditReport({
     startAutoCreate,
     stopAutoCreate,
     setIsAutoRunning,
-    setIsAutoCreating // Exposed for effects if needed
+    setIsAutoCreating, // Exposed for effects if needed
   } = useAuditActions({
     reportData,
     setReportData,
@@ -497,7 +576,7 @@ export default function AuditReport({
     setFixedMismatches,
     setCreatedProductHandles,
     setUpdatedProductHandles,
-    setSelectedHandles
+    setSelectedHandles,
   });
 
   // Derived UI State
@@ -547,28 +626,28 @@ export default function AuditReport({
     }
   }, [data, reportData]);
 
-
   // Auto Run Logic (Implemented in Component as it requires iterating view data)
   const processingRef = useRef(false);
 
   useEffect(() => {
     if (isAutoRunning && !isFixing && !processingRef.current) {
       // Find next item on current page or filtered list
-      const itemToFix = filteredData.find(item =>
-        item.status === 'mismatched' && item.mismatches.length > 0
+      const itemToFix = filteredData.find(
+        (item) => item.status === 'mismatched' && item.mismatches.length > 0
       );
 
       if (itemToFix) {
         processingRef.current = true;
         // Fix all fixable mismatches for this item
-        const fixableTypes = itemToFix.mismatches
-          .map(m => m.field); // All remaining types are fixable or handled
-
+        const fixableTypes = itemToFix.mismatches.map((m) => m.field); // All remaining types are fixable or handled
 
         if (fixableTypes.length > 0) {
-          handleBulkFix(new Set([
-            itemToFix.shopifyProducts[0]?.handle || itemToFix.sku // Using handle logic
-          ]), fixableTypes); // Pass handle set to bulk fix or single? 
+          handleBulkFix(
+            new Set([
+              itemToFix.shopifyProducts[0]?.handle || itemToFix.sku, // Using handle logic
+            ]),
+            fixableTypes
+          ); // Pass handle set to bulk fix or single?
           // handleBulkFix handles Sets of handles.
           // Ideally we call handleFixSingleMismatch for atomic updates but bulk is fine too.
           // Wait, handleBulkFix is async wrapped in startTransition.
@@ -577,7 +656,10 @@ export default function AuditReport({
           // So we just trigger it.
           // `handleBulkFix` in hook takes (targetHandles, types).
           // Logic to extract handle:
-          const h = itemToFix.shopifyProducts[0]?.handle || itemToFix.csvProducts[0]?.handle || `no-handle-${itemToFix.sku}`;
+          const h =
+            itemToFix.shopifyProducts[0]?.handle ||
+            itemToFix.csvProducts[0]?.handle ||
+            `no-handle-${itemToFix.sku}`;
 
           // Reuse hook function but we need to ensure it uses the handle correctly
           // handleBulkFix uses reportData, so passing handle is enough.
@@ -592,8 +674,8 @@ export default function AuditReport({
         // No more items
         setIsAutoRunning(false);
         toast({
-          title: "Auto run complete!",
-          description: "All fixable issues have been processed.",
+          title: 'Auto run complete!',
+          description: 'All fixable issues have been processed.',
         });
       }
     } else if (!isFixing) {
@@ -603,8 +685,8 @@ export default function AuditReport({
 
   useEffect(() => {
     if (isAutoCreating && !isFixing && !processingRef.current) {
-      const itemToCreate = filteredData.find(item =>
-        item.status === 'missing_in_shopify' // && !createdProductHandles.has(handle) - filteredData already excludes
+      const itemToCreate = filteredData.find(
+        (item) => item.status === 'missing_in_shopify' // && !createdProductHandles.has(handle) - filteredData already excludes
       );
 
       if (itemToCreate) {
@@ -613,8 +695,8 @@ export default function AuditReport({
       } else {
         setIsAutoCreating(false);
         toast({
-          title: "Auto create complete!",
-          description: "All missing products have been created.",
+          title: 'Auto create complete!',
+          description: 'All missing products have been created.',
         });
       }
     } else if (!isFixing) {
@@ -627,7 +709,7 @@ export default function AuditReport({
   const stopAutoTagUpdate = () => setIsAutoUpdatingTags(false);
   const confirmAutoTagUpdate = (tag: string) => {
     setShowAutoTagDialog(false);
-    // Logic for massive auto update... 
+    // Logic for massive auto update...
     // This was simpler in original: just call bulkUpdateTags for all filteredData?
     // Let's implement simpler version: pass all handles
     // handleUpdateTags(tag, reportData...);
@@ -636,13 +718,10 @@ export default function AuditReport({
     handleUpdateTags(tag, filteredData);
   };
 
-
   // Helpers for Media Manager
   const editingMissingMediaVariants = editingMissingMedia
-    ? groupedByHandle[editingMissingMedia]?.map(i => i.csvProducts[0]).filter(Boolean) || []
+    ? groupedByHandle[editingMissingMedia]?.map((i) => i.csvProducts[0]).filter(Boolean) || []
     : [];
-
-
 
   const handleOpenMissingVariantMediaManager = (items: AuditResult[]) => {
     if (items.length === 0) return;
@@ -658,7 +737,6 @@ export default function AuditReport({
       .map((i) => i.csvProducts[0])
       .filter((p): p is Product => !!p);
   }, [editingMissingVariantMedia]);
-
 
   const renderRegularReport = () => (
     <Accordion type="single" collapsible className="w-full">
@@ -707,27 +785,28 @@ export default function AuditReport({
               {(filter === 'mismatched' ||
                 (filter === 'missing_in_shopify' && isMissingProductCase) ||
                 filter === 'all') && (
-                  <div className="p-3 pl-4">
-                    <Checkbox
-                      checked={selectedHandles.has(handle)}
-                      onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
-                      aria-label={`Select product ${handle} `}
-                      disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
-                    />
-                  </div>
-                )}
+                <div className="p-3 pl-4">
+                  <Checkbox
+                    checked={selectedHandles.has(handle)}
+                    onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                    aria-label={`Select product ${handle} `}
+                    disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
+                  />
+                </div>
+              )}
               <AccordionTrigger
                 className="flex-grow p-3 text-left"
                 disabled={isFixing || isAutoRunning || isAutoCreating}
               >
                 <div className="flex flex-grow items-center gap-4">
                   <config.icon
-                    className={`h - 5 w - 5 shrink - 0 ${overallStatus === 'mismatched'
-                      ? 'text-yellow-500'
-                      : overallStatus === 'missing_in_shopify'
-                        ? 'text-red-500'
-                        : 'text-blue-500'
-                      } `}
+                    className={`h - 5 w - 5 - 0 shrink ${
+                      overallStatus === 'mismatched'
+                        ? 'text-yellow-500'
+                        : overallStatus === 'missing_in_shopify'
+                          ? 'text-red-500'
+                          : 'text-blue-500'
+                    } `}
                   />
                   <div className="flex-grow text-left">
                     <p className="font-semibold">{productTitle}</p>
@@ -1062,8 +1141,8 @@ export default function AuditReport({
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This will permanently delete the variant with SKU &quot;{item.sku}&quot;
-                                      from Shopify. This action cannot be undone.
+                                      This will permanently delete the variant with SKU &quot;
+                                      {item.sku}&quot; from Shopify. This action cannot be undone.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
@@ -1100,8 +1179,8 @@ export default function AuditReport({
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                All variants for &quot;{productTitle}&quot; are not in the CSV. This will
-                                permanently delete the entire product and its {items.length}{' '}
+                                All variants for &quot;{productTitle}&quot; are not in the CSV. This
+                                will permanently delete the entire product and its {items.length}{' '}
                                 variants from Shopify. This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
@@ -1126,20 +1205,22 @@ export default function AuditReport({
         );
       })}
     </Accordion>
-
   );
 
-  const hasSelectionWithUnlinkedImages = selectedHandles.size > 0 && Array.from(selectedHandles).some(h => {
-    const items = groupedByHandle[h];
-    const pid = items?.[0]?.shopifyProducts[0]?.id;
-    const count = pid ? imageCounts[pid] : undefined;
-    return count !== undefined && items && count > items.length;
-  });
+  const hasSelectionWithUnlinkedImages =
+    selectedHandles.size > 0 &&
+    Array.from(selectedHandles).some((h) => {
+      const items = groupedByHandle[h];
+      const pid = items?.[0]?.shopifyProducts[0]?.id;
+      const count = pid ? imageCounts[pid] : undefined;
+      return count !== undefined && items && count > items.length;
+    });
 
-
-  const hasSelectionWithMismatches = selectedHandles.size > 0 && Array.from(selectedHandles).some(h =>
-    groupedByHandle[h]?.some(i => i.status === 'mismatched' && i.mismatches.length > 0)
-  );
+  const hasSelectionWithMismatches =
+    selectedHandles.size > 0 &&
+    Array.from(selectedHandles).some((h) =>
+      groupedByHandle[h]?.some((i) => i.status === 'mismatched' && i.mismatches.length > 0)
+    );
 
   return (
     <>
@@ -1193,7 +1274,9 @@ export default function AuditReport({
             hasSelectionWithUnlinkedImages={hasSelectionWithUnlinkedImages}
             handleBulkFix={(h, t) => handleBulkFix(h || selectedHandles, t)}
             handleBulkDeleteUnlinked={() => {
-              const ids = Array.from(selectedHandles).map(h => groupedByHandle[h][0].shopifyProducts[0].id).filter(Boolean);
+              const ids = Array.from(selectedHandles)
+                .map((h) => groupedByHandle[h][0].shopifyProducts[0].id)
+                .filter(Boolean);
               handleBulkDeleteUnlinked(ids);
             }}
             handleBulkCreate={() => handleBulkCreate(selectedHandles)}
@@ -1222,7 +1305,6 @@ export default function AuditReport({
             isFixing={isFixing}
             isAutoRunning={isAutoRunning}
             isAutoCreating={isAutoCreating}
-
             handleSelectHandle={handleSelectHandle}
             handleDeleteUnlinked={handleDeleteUnlinked}
             handleBulkFix={(h, t) => handleBulkFix(h, t)}
@@ -1236,7 +1318,6 @@ export default function AuditReport({
             handleMarkAsFixed={(sku, type) => handleMarkAsFixed(sku, type)}
             handleDeleteVariant={handleDeleteVariant}
             handleDeleteProduct={handleDeleteProduct}
-
             statusConfig={statusConfig}
             MISMATCH_FILTER_TYPES={MISMATCH_FILTER_TYPES}
             setFixDialogHandles={setFixDialogHandles}
@@ -1282,7 +1363,6 @@ export default function AuditReport({
               </Button>
             </div>
           )}
-
         </CardContent>
       </Card>
 
@@ -1294,7 +1374,7 @@ export default function AuditReport({
               key={editingMediaFor}
               productId={editingMediaFor}
               onImageCountChange={(newCount: number) => {
-                setImageCounts(prev => ({ ...prev, [editingMediaFor]: newCount }));
+                setImageCounts((prev) => ({ ...prev, [editingMediaFor]: newCount }));
               }}
             />
           )}
@@ -1311,12 +1391,15 @@ export default function AuditReport({
               key={editingMissingMedia}
               variants={editingMissingMediaVariants}
               onSave={(result) => {
-                // handle saving pre-creation media logic? 
-                // Original: handleSavePreCreationMedia. 
+                // handle saving pre-creation media logic?
+                // Original: handleSavePreCreationMedia.
                 // Likely updates local state or something.
                 // For now, close logic.
                 setEditingMissingMedia(null);
-                toast({ title: "Media saved (simulation)", description: "This feature requires implementation." });
+                toast({
+                  title: 'Media saved (simulation)',
+                  description: 'This feature requires implementation.',
+                });
               }}
               onCancel={() => setEditingMissingMedia(null)}
             />
@@ -1333,10 +1416,11 @@ export default function AuditReport({
             <MediaManager
               key={editingMissingVariantMedia.parentProductId}
               productId={editingMissingVariantMedia.parentProductId}
-              onImageCountChange={() => { }}
+              onImageCountChange={() => {}}
               isMissingVariantMode={true}
               missingVariants={memoizedMissingVariants}
-              onSaveMissingVariant={(result) => { // handleSaveMissingVariantMedia
+              onSaveMissingVariant={(result) => {
+                // handleSaveMissingVariantMedia
                 setEditingMissingVariantMedia(null);
                 onRefresh(); // Refresh to show changes?
               }}
@@ -1348,14 +1432,19 @@ export default function AuditReport({
       <UpdateTagsDialog
         isOpen={showUpdateTagsDialog}
         onClose={() => setShowUpdateTagsDialog(false)}
-        onConfirm={(tag) => handleUpdateTags(tag, Array.from(selectedHandles).map(h => groupedByHandle[h][0]))} // Map handles to items
+        onConfirm={(tag) =>
+          handleUpdateTags(
+            tag,
+            Array.from(selectedHandles).map((h) => groupedByHandle[h][0])
+          )
+        } // Map handles to items
         count={selectedHandles.size}
       />
       <UpdateTagsDialog
         isOpen={showAutoTagDialog}
         onClose={() => setShowAutoTagDialog(false)}
         onConfirm={confirmAutoTagUpdate}
-        count={reportData.filter(item => item.shopifyProducts.length > 0).length}
+        count={reportData.filter((item) => item.shopifyProducts.length > 0).length}
       />
       <FixMismatchesDialog
         isOpen={showFixDialog}
