@@ -6,7 +6,7 @@ import { ShopifyProductImage } from '@/lib/types';
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props: any) => {
-    // eslint-disable-next-line @next/next/no-img-element
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
     return <img {...props} />;
   },
 }));
@@ -47,5 +47,25 @@ describe('MediaManagerImageCard', () => {
 
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
+  });
+
+  it('renders accessible assigned indicator when image is assigned', () => {
+    const assignedImage = { ...mockImage, variant_ids: [1, 2] };
+    render(
+      <MediaManagerImageCard
+        image={assignedImage}
+        isSelected={false}
+        isAssigned={true}
+        isMissingVariantMode={false}
+        isSubmitting={false}
+        onSelectionChange={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const indicator = screen.getByRole('button', {
+      name: /assigned to 2 variant\(s\)/i,
+    });
+    expect(indicator).toBeInTheDocument();
   });
 });
