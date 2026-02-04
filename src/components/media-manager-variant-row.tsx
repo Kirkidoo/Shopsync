@@ -25,13 +25,7 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
       {images.map((image) => (
         <SelectItem key={image.id} value={image.id.toString()}>
           <div className="flex items-center gap-2">
-            <Image
-              src={image.src}
-              alt=""
-              width={20}
-              height={20}
-              className="rounded-sm"
-            />
+            <Image src={image.src} alt="" width={20} height={20} className="rounded-sm" />
             <span>Image #{image.id}</span>
           </div>
         </SelectItem>
@@ -57,9 +51,7 @@ export const VariantRow = memo(
         <TableCell>
           <Select
             value={variant.imageId?.toString() ?? 'none'}
-            onValueChange={(value) =>
-              onAssign(id, value === 'none' ? null : parseInt(value))
-            }
+            onValueChange={(value) => onAssign(id, value === 'none' ? null : parseInt(value))}
             disabled={isSubmitting}
           >
             <SelectTrigger

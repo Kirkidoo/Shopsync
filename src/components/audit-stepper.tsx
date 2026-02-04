@@ -186,7 +186,7 @@ export default function AuditStepper() {
         const locs = await getAvailableLocations();
         setLocations(locs);
         // Default to Gamma if available, or first one
-        const gamma = locs.find(l => l.id === 93998154045);
+        const gamma = locs.find((l) => l.id === 93998154045);
         if (gamma) setSelectedLocationId(gamma.id.toString());
         else if (locs.length > 0) setSelectedLocationId(locs[0].id.toString());
       } catch (error) {
@@ -207,10 +207,12 @@ export default function AuditStepper() {
 
         await connectToFtp(formData);
         toast({ title: 'FTP Connection Successful', description: 'Ready to select a file.' });
-        const files = await listCsvFiles(formData) as any as FileInfo[]; // Type assertion for safety if action type inference lags
+        const files = (await listCsvFiles(formData)) as any as FileInfo[]; // Type assertion for safety if action type inference lags
         setCsvFiles(files);
         if (files.length > 0) {
-          setSelectedCsv(files.find(f => f.name === BULK_AUDIT_FILE)?.name ? BULK_AUDIT_FILE : files[0].name);
+          setSelectedCsv(
+            files.find((f) => f.name === BULK_AUDIT_FILE)?.name ? BULK_AUDIT_FILE : files[0].name
+          );
         }
         setStep('select');
       } catch (error) {
@@ -331,7 +333,12 @@ export default function AuditStepper() {
           }
 
           addLog('Downloading, parsing, and running audit on server...');
-          result = await runBulkAuditFromDownload(csvProducts, selectedCsv, operation.resultUrl, locationId);
+          result = await runBulkAuditFromDownload(
+            csvProducts,
+            selectedCsv,
+            operation.resultUrl,
+            locationId
+          );
         }
 
         if (!result || !result.report || !result.summary || !result.duplicates) {
@@ -505,16 +512,20 @@ export default function AuditStepper() {
                       onClick={() => handleSelectChange(file.name)}
                       aria-pressed={selectedCsv === file.name}
                       className={cn(
-                        "relative flex w-full text-left cursor-pointer items-center gap-4 rounded-lg border p-4 transition-all hover:bg-accent/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        'relative flex w-full cursor-pointer items-center gap-4 rounded-lg border p-4 text-left transition-all hover:bg-accent/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         selectedCsv === file.name
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "border-border hover:border-primary/50"
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border hover:border-primary/50'
                       )}
                     >
-                      <div className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-full border",
-                        selectedCsv === file.name ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"
-                      )}>
+                      <div
+                        className={cn(
+                          'flex h-10 w-10 items-center justify-center rounded-full border',
+                          selectedCsv === file.name
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'bg-background text-muted-foreground'
+                        )}
+                      >
                         <FileSpreadsheet className="h-5 w-5" />
                       </div>
                       <div className="flex-1 space-y-1">
@@ -546,10 +557,7 @@ export default function AuditStepper() {
                 <div className="border-t p-4">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="location-select">Filter by Shopify Location</Label>
-                    <Select
-                      value={selectedLocationId}
-                      onValueChange={setSelectedLocationId}
-                    >
+                    <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
                       <SelectTrigger id="location-select" className="w-full bg-background/50">
                         <SelectValue placeholder="Select a location..." />
                       </SelectTrigger>
@@ -566,7 +574,10 @@ export default function AuditStepper() {
                     </p>
                   </div>
                 </div>
-                <Button onClick={handleNextFromSelect} disabled={isPending || !selectedCsv || !selectedLocationId}>
+                <Button
+                  onClick={handleNextFromSelect}
+                  disabled={isPending || !selectedCsv || !selectedLocationId}
+                >
                   Next
                 </Button>
               </CardFooter>
@@ -705,10 +716,12 @@ export default function AuditStepper() {
                   </div>
 
                   <div className="mb-6 flex flex-col items-center gap-1">
-                    <div className="text-3xl font-bold font-mono text-foreground">
+                    <div className="font-mono text-3xl font-bold text-foreground">
                       {formatTime(elapsedSeconds)}
                     </div>
-                    <span className="text-xs uppercase tracking-widest text-muted-foreground">Time Elapsed</span>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground">
+                      Time Elapsed
+                    </span>
                   </div>
 
                   <p className="animate-pulse text-sm font-medium text-muted-foreground">
@@ -723,7 +736,9 @@ export default function AuditStepper() {
                   className="w-full space-y-2"
                 >
                   <div className="flex items-center justify-between px-4">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Detailed Activity Log</h4>
+                    <h4 className="text-sm font-semibold text-muted-foreground">
+                      Detailed Activity Log
+                    </h4>
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="sm" className="w-9 p-0">
                         {isLogOpen ? (

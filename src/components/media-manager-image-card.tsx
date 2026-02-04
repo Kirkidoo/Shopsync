@@ -61,7 +61,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
           isSelected || isSubmitting
             ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+            : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
           isSubmitting ? 'pointer-events-none' : 'pointer-events-none',
           isMissingVariantMode && 'hidden'
         )}
@@ -92,12 +92,10 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
               <AlertDialogTitle>Delete this image?</AlertDialogTitle>
             </AlertDialogHeader>
             <AlertDialogDescription>
-              This will permanently delete the image from Shopify. This action
-              cannot be undone.
+              This will permanently delete the image from Shopify. This action cannot be undone.
               {isAssigned && (
                 <span className="mt-2 block font-bold text-destructive-foreground">
-                  Warning: This image is assigned to {image.variant_ids.length}{' '}
-                  variant(s).
+                  Warning: This image is assigned to {image.variant_ids.length} variant(s).
                 </span>
               )}
             </AlertDialogDescription>
