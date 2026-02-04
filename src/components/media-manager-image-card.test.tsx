@@ -48,4 +48,23 @@ describe('MediaManagerImageCard', () => {
     const checkbox = screen.getByRole('checkbox', { name: /select image 123/i });
     expect(checkbox).toBeInTheDocument();
   });
+
+  it('renders assigned indicator as a button with aria-label when assigned', () => {
+    const assignedImage = { ...mockImage, variant_ids: [1, 2, 3] };
+    render(
+      <MediaManagerImageCard
+        image={assignedImage}
+        isSelected={false}
+        isAssigned={true}
+        isMissingVariantMode={false}
+        isSubmitting={false}
+        onSelectionChange={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const indicator = screen.getByRole('button', { name: /assigned to 3 variant/i });
+    expect(indicator).toBeInTheDocument();
+    expect(screen.getByTestId('link-icon')).toBeInTheDocument();
+  });
 });
