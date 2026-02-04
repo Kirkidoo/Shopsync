@@ -469,6 +469,16 @@ export function MediaManager({
     return unlinkedImages.every((img) => selectedImageIds.has(img.id));
   }, [unlinkedImages, selectedImageIds]);
 
+  const imagesKey = useMemo(
+    () => images.map((i) => `${i.id}:${i.src}`).join('|'),
+    [images]
+  );
+
+  const stableImages = useMemo(() => {
+    return images.map((img) => ({ id: img.id, src: img.src }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagesKey]);
+
   return (
     <>
       <DialogHeader>
@@ -729,7 +739,7 @@ export function MediaManager({
                         <VariantRow
                           key={variant.sku}
                           variant={variant}
-                          images={images}
+                          images={stableImages}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImageToMissingVariant}
                           idType="sku"
@@ -739,7 +749,7 @@ export function MediaManager({
                         <VariantRow
                           key={variant.variantId}
                           variant={variant}
-                          images={images}
+                          images={stableImages}
                           isSubmitting={isSubmitting}
                           onAssign={handleAssignImage}
                           idType="variantId"
