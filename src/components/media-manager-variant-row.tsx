@@ -12,13 +12,13 @@ import { Product, ShopifyProductImage } from '@/lib/types';
 
 interface VariantRowProps {
   variant: Partial<Product>;
-  images: ShopifyProductImage[];
+  images: Pick<ShopifyProductImage, 'id' | 'src'>[];
   isSubmitting: boolean;
   onAssign: (id: string, imageId: number | null) => void;
   idType?: 'variantId' | 'sku';
 }
 
-const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) => {
+const ImageSelectContent = memo(({ images }: { images: Pick<ShopifyProductImage, 'id' | 'src'>[] }) => {
   return (
     <SelectContent>
       <SelectItem value="none">No Image</SelectItem>
