@@ -17,6 +17,7 @@ import {
 import { revalidatePath } from 'next/cache';
 import { log } from '@/services/logger';
 import { logger } from '@/lib/logger';
+import { handleActionError, getErrorMessage } from '@/lib/action-utils';
 import { GAMMA_WAREHOUSE_LOCATION_ID, GARAGE_LOCATION_NAME } from '@/lib/constants';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -171,8 +172,8 @@ export async function createInShopify(
             createdProductData: createdProduct,
         };
     } catch (error) {
+        const message = getErrorMessage(error);
         logger.error(`Failed to create ${missingType} for SKU ${product.sku}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         await log('ERROR', `Failed to create ${missingType} for SKU ${product.sku}: ${message}`);
         return { success: false, message };
     }
@@ -300,9 +301,7 @@ export async function deleteFromShopify(productId: string) {
         revalidatePath('/');
         return { success: true, message: `Successfully deleted product ${productId}` };
     } catch (error) {
-        logger.error(`Failed to delete product ${productId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        return { success: false, message };
+        return handleActionError(`Failed to delete product ${productId}`, error);
     }
 }
 
@@ -322,8 +321,6 @@ export async function deleteVariantFromShopify(productId: string, variantId: str
         revalidatePath('/');
         return { success: true, message: `Successfully deleted variant ${variantId}` };
     } catch (error) {
-        logger.error(`Failed to delete variant ${variantId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        return { success: false, message };
+        return handleActionError(`Failed to delete variant ${variantId}`, error);
     }
 }

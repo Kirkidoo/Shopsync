@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache';
 import { log } from '@/services/logger';
 import { logger } from '@/lib/logger';
 import { GAMMA_WAREHOUSE_LOCATION_ID } from '@/lib/constants';
+import { getErrorMessage } from '@/lib/action-utils';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -94,8 +95,8 @@ async function _fixSingleMismatch(
         await log('SUCCESS', `Successfully fixed ${fixType} for ${csvProduct.sku}`);
         return { success: true, message: `Successfully fixed ${fixType} for ${csvProduct.sku}` };
     } catch (error) {
+        const message = getErrorMessage(error);
         logger.error(`Failed to fix ${fixType} for SKU ${csvProduct.sku}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         await log('ERROR', `Failed to fix ${fixType} for SKU ${csvProduct.sku}: ${message}`);
         return { success: false, message };
     }
@@ -261,8 +262,8 @@ export async function bulkUpdateTags(
                 successCount++;
                 itemResults.push({ sku: item.sku, success: true, message: 'Tags updated successfully.' });
             } catch (error) {
+                const message = getErrorMessage(error);
                 logger.error(`Failed to update tags for ${item.sku}:`, error);
-                const message = error instanceof Error ? error.message : 'Unknown error';
                 itemResults.push({ sku: item.sku, success: false, message });
             }
         }

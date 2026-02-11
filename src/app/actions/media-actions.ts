@@ -9,6 +9,7 @@ import {
     getProductImageCounts as getShopifyProductImageCounts,
     getProductByHandle,
 } from '@/lib/shopify';
+import { handleActionError, throwActionError, getErrorMessage } from '@/lib/action-utils';
 import { logger } from '@/lib/logger';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,9 +50,7 @@ export async function getProductWithImages(
 
         return { variants, images };
     } catch (error) {
-        logger.error(`Failed to get product with images for ID ${productId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        throw new Error(message);
+        throwActionError(`Failed to get product with images for ID ${productId}`, error);
     }
 }
 
@@ -65,7 +64,7 @@ export async function getProductByHandleServer(handle: string): Promise<Product 
             handle: product.handle,
         } as Product;
     } catch (error) {
-        logger.error(`Failed to get product by handle ${handle}:`, error);
+        handleActionError(`Failed to get product by handle ${handle}`, error);
         return null;
     }
 }
@@ -95,9 +94,7 @@ export async function getProductImageCounts(
 
         return gidCounts;
     } catch (error) {
-        logger.error(`Failed to get product image counts for IDs ${productIds.join(', ')}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        throw new Error(message);
+        throwActionError(`Failed to get product image counts for IDs ${productIds.join(', ')}`, error);
     }
 }
 
@@ -114,9 +111,7 @@ export async function addImageFromUrl(
         const newImage = await addProductImage(numericProductId, imageUrl);
         return { success: true, message: 'Image added successfully.', image: newImage };
     } catch (error) {
-        logger.error(`Failed to add image for product ${productId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        return { success: false, message };
+        return handleActionError(`Failed to add image for product ${productId}`, error);
     }
 }
 
@@ -133,9 +128,7 @@ export async function assignImageToVariant(
         await updateProductVariant(numericVariantId, { image_id: imageId });
         return { success: true, message: 'Image assigned successfully.' };
     } catch (error) {
-        logger.error(`Failed to assign image ${imageId} to variant ${variantId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        return { success: false, message };
+        return handleActionError(`Failed to assign image ${imageId} to variant ${variantId}`, error);
     }
 }
 
@@ -152,9 +145,7 @@ export async function deleteImage(
         await deleteProductImage(numericProductId, imageId);
         return { success: true, message: 'Image deleted successfully.' };
     } catch (error) {
-        logger.error(`Failed to delete image ${imageId} from product ${productId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-        return { success: false, message };
+        return handleActionError(`Failed to delete image ${imageId} from product ${productId}`, error);
     }
 }
 
@@ -189,8 +180,8 @@ export async function deleteUnlinkedImages(
         logger.info(message);
         return { success: true, message, deletedCount };
     } catch (error) {
+        const message = getErrorMessage(error);
         logger.error(`Failed to delete unlinked images for product ${productId}:`, error);
-        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
         return { success: false, message, deletedCount: 0 };
     }
 }
