@@ -47,7 +47,7 @@ export function useAuditActions({
 
     // --- Helpers ---
 
-    const handleActionStart = (actionName: string) => {
+    const handleActionStart = () => {
         setIsFixing(true);
     };
 
@@ -66,7 +66,7 @@ export function useAuditActions({
             return;
         }
 
-        handleActionStart('Fixing mismatch...');
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await fixMultipleMismatches([item], [fixType]);
@@ -107,7 +107,7 @@ export function useAuditActions({
         targetHandles?: Set<string>,
         targetTypes?: MismatchDetail['field'][]
     ) => {
-        handleActionStart('Running bulk fix...');
+        handleActionStart();
         startTransition(async () => {
             try {
                 let itemsToFix = reportData.filter(
@@ -174,7 +174,7 @@ export function useAuditActions({
         const product = item.csvProducts[0];
         if (!product) return;
 
-        handleActionStart(`Creating ${missingType}...`);
+        handleActionStart();
         startTransition(async () => {
             try {
                 const handle = getHandle(item);
@@ -221,7 +221,7 @@ export function useAuditActions({
         const handlesToCreate = specificHandles || new Set();
         if (handlesToCreate.size === 0) return;
 
-        handleActionStart(`Creating ${handlesToCreate.size} products...`);
+        handleActionStart();
         startTransition(async () => {
             try {
                 const itemsToCreate: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' }[] = [];
@@ -281,7 +281,7 @@ export function useAuditActions({
     };
 
     const handleBulkCreateVariants = (items: AuditResult[]) => {
-        handleActionStart("Adding variants...");
+        handleActionStart();
         startTransition(async () => {
             try {
                 const variants = items.map(i => i.csvProducts[0]).filter(Boolean);
@@ -310,7 +310,7 @@ export function useAuditActions({
         const productId = productToDelete.id;
         if (!productId) return;
 
-        handleActionStart("Deleting product...");
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await deleteFromShopify(productId);
@@ -321,7 +321,7 @@ export function useAuditActions({
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
             } catch (e) {
-                console.error(e);
+                logger.error(e as any);
                 toast({ title: "Error", description: "Delete failed.", variant: "destructive" });
             } finally {
                 handleActionEnd();
@@ -341,7 +341,7 @@ export function useAuditActions({
             return;
         }
 
-        handleActionStart("Deleting variant...");
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await deleteVariantFromShopify(productId, variantId);
@@ -352,7 +352,7 @@ export function useAuditActions({
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
             } catch (e) {
-                console.error(e);
+                logger.error(e as any);
                 toast({ title: "Error", description: "Delete failed.", variant: "destructive" });
             } finally {
                 handleActionEnd();
@@ -361,7 +361,7 @@ export function useAuditActions({
     };
 
     const handleDeleteUnlinked = (productId: string) => {
-        handleActionStart("Deleting unlinked images...");
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await deleteUnlinkedImages(productId);
@@ -380,7 +380,7 @@ export function useAuditActions({
     };
 
     const handleBulkDeleteUnlinked = (selectedProductIds: string[]) => {
-        handleActionStart(`Cleaning images for ${selectedProductIds.length} products...`);
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await deleteUnlinkedImagesForMultipleProducts(selectedProductIds);
@@ -402,7 +402,7 @@ export function useAuditActions({
     // --- Tags ---
 
     const handleUpdateTags = (customTag: string, selectedItems: AuditResult[]) => {
-        handleActionStart("Updating tags...");
+        handleActionStart();
         startTransition(async () => {
             try {
                 const result = await bulkUpdateTags(selectedItems, customTag);

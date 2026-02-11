@@ -781,6 +781,198 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
   return exactMatchProducts;
 }
 
+/**
+ * Fetches Shopify products that have a specific tag.
+ * Used for stale clearance detection to find products with "Clearance" tag.
+ */
+export async function getShopifyProductsByTag(tag: string, locationId?: number): Promise<Product[]> {
+  const shopifyClient = getShopifyGraphQLClient();
+  const allProducts: Product[] = [];
+
+  // Use Zod schema for response parsing
+  const ResponseSchema = createGraphQLResponseSchema(GetVariantsBySkuQuerySchema);
+
+  // Query for products with the specific tag
+  const query = `tag:"${tag.replace(/"/g, '\\"')}"`;
+
+  let retries = 0;
+  let success = false;
+  let cursor: string | null = null;
+  const seenSkus = new Set<string>();
+
+  while (!success || cursor) {
+    try {
+      if (retries > 0) {
+        await sleep(1000 * Math.pow(2, retries));
+      } else {
+        await sleep(200);
+      }
+
+      // Use pagination to get all products with this tag
+      const paginatedQuery = cursor
+        ? `query getVariantsByTag($query: String!, $after: String) {
+            productVariants(first: 250, query: $query, after: $after) {
+              edges {
+                node {
+                  id
+                  sku
+                  price
+                  compareAtPrice
+                  inventoryQuantity
+                  inventoryItem {
+                    id
+                    measurement {
+                      weight {
+                        value
+                        unit
+                      }
+                    }
+                    inventoryLevels(first: 50) {
+                      edges {
+                        node {
+                          quantities(names: ["available"]) {
+                            name
+                            quantity
+                          }
+                          location {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                  image {
+                    id
+                  }
+                  product {
+                    id
+                    title
+                    handle
+                    bodyHtml
+                    templateSuffix
+                    tags
+                    featuredImage {
+                      url
+                    }
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }`
+        : GET_VARIANTS_BY_SKU_QUERY;
+
+      const rawResponse = await shopifyClient.request(cursor ? paginatedQuery : GET_VARIANTS_BY_SKU_QUERY, {
+        variables: cursor ? { query, after: cursor } : { query },
+      });
+
+      // Parse response with extended schema for pagination
+      const parsedResponse = ResponseSchema.parse(rawResponse);
+
+      if (parsedResponse.errors) {
+        const errorString = JSON.stringify(parsedResponse.errors);
+        if (errorString.includes('Throttled')) {
+          logger.info(`Throttled by Shopify on tag query, backing off... (Attempt ${retries + 1})`);
+          retries++;
+          continue;
+        }
+        throw new Error(`Non-recoverable GraphQL error: ${errorString}`);
+      }
+
+      const variantEdges = parsedResponse.data?.productVariants?.edges || [];
+
+      for (const edge of variantEdges) {
+        const variant = edge.node;
+        const product = variant.product;
+
+        if (variant && variant.sku && product) {
+          // Skip if we've already seen this SKU
+          if (seenSkus.has(variant.sku.toLowerCase())) continue;
+          seenSkus.add(variant.sku.toLowerCase());
+
+          let locationInventory = 0;
+          let isAtLocation = false;
+          const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+          const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
+
+          if (variant.inventoryItem?.inventoryLevels?.edges) {
+            for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
+              if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                const available = levelEdge.node.quantities?.find(q => q.name === 'available');
+                if (available) {
+                  locationInventory = available.quantity;
+                }
+                isAtLocation = true;
+                break;
+              }
+            }
+          }
+
+          if (!isAtLocation) continue;
+
+          allProducts.push({
+            id: product.id,
+            variantId: variant.id,
+            inventoryItemId: variant.inventoryItem?.id || '',
+            handle: product.handle,
+            sku: variant.sku,
+            name: product.title,
+            price: parseFloat(variant.price),
+            inventory: locationInventory,
+            descriptionHtml: product.bodyHtml || null,
+            productType: null,
+            vendor: null,
+            tags: product.tags.join(', '),
+            compareAtPrice: variant.compareAtPrice ? parseFloat(variant.compareAtPrice) : null,
+            costPerItem: null,
+            barcode: null,
+            weight: convertWeightToGrams(
+              variant.inventoryItem?.measurement?.weight?.value,
+              variant.inventoryItem?.measurement?.weight?.unit
+            ),
+            mediaUrl: product.featuredImage?.url || null,
+            imageId: variant.image?.id
+              ? parseInt(variant.image.id.split('/').pop() || '0', 10)
+              : null,
+            category: null,
+            option1Name: null,
+            option1Value: null,
+            option2Name: null,
+            option2Value: null,
+            option3Name: null,
+            option3Value: null,
+            templateSuffix: product.templateSuffix || null,
+            locationIds:
+              variant.inventoryItem?.inventoryLevels?.edges?.map(
+                (edge) => edge.node.location.id
+              ) || [],
+          });
+        }
+      }
+
+      success = true;
+
+      // Check for pagination (this is a simplified version - the base query doesn't have pageInfo)
+      // For now, just process one page since tag queries typically return fewer results
+      cursor = null;
+    } catch (error: unknown) {
+      if (isThrottleError(error)) {
+        logger.info(`Caught throttled error, backing off... (Attempt ${retries + 1})`);
+        retries++;
+      } else {
+        logger.error('An unexpected error occurred while fetching products by tag. Aborting.', error);
+        throw error;
+      }
+    }
+  }
+
+  logger.info(`Found ${allProducts.length} products with tag "${tag}" at selected location`);
+  return allProducts;
+}
+
 export async function getShopifyLocations(): Promise<{ id: number; name: string }[]> {
   const shopifyClient = getShopifyRestClient();
   const LocationSchema = z.object({

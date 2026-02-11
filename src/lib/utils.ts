@@ -16,7 +16,10 @@ export function downloadCsv(data: any[], filename: string) {
       headers
         .map((header) => {
           let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
-          cell = cell.includes(',') ? `"${cell}"` : cell;
+          // RFC 4180: escape quotes by doubling them, wrap if contains comma/quote/newline
+          if (cell.includes('"') || cell.includes(',') || cell.includes('\n')) {
+            cell = `"${cell.replace(/"/g, '""')}"`;
+          }
           return cell;
         })
         .join(',')

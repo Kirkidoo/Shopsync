@@ -1,7 +1,7 @@
 import { Product, AuditResult, DuplicateSku, MismatchDetail } from '@/lib/types';
 import { getCsvStreamFromFtp } from './ftp';
 import { parseCsvFromStream } from './csv';
-import { getShopifyProductsBySku } from '@/lib/shopify';
+import { getShopifyProductsBySku, getShopifyProductsByTag } from '@/lib/shopify';
 import { logger } from '@/lib/logger';
 
 export function findMismatches(
@@ -175,6 +175,82 @@ export function findMismatches(
     }
   }
   return mismatches;
+}
+
+/**
+ * Detects products/variants that have the "Clearance" tag in Shopify but are NOT in the FTP Clearance file.
+ * This includes:
+ * 1. Entire products with Clearance tag that are not in the file at all
+ * 2. Variants of products that ARE in the file, but specific variants are missing
+ * This is used when processing a Clearance file to identify stale clearance items.
+ */
+export function findStaleClearanceProducts(
+  shopifyProducts: Product[],
+  csvProducts: Product[],
+  csvFileName: string
+): { product: Product; mismatch: MismatchDetail }[] {
+  // Only run this check when processing a clearance file
+  if (!csvFileName.toLowerCase().includes('clearance')) {
+    return [];
+  }
+
+  const results: { product: Product; mismatch: MismatchDetail }[] = [];
+
+  // Create a set of SKUs from the CSV file for quick lookup
+  const csvSkuSet = new Set(csvProducts.map((p) => p.sku.toLowerCase()));
+
+  // Create a set of handles from the CSV file to check for partial products
+  const csvHandleSet = new Set(csvProducts.map((p) => p.handle?.toLowerCase()).filter(Boolean));
+
+  for (const shopifyProduct of shopifyProducts) {
+    // Check if product has Clearance tag
+    const tags = shopifyProduct.tags
+      ? shopifyProduct.tags
+        .toLowerCase()
+        .split(',')
+        .map((t) => t.trim())
+      : [];
+
+    const hasClearanceTag = tags.includes('clearance');
+
+    // Skip if product doesn't have Clearance tag
+    if (!hasClearanceTag) continue;
+
+    // Skip if product has 0 inventory (out of stock items don't need to be flagged)
+    if (shopifyProduct.inventory === null || shopifyProduct.inventory === 0) continue;
+
+    // Check if this SKU is in the CSV
+    const isSkuInCsv = csvSkuSet.has(shopifyProduct.sku.toLowerCase());
+
+    if (!isSkuInCsv) {
+      // Check if the product's handle is in the CSV (meaning some variants are present)
+      const isHandleInCsv = shopifyProduct.handle && csvHandleSet.has(shopifyProduct.handle.toLowerCase());
+
+      if (isHandleInCsv) {
+        // This is a missing variant - the product is partially in the file but this specific variant is missing
+        results.push({
+          product: shopifyProduct,
+          mismatch: {
+            field: 'stale_clearance_tag',
+            csvValue: 'Variant missing from Clearance file',
+            shopifyValue: 'Has Clearance tag',
+          },
+        });
+      } else {
+        // This is an entirely missing product - none of the variants are in the file
+        results.push({
+          product: shopifyProduct,
+          mismatch: {
+            field: 'stale_clearance_tag',
+            csvValue: 'Not in Clearance file',
+            shopifyValue: 'Has Clearance tag',
+          },
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
 export async function runAuditComparison(
@@ -412,6 +488,43 @@ export async function runAuditComparison(
     }
   }
 
+  // --- Stale Clearance Detection ---
+  // Flag products in Shopify with "Clearance" tag that are NOT in the FTP Clearance file
+  const staleClearanceItems = findStaleClearanceProducts(shopifyProducts, csvProducts, csvFileName);
+  for (const { product, mismatch } of staleClearanceItems) {
+    // Check if this SKU already has a report entry
+    const existingEntry = report.find(
+      (r) => r.sku.toLowerCase() === product.sku.toLowerCase() && r.shopifyProducts.length > 0
+    );
+
+    if (existingEntry) {
+      // Add mismatch to existing entry
+      existingEntry.mismatches.push(mismatch);
+      const previousStatus = existingEntry.status;
+      if (previousStatus === 'matched' || previousStatus === 'not_in_csv') {
+        existingEntry.status = 'mismatched';
+        summary.mismatched++;
+        if (previousStatus === 'not_in_csv') {
+          summary.not_in_csv--;
+        }
+      }
+    } else {
+      // Create new report entry for this product
+      report.push({
+        sku: product.sku,
+        csvProducts: [],
+        shopifyProducts: [product],
+        status: 'mismatched',
+        mismatches: [mismatch],
+      });
+      summary.mismatched++;
+    }
+  }
+
+  if (staleClearanceItems.length > 0) {
+    logger.info(`Found ${staleClearanceItems.length} products with stale Clearance tag (not in FTP Clearance file)`);
+  }
+
   const getHandle = (item: AuditResult) =>
     item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || '';
 
@@ -470,9 +583,32 @@ export async function runAudit(
     return null;
   }
 
+  // For clearance files, also fetch products with Clearance tag to detect stale ones
+  let combinedShopifyProducts = allShopifyProducts;
+  if (csvFileName.toLowerCase().includes('clearance')) {
+    logger.info('Clearance file detected - fetching products with Clearance tag for stale detection...');
+    try {
+      const clearanceTaggedProducts = await getShopifyProductsByTag('Clearance', locationId);
+
+      // Merge the two lists, avoiding duplicates by SKU
+      const existingSkus = new Set(allShopifyProducts.map((p) => p.sku.toLowerCase()));
+      const newProducts = clearanceTaggedProducts.filter(
+        (p) => !existingSkus.has(p.sku.toLowerCase())
+      );
+
+      if (newProducts.length > 0) {
+        logger.info(`Found ${newProducts.length} additional products with Clearance tag not in CSV`);
+        combinedShopifyProducts = [...allShopifyProducts, ...newProducts];
+      }
+    } catch (error) {
+      logger.error('Failed to fetch Clearance-tagged products for stale detection:', error);
+      // Continue with regular audit even if this fails
+    }
+  }
+
   const { report, summary } = await runAuditComparison(
     csvProducts,
-    allShopifyProducts,
+    combinedShopifyProducts,
     csvFileName
   );
 

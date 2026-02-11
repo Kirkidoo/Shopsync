@@ -223,9 +223,10 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
             if (item.status === 'missing_in_shopify') acc.missing_in_shopify++;
             if (item.status === 'not_in_csv') acc.not_in_csv++;
             if (item.status === 'duplicate_in_shopify') acc.duplicate_in_shopify++;
+            if (item.status === 'duplicate_handle') acc.duplicate_handle++;
             if (item.status === 'matched') acc.matched++;
             return acc;
-        }, { matched: 0, mismatched: 0, missing_in_shopify: 0, not_in_csv: 0, duplicate_in_shopify: 0 });
+        }, { matched: 0, mismatched: 0, missing_in_shopify: 0, not_in_csv: 0, duplicate_in_shopify: 0, duplicate_handle: 0 });
     }, [filteredData]);
 
 

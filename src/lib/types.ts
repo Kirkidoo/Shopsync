@@ -51,7 +51,8 @@ export interface MismatchDetail {
   | 'missing_oversize_tag'
   | 'heavy_product_flag'
   | 'compare_at_price'
-  | 'h1_tag';
+  | 'h1_tag'
+  | 'stale_clearance_tag';
   csvValue: string | number | null;
   shopifyValue: string | number | null;
   missingType?: 'product' | 'variant';
@@ -76,6 +77,7 @@ export interface Summary {
   not_in_csv: number;
   missing_in_shopify: number;
   duplicate_in_shopify: number;
+  duplicate_handle: number;
 }
 
 export interface ShopifyProductImage {

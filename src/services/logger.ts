@@ -1,16 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '@/lib/logger';
+import { LogEntry } from '@/lib/types';
 
-export type LogLevel = 'INFO' | 'ERROR' | 'WARN' | 'SUCCESS';
 
-export interface LogEntry {
-  id: string;
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  details?: any;
-}
 
 const LOG_FILE_PATH = path.join(process.cwd(), '.cache', 'activity-logs.json');
 
@@ -28,7 +21,7 @@ async function ensureLogFile() {
   }
 }
 
-export async function log(level: LogLevel, message: string, details?: any) {
+export async function log(level: LogEntry['level'], message: string, details?: any) {
   await ensureLogFile();
   try {
     const content = await fs.readFile(LOG_FILE_PATH, 'utf-8');

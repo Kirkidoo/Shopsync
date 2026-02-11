@@ -77,47 +77,6 @@ const statusConfig: {
   },
 };
 
-const getHandle = (item: AuditResult) =>
-  item.shopifyProducts[0]?.handle || item.csvProducts[0]?.handle || `no-handle-${item.sku}`;
-
-const hasAllExpectedTags = (
-  shopifyTags: string | undefined | null,
-  csvTags: string | undefined | null,
-  category: string | undefined | null,
-  customTag: string
-): boolean => {
-  if (!shopifyTags) return false;
-
-  const currentTags = new Set(
-    shopifyTags.split(',').map((t) => t.trim().toLowerCase())
-  );
-
-  // 1. Check CSV Tags (first 3)
-  if (csvTags) {
-    const expectedCsvTags = csvTags
-      .split(',')
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 3);
-
-    for (const tag of expectedCsvTags) {
-      if (!currentTags.has(tag)) return false;
-    }
-  }
-
-  // 2. Check Category
-  if (category) {
-    if (!currentTags.has(category.trim().toLowerCase())) return false;
-  }
-
-  // 3. Check Custom Tag
-  if (customTag) {
-    if (!currentTags.has(customTag.trim().toLowerCase())) return false;
-  }
-
-  return true;
-};
-
 const MismatchDetails = ({
   mismatches,
   onFix,
@@ -167,10 +126,18 @@ const MismatchDetails = ({
                   Price equals Compare At Price. Not a valid clearance item.
                 </span>
               )}
+              {mismatch.field === 'stale_clearance_tag' && (
+                <span className="text-muted-foreground">
+                  {mismatch.csvValue === 'Variant missing from Clearance file'
+                    ? 'Variant has Clearance tag but is missing from the FTP Clearance file.'
+                    : 'Product has Clearance tag but is not in the FTP Clearance file.'}
+                </span>
+              )}
               {mismatch.field !== 'h1_tag' &&
                 mismatch.field !== 'duplicate_in_shopify' &&
                 mismatch.field !== 'heavy_product_flag' &&
-                mismatch.field !== 'clearance_price_mismatch' && (
+                mismatch.field !== 'clearance_price_mismatch' &&
+                mismatch.field !== 'stale_clearance_tag' && (
                   <>
                     <span className="mr-2 text-red-500 line-through">
                       {mismatch.shopifyValue ?? 'N/A'}
@@ -378,6 +345,7 @@ const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = [
   'price',
   'inventory',
   'missing_clearance_tag',
+  'stale_clearance_tag',
   'incorrect_template_suffix',
   'clearance_price_mismatch',
   'missing_category_tag',

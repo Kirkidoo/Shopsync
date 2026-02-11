@@ -15,8 +15,6 @@ import {
   createProduct,
   addProductVariant,
   connectInventoryToLocation,
-  linkProductToCollection,
-  getCollectionIdByTitle,
   getShopifyLocations,
   disconnectInventoryFromLocation,
   publishProductToSalesChannels,
@@ -24,8 +22,7 @@ import {
   deleteProductVariant,
   startProductExportBulkOperation as startShopifyBulkOp,
   checkBulkOperationStatus as checkShopifyBulkOpStatus,
-  getBulkOperationResult,
-  parseBulkOperationResult,
+  downloadBulkOperationResultToFile,
   getFullProduct,
   addProductImage,
   deleteProductImage,
@@ -44,13 +41,8 @@ import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
 import { log, getLogs, getLogsSince, clearLogs } from '@/services/logger';
 import { logger } from '@/lib/logger';
+import { GAMMA_WAREHOUSE_LOCATION_ID, GARAGE_LOCATION_NAME } from '@/lib/constants';
 
-
-
-
-const GAMMA_WAREhouse_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
-  ? parseInt(process.env.GAMMA_WAREHOUSE_LOCATION_ID, 10)
-  : 93998154045;
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILE_PATH = path.join(CACHE_DIR, 'shopify-bulk-export.jsonl');
 const CACHE_INFO_PATH = path.join(CACHE_DIR, 'cache-info.json');
@@ -113,9 +105,6 @@ export async function getCsvProducts(
   return await csvService.getCsvProducts(csvFileName, ftpData);
 }
 
-import { downloadBulkOperationResultToFile } from '@/lib/shopify';
-
-// --- Helper: JSONL Generator ---
 // --- Helper: JSONL Generator ---
 async function* parseJsonlGenerator(filePath: string, locationId?: number): AsyncGenerator<Product> {
   const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
@@ -531,7 +520,7 @@ async function _fixSingleMismatch(
           await inventorySetQuantities(
             fixPayload.inventoryItemId,
             fixPayload.inventory,
-            GAMMA_WAREhouse_LOCATION_ID
+            GAMMA_WAREHOUSE_LOCATION_ID
           );
         }
         break;
@@ -540,7 +529,8 @@ async function _fixSingleMismatch(
         await addProductTags(fixPayload.id, ['Clearance']);
         break;
       case 'missing_oversize_tag':
-        await addProductTags(fixPayload.id, ['oversize']);
+        await addProductTags(fixPayload.id, ['OVERSIZE']);
+        await updateProduct(fixPayload.id, { templateSuffix: 'heavy-products' });
         break;
       case 'incorrect_template_suffix':
         let newSuffix = '';
@@ -562,10 +552,12 @@ async function _fixSingleMismatch(
         await removeProductTags(fixPayload.id, ['Clearance', 'clearance']);
         await updateProduct(fixPayload.id, { templateSuffix: '' });
         break;
-      case 'missing_oversize_tag':
-        await addProductTags(fixPayload.id, ['OVERSIZE']);
-        await updateProduct(fixPayload.id, { templateSuffix: 'heavy-products' });
+      case 'stale_clearance_tag':
+        // Fix: Remove 'Clearance' tag and reset template for products not in the FTP Clearance file
+        await removeProductTags(fixPayload.id, ['Clearance', 'clearance']);
+        await updateProduct(fixPayload.id, { templateSuffix: '' });
         break;
+
       case 'duplicate_in_shopify':
       case 'duplicate_handle':
         // This is a warning, cannot be fixed programmatically. Handled client-side.
@@ -872,7 +864,7 @@ export async function createInShopify(
 
     // 2b. Connect inventory & Set levels for each variant
     const locations = await getShopifyLocations();
-    const garageLocation = locations.find((l) => l.name === 'Garage Harry Stanley');
+    const garageLocation = locations.find((l) => l.name === GARAGE_LOCATION_NAME);
 
     const variantsToProcess =
       missingType === 'product'
@@ -888,15 +880,15 @@ export async function createInShopify(
 
       if (sourceVariant.inventory !== null && inventoryItemIdGid) {
         logger.info(
-          `Connecting inventory item ${inventoryItemIdGid} to location ${GAMMA_WAREhouse_LOCATION_ID}...`
+          `Connecting inventory item ${inventoryItemIdGid} to location ${GAMMA_WAREHOUSE_LOCATION_ID}...`
         );
-        await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREhouse_LOCATION_ID);
+        await connectInventoryToLocation(inventoryItemIdGid, GAMMA_WAREHOUSE_LOCATION_ID);
 
         logger.info('Setting inventory level...');
         await inventorySetQuantities(
           inventoryItemIdGid,
           sourceVariant.inventory,
-          GAMMA_WAREhouse_LOCATION_ID
+          GAMMA_WAREHOUSE_LOCATION_ID
         );
 
         if (garageLocation) {
@@ -908,21 +900,6 @@ export async function createInShopify(
       }
     }
 
-    // 2c. Link product to collection if category is specified (only for new products)
-    // REMOVED: Category is now added as a tag, not linked to a collection.
-    /*
-    if (missingType === 'product' && product.category && productGid) {
-      console.log(`Linking product to collection: '${product.category}'...`);
-      const collectionId = await getCollectionIdByTitle(product.category);
-      if (collectionId) {
-        await linkProductToCollection(productGid, collectionId);
-      } else {
-        console.warn(
-          `Could not find collection with title '${product.category}'. Skipping linking.`
-        );
-      }
-    }
-    */
 
     // 2d. Publish to all sales channels (only for new products)
     if (missingType === 'product' && productGid) {
@@ -1262,7 +1239,7 @@ export async function deleteUnlinkedImages(
       return { success: true, message: 'No unlinked images found to delete.', deletedCount: 0 };
     }
 
-    console.log(`Found ${unlinkedImages.length} unlinked images to delete.`);
+    logger.info(`Found ${unlinkedImages.length} unlinked images to delete.`);
     let deletedCount = 0;
 
     for (const image of unlinkedImages) {
@@ -1270,16 +1247,16 @@ export async function deleteUnlinkedImages(
       if (result.success) {
         deletedCount++;
       } else {
-        console.warn(`Failed to delete image ID ${image.id}: ${result.message}`);
+        logger.warn(`Failed to delete image ID ${image.id}: ${result.message}`);
       }
       await sleep(600); // Add delay between each deletion to avoid rate limiting
     }
 
     const message = `Successfully deleted ${deletedCount} of ${unlinkedImages.length} unlinked images.`;
-    console.log(message);
+    logger.info(message);
     return { success: true, message, deletedCount };
   } catch (error) {
-    console.error(`Failed to delete unlinked images for product ${productId}:`, error);
+    logger.error(`Failed to delete unlinked images for product ${productId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, message, deletedCount: 0 };
   }
@@ -1290,7 +1267,7 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
   message: string;
   results: { productId: string; success: boolean; deletedCount: number; message: string }[];
 }> {
-  console.log(`Starting bulk deletion of unlinked images for ${productIds.length} products.`);
+  logger.info(`Starting bulk deletion of unlinked images for ${productIds.length} products.`);
   const results = [];
   let totalSuccessCount = 0;
   let totalDeletedCount = 0;
@@ -1306,7 +1283,7 @@ export async function deleteUnlinkedImagesForMultipleProducts(productIds: string
   }
 
   const message = `Bulk operation complete. Processed ${productIds.length} products and deleted a total of ${totalDeletedCount} unlinked images.`;
-  console.log(message);
+  logger.info(message);
   return { success: totalSuccessCount > 0, message, results };
 }
 // --- LOGGING ACTIONS ---
