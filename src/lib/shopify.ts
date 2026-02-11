@@ -1715,6 +1715,21 @@ export async function getBulkOperationResult(url: string): Promise<string> {
 }
 
 export async function downloadBulkOperationResultToFile(url: string, destPath: string): Promise<void> {
+  const parsedUrl = new URL(url);
+
+  // Sentinel Security Fix: SSRF Protection
+  // Ensure protocol is HTTPS
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error(`Invalid URL protocol: ${parsedUrl.protocol}. Only https is allowed.`);
+  }
+
+  // Allowlist strict check for Shopify's bulk operation storage domain
+  // Bulk operations are stored on Google Cloud Storage (storage.googleapis.com)
+  const ALLOWED_HOSTS = ['storage.googleapis.com'];
+  if (!ALLOWED_HOSTS.includes(parsedUrl.hostname)) {
+    throw new Error(`Invalid URL hostname: ${parsedUrl.hostname}. Only ${ALLOWED_HOSTS.join(', ')} are allowed.`);
+  }
+
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to download bulk operation result from ${url}`);
