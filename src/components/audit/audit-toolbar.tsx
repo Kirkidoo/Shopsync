@@ -73,7 +73,7 @@ export function AuditToolbar({
 
     return (
         <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm md:flex-row md:items-center">
+            <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm md:flex-row md:flex-wrap md:items-center">
                 <div className="relative flex-grow">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
