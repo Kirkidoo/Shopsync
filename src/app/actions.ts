@@ -1,6 +1,5 @@
-'use server';
-
 // Barrel re-export – all consumers continue importing from '@/app/actions'
+// Note: Individual action files have their own 'use server' directive
 
 export {
   connectToFtp,
