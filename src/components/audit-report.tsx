@@ -675,6 +675,7 @@ export default function AuditReport({
             <AccordionHeader className="flex items-center p-0">
               {(filter === 'mismatched' ||
                 (filter === 'missing_in_shopify' && isMissingProductCase) ||
+                filter === 'not_in_csv' ||
                 filter === 'all') && (
                   <div className="p-3 pl-4">
                     <Checkbox
@@ -803,6 +804,43 @@ export default function AuditReport({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                )}
+                {notInCsv && isOnlyVariantNotInCsv && productId && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Product
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this product?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete &quot;{productTitle}&quot; and
+                          all {items.length} variant{items.length > 1 ? 's' : ''} from
+                          Shopify. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProduct(items[0]);
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Yes, delete product
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
                 {isMissingProductCase && (
                   <>

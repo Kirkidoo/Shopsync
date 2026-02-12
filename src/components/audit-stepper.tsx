@@ -350,7 +350,8 @@ export default function AuditStepper() {
   };
 
   const addLog = (message: string) => {
-    setActivityLog((prev) => [...prev, message]);
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    setActivityLog((prev: string[]) => [...prev, `[${ts}] ${message}`]);
   };
 
   const handleRunStandardAudit = () => {
