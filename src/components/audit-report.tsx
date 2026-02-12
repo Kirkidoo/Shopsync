@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
@@ -518,47 +519,38 @@ export default function AuditReport({
 
   // Auto Run Logic (Implemented in Component as it requires iterating view data)
   const processingRef = useRef(false);
+  const [autoFixProgress, setAutoFixProgress] = useState<{ done: number; total: number } | null>(null);
+  const [autoCreateProgress, setAutoCreateProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     if (isAutoRunning && !isFixing && !processingRef.current) {
-      // Find next item on current page or filtered list
       const itemToFix = filteredData.find(item =>
         item.status === 'mismatched' && item.mismatches.length > 0
       );
 
       if (itemToFix) {
-        processingRef.current = true;
-        // Fix all fixable mismatches for this item
-        const fixableTypes = itemToFix.mismatches
-          .map(m => m.field); // All remaining types are fixable or handled
+        // Initialize progress on first iteration
+        setAutoFixProgress(prev => {
+          if (!prev) {
+            const total = filteredData.filter(i => i.status === 'mismatched' && i.mismatches.length > 0).length;
+            return { done: 0, total };
+          }
+          return { ...prev, done: prev.done + 1 };
+        });
 
+        processingRef.current = true;
+        const fixableTypes = itemToFix.mismatches.map(m => m.field);
 
         if (fixableTypes.length > 0) {
           handleBulkFix(new Set([
-            itemToFix.shopifyProducts[0]?.handle || itemToFix.sku // Using handle logic
-          ]), fixableTypes); // Pass handle set to bulk fix or single? 
-          // handleBulkFix handles Sets of handles.
-          // Ideally we call handleFixSingleMismatch for atomic updates but bulk is fine too.
-          // Wait, handleBulkFix is async wrapped in startTransition.
-          // We need to know when it finishes to process next.
-          // `isFixing` becomes true.
-          // So we just trigger it.
-          // `handleBulkFix` in hook takes (targetHandles, types).
-          // Logic to extract handle:
-          const h = itemToFix.shopifyProducts[0]?.handle || itemToFix.csvProducts[0]?.handle || `no-handle-${itemToFix.sku}`;
-
-          // Reuse hook function but we need to ensure it uses the handle correctly
-          // handleBulkFix uses reportData, so passing handle is enough.
-          // But wait, `useAuditActions` `handleBulkFix` implementation filters by handle.
-
-          // Actually `handleBulkFix` is perfect.
+            itemToFix.shopifyProducts[0]?.handle || itemToFix.sku
+          ]), fixableTypes);
         } else {
-          // Skip if not fixable? Should not happen due to filter above.
           processingRef.current = false;
         }
       } else {
-        // No more items
         setIsAutoRunning(false);
+        setAutoFixProgress(null);
         toast({
           title: "Auto run complete!",
           description: "All fixable issues have been processed.",
@@ -572,14 +564,23 @@ export default function AuditReport({
   useEffect(() => {
     if (isAutoCreating && !isFixing && !processingRef.current) {
       const itemToCreate = filteredData.find(item =>
-        item.status === 'missing_in_shopify' // && !createdProductHandles.has(handle) - filteredData already excludes
+        item.status === 'missing_in_shopify'
       );
 
       if (itemToCreate) {
+        setAutoCreateProgress(prev => {
+          if (!prev) {
+            const total = filteredData.filter(i => i.status === 'missing_in_shopify').length;
+            return { done: 0, total };
+          }
+          return { ...prev, done: prev.done + 1 };
+        });
+
         processingRef.current = true;
         handleCreate(itemToCreate);
       } else {
         setIsAutoCreating(false);
+        setAutoCreateProgress(null);
         toast({
           title: "Auto create complete!",
           description: "All missing products have been created.",
@@ -1113,13 +1114,15 @@ export default function AuditReport({
     <>
       <Card className="w-full">
         <AuditStats
-          reportSummary={currentSummary} // Use derived summary
+          reportSummary={currentSummary}
           duplicates={duplicates}
           filter={filter}
           isFixing={isFixing}
           isAutoRunning={isAutoRunning}
           isAutoCreating={isAutoCreating}
           fileName={fileName}
+          autoFixProgress={autoFixProgress}
+          autoCreateProgress={autoCreateProgress}
         />
         <CardContent>
           <AuditTabs
@@ -1213,41 +1216,110 @@ export default function AuditReport({
             isAllPageSelected={isAllOnPageSelected}
           />
 
-          {/* Pagination Controls Reuse from AuditFilters or Table? 
-                Actually AuditFilters has the top controls.
-                Bottom pagination is good to have.
-                Let's add it here or inside AuditTable.
-                AuditTable usually has rows. 
-                Let's add pagination below AuditTable.
-            */}
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-end gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                {/* Reuse handlesPerPage state */}
-                <span className="text-muted-foreground">Items per page</span>
-                {/* Simplified Select for brevity */}
-                {/* ... Use standard Select ... */}
-                {/* For now, just Next/Prev buttons */}
+          {/* Pagination */}
+          {totalPages > 0 && (
+            <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span>
+                  Showing {((currentPage - 1) * handlesPerPage) + 1}–{Math.min(currentPage * handlesPerPage, handleKeys.length)} of{' '}
+                  <strong className="text-foreground">{handleKeys.length.toLocaleString()}</strong> products
+                </span>
+                <span className="text-border">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span>Per page:</span>
+                  <Select
+                    value={handlesPerPage.toString()}
+                    onValueChange={(v) => { setHandlesPerPage(Number(v)); setCurrentPage(1); }}
+                  >
+                    <SelectTrigger className="h-8 w-[70px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[10, 25, 50, 100].map((n) => (
+                        <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <span className="text-sm text-muted-foreground">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1 || isFixing || isAutoRunning || isAutoCreating}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages || isFixing || isAutoRunning || isAutoCreating}
-              >
-                Next
-              </Button>
+
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1 || isFixing || isAutoRunning || isAutoCreating}
+                    className="h-8 w-8 p-0"
+                    aria-label="First page"
+                  >
+                    «
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1 || isFixing || isAutoRunning || isAutoCreating}
+                    className="h-8 w-8 p-0"
+                    aria-label="Previous page"
+                  >
+                    ‹
+                  </Button>
+
+                  {/* Numbered page buttons */}
+                  {(() => {
+                    const pages: (number | '...')[] = [];
+                    if (totalPages <= 7) {
+                      for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    } else {
+                      pages.push(1);
+                      if (currentPage > 3) pages.push('...');
+                      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+                        pages.push(i);
+                      }
+                      if (currentPage < totalPages - 2) pages.push('...');
+                      pages.push(totalPages);
+                    }
+                    return pages.map((page, idx) =>
+                      page === '...' ? (
+                        <span key={`ellipsis-${idx}`} className="px-1 text-muted-foreground">…</span>
+                      ) : (
+                        <Button
+                          key={page}
+                          variant={page === currentPage ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setCurrentPage(page)}
+                          disabled={isFixing || isAutoRunning || isAutoCreating}
+                          className="h-8 w-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      )
+                    );
+                  })()}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages || isFixing || isAutoRunning || isAutoCreating}
+                    className="h-8 w-8 p-0"
+                    aria-label="Next page"
+                  >
+                    ›
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages || isFixing || isAutoRunning || isAutoCreating}
+                    className="h-8 w-8 p-0"
+                    aria-label="Last page"
+                  >
+                    »
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { AuditResult, MismatchDetail, Product, DuplicateSku, Summary } from '@/lib/types';
 import { getFixedMismatches, getCreatedProductHandles, clearAuditMemory, markMismatchAsFixed } from '@/lib/utils';
 import { getHandle, hasAllExpectedTags } from '@/components/audit/audit-utils';
@@ -23,6 +23,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
 
     const [filter, setFilter] = useState<FilterType>('all');
     const [searchTerm, setSearchTerm] = useState('');
+    const deferredSearchTerm = useDeferredValue(searchTerm);
     const [currentPage, setCurrentPage] = useState(1);
     const [handlesPerPage, setHandlesPerPage] = useState(10);
 
@@ -132,9 +133,9 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
             }
         }
 
-        // 2. Filter by Search Term
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
+        // 2. Filter by Search Term (deferred for performance)
+        if (deferredSearchTerm) {
+            const term = deferredSearchTerm.toLowerCase();
             results = results.filter((item) => {
                 const product = item.csvProducts[0] || item.shopifyProducts[0];
                 return (
@@ -181,7 +182,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         }
 
         return results;
-    }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, searchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters]);
+    }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, deferredSearchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters]);
 
     // Grouping
     const groupedByHandle = useMemo(() => {

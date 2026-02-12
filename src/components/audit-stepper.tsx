@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Frown, Loader2, LogIn, Server, FileText, Database, Check, Clock } from 'lucide-react';
+import { Frown, Loader2, LogIn, Server, FileText, Database, Check, Clock, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { logger } from '@/lib/logger';
 
@@ -66,7 +67,57 @@ interface FileInfo {
   modifiedAt: string;
 }
 
+interface SavedSession {
+  host: string;
+  username: string;
+  password: string;
+  lastCsv: string;
+  lastLocationId: string;
+  savedAt: string;
+}
+
+const SESSION_KEY = 'shopsync_session';
 const BULK_AUDIT_FILE = 'bulk_audit_request.jsonl';
+
+function getSavedSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveSession(data: SavedSession) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch { }
+}
+
+function clearSavedSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch { }
+}
+
+const AUDIT_CACHE_KEY = 'shopsync_audit_cache';
+
+interface AuditCache {
+  report: AuditResult[];
+  summary: any;
+  duplicates: DuplicateSku[];
+  fileName: string;
+  cachedAt: string;
+}
+
+function getCachedAudit(): AuditCache | null {
+  try {
+    const raw = localStorage.getItem(AUDIT_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function cacheAudit(data: AuditCache) {
+  try { localStorage.setItem(AUDIT_CACHE_KEY, JSON.stringify(data)); } catch { }
+}
+
+function clearAuditCache() {
+  try { localStorage.removeItem(AUDIT_CACHE_KEY); } catch { }
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -105,19 +156,51 @@ const STEPS: Step[] = [
 ];
 
 export default function AuditStepper() {
-  const [step, setStep] = useState<StepId>('connect');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const initialStep = (): StepId => {
+    const urlStep = searchParams.get('step') as StepId | null;
+    if (urlStep && ['connect', 'select', 'cache_check', 'auditing', 'report', 'error'].includes(urlStep)) {
+      // Only restore to 'report' if we have cached data; otherwise start from connect
+      if (urlStep === 'report' && getCachedAudit()) return 'report';
+      if (urlStep === 'connect' || urlStep === 'select') return urlStep;
+    }
+    return 'connect';
+  };
+
+  const [step, setStepRaw] = useState<StepId>(initialStep);
+
+  const setStep = useCallback((newStep: StepId) => {
+    setStepRaw(newStep);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('step', newStep);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, router]);
+
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [csvFiles, setCsvFiles] = useState<FileInfo[]>([]);
   const [selectedCsv, setSelectedCsv] = useState<string>('');
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string>('');
+  const [savedSession, setSavedSession] = useState<SavedSession | null>(null);
+  const [quickConnecting, setQuickConnecting] = useState(false);
 
   const [auditData, setAuditData] = useState<{
     report: AuditResult[];
     summary: any;
     duplicates: DuplicateSku[];
-  } | null>(null);
+  } | null>(() => {
+    // Restore cached audit if landing on report step
+    if (initialStep() === 'report') {
+      const cached = getCachedAudit();
+      if (cached) {
+        return { report: cached.report, summary: cached.summary, duplicates: cached.duplicates };
+      }
+    }
+    return null;
+  });
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -159,6 +242,19 @@ export default function AuditStepper() {
   }, [activityLog]);
 
   useEffect(() => {
+    // Load saved session first (instant, from localStorage)
+    const session = getSavedSession();
+    if (session) {
+      setSavedSession(session);
+      ftpForm.reset({
+        host: session.host,
+        username: session.username,
+        password: session.password,
+        port: 21,
+        secure: false,
+      });
+    }
+
     const fetchCredentials = async () => {
       try {
         const creds = await getFtpCredentials();
@@ -168,8 +264,10 @@ export default function AuditStepper() {
           hasPassword: !!creds.password,
         });
 
+        // Only override if no saved session AND form is still empty
         const currentValues = ftpForm.getValues();
         if (
+          !session &&
           (creds.host || creds.username || creds.password) &&
           !currentValues.host &&
           !currentValues.username &&
@@ -185,17 +283,22 @@ export default function AuditStepper() {
       try {
         const locs = await getAvailableLocations();
         setLocations(locs);
-        // Default to Gamma if available, or first one
-        const gamma = locs.find(l => l.id === 93998154045);
-        if (gamma) setSelectedLocationId(gamma.id.toString());
-        else if (locs.length > 0) setSelectedLocationId(locs[0].id.toString());
+        // Restore saved location or default to Gamma
+        if (session?.lastLocationId) {
+          setSelectedLocationId(session.lastLocationId);
+        } else {
+          const gamma = locs.find(l => l.id === 93998154045);
+          if (gamma) setSelectedLocationId(gamma.id.toString());
+          else if (locs.length > 0) setSelectedLocationId(locs[0].id.toString());
+        }
       } catch (error) {
         logger.error('Failed to fetch locations:', error);
       }
     };
     fetchCredentials();
     fetchLocations();
-  }, [ftpForm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleConnect = (values: FtpFormData) => {
     startTransition(async () => {
@@ -209,9 +312,27 @@ export default function AuditStepper() {
         toast({ title: 'FTP Connection Successful', description: 'Ready to select a file.' });
         const files = await listCsvFiles(formData) as any as FileInfo[]; // Type assertion for safety if action type inference lags
         setCsvFiles(files);
-        if (files.length > 0) {
+
+        // Restore last CSV selection or default
+        const session = getSavedSession();
+        const lastCsv = session?.lastCsv;
+        if (lastCsv && files.find(f => f.name === lastCsv)) {
+          setSelectedCsv(lastCsv);
+        } else if (files.length > 0) {
           setSelectedCsv(files.find(f => f.name === BULK_AUDIT_FILE)?.name ? BULK_AUDIT_FILE : files[0].name);
         }
+
+        // Save credentials to session
+        saveSession({
+          host: values.host,
+          username: values.username,
+          password: values.password,
+          lastCsv: selectedCsv || '',
+          lastLocationId: selectedLocationId || '',
+          savedAt: new Date().toISOString(),
+        });
+        setSavedSession(getSavedSession());
+
         setStep('select');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'An unknown error occurred.';
@@ -263,6 +384,7 @@ export default function AuditStepper() {
 
         addLog('Audit complete!');
         setAuditData(result);
+        cacheAudit({ ...result, fileName: selectedCsv, cachedAt: new Date().toISOString() });
         setTimeout(() => setStep('report'), 500);
       } catch (error) {
         const message =
@@ -340,6 +462,7 @@ export default function AuditStepper() {
 
         addLog('Report finished!');
         setAuditData(result);
+        cacheAudit({ ...result, fileName: selectedCsv, cachedAt: new Date().toISOString() });
         setTimeout(() => setStep('report'), 500);
       } catch (error) {
         const message =
@@ -354,6 +477,18 @@ export default function AuditStepper() {
 
   const handleNextFromSelect = () => {
     if (selectedCsv) {
+      // Update saved session with current selection
+      const values = ftpForm.getValues();
+      saveSession({
+        host: values.host,
+        username: values.username,
+        password: values.password,
+        lastCsv: selectedCsv,
+        lastLocationId: selectedLocationId,
+        savedAt: new Date().toISOString(),
+      });
+      setSavedSession(getSavedSession());
+
       setStep('cache_check');
       startTransition(async () => {
         const status = await checkBulkCacheStatus();
@@ -362,15 +497,61 @@ export default function AuditStepper() {
     }
   };
 
+  const handleQuickReaudit = () => {
+    if (!savedSession) return;
+    setQuickConnecting(true);
+
+    startTransition(async () => {
+      try {
+        const formData = new FormData();
+        formData.append('host', savedSession.host);
+        formData.append('username', savedSession.username);
+        formData.append('password', savedSession.password);
+
+        await connectToFtp(formData);
+        const files = await listCsvFiles(formData) as any as FileInfo[];
+        setCsvFiles(files);
+
+        const targetCsv = savedSession.lastCsv && files.find(f => f.name === savedSession.lastCsv)
+          ? savedSession.lastCsv
+          : files.find(f => f.name === BULK_AUDIT_FILE)?.name || files[0]?.name || '';
+        setSelectedCsv(targetCsv);
+
+        if (savedSession.lastLocationId) {
+          setSelectedLocationId(savedSession.lastLocationId);
+        }
+
+        toast({ title: 'Connected!', description: `Ready to audit ${targetCsv}` });
+        setStep('cache_check');
+        const status = await checkBulkCacheStatus();
+        setCacheStatus(status);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Quick connect failed.';
+        toast({ title: 'Quick Connect Failed', description: message, variant: 'destructive' });
+        clearSavedSession();
+        setSavedSession(null);
+      } finally {
+        setQuickConnecting(false);
+      }
+    });
+  };
+
   const handleReset = () => {
     setStep('connect');
     setActivityLog([]);
     setCsvFiles([]);
     setSelectedCsv('');
     setAuditData(null);
+    clearAuditCache();
     setErrorMessage('');
     setCacheStatus(null);
-    ftpForm.reset(defaultFtpCredentials);
+    // Keep credentials filled from saved session instead of clearing
+    const session = getSavedSession();
+    if (session) {
+      ftpForm.reset({ host: session.host, username: session.username, password: session.password, port: 21, secure: false });
+    } else {
+      ftpForm.reset(defaultFtpCredentials);
+    }
   };
 
   const handleRefresh = () => {
@@ -399,7 +580,47 @@ export default function AuditStepper() {
             animate="animate"
             exit="exit"
             transition={{ duration: 0.3 }}
+            className="space-y-6"
           >
+            {/* Quick Re-audit card for returning users */}
+            {savedSession && (
+              <Card className="mx-auto w-full max-w-md border-green-500/20 bg-green-500/5 shadow-lg">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-green-600 dark:text-green-400">
+                    <Zap className="h-4 w-4" />
+                    Quick Re-audit
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Last session: <strong>{savedSession.lastCsv || 'No file selected'}</strong>
+                    {' · '}
+                    {formatDistanceToNow(new Date(savedSession.savedAt), { addSuffix: true })}
+                  </CardDescription>
+                </CardHeader>
+                <CardFooter className="flex gap-2 pt-0">
+                  <Button
+                    onClick={handleQuickReaudit}
+                    disabled={isPending || quickConnecting}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    {quickConnecting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Zap className="mr-2 h-4 w-4" />
+                    )}
+                    Connect & Go
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { clearSavedSession(); setSavedSession(null); }}
+                    className="text-muted-foreground"
+                  >
+                    Clear
+                  </Button>
+                </CardFooter>
+              </Card>
+            )}
             <Card className="mx-auto w-full max-w-md border-primary/10 shadow-2xl shadow-primary/5">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
