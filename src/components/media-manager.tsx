@@ -96,6 +96,11 @@ export function MediaManager({
     variantsRef.current = variants;
   }, [variants]);
 
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -207,7 +212,7 @@ export function MediaManager({
 
   const handleDeleteImage = useCallback(
     (imageId: number) => {
-      const imageToDelete = images.find((img) => img.id === imageId);
+      const imageToDelete = imagesRef.current.find((img) => img.id === imageId);
       if (imageToDelete && imageToDelete.variant_ids.length > 0) {
         toast({
           title: 'Cannot Delete',
@@ -221,7 +226,8 @@ export function MediaManager({
         const result = await deleteImage(productId, imageId);
         if (result.success) {
           toast({ title: 'Success!', description: 'Image has been deleted.' });
-          const newImages = images.filter((img) => img.id !== imageId);
+          // Use imagesRef to ensure we have the latest list when calculating newImages
+          const newImages = imagesRef.current.filter((img) => img.id !== imageId);
           setImages(newImages);
           onImageCountChange(newImages.length);
         } else {
@@ -229,7 +235,7 @@ export function MediaManager({
         }
       });
     },
-    [images, productId, onImageCountChange, toast]
+    [productId, onImageCountChange, toast]
   );
 
   const handleBulkDelete = () => {
