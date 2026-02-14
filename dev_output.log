@@ -7,9 +7,48 @@
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
+ ✓ Ready in 1339ms
  ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+ ✓ Compiled / in 12.1s
+ GET / 200 in 13760ms
+ POST / 200 in 186ms
+ POST / 200 in 153ms
+[2025-12-29T22:05:14.135Z] [ERROR] Shopify environment variables are not set.
+ ⨯ Error: Shopify environment variables are not set. Please create a .env.local file.
+    at getShopifyRestClient (src/lib/shopify.ts:487:10)
+    at getShopifyLocations (src/lib/shopify.ts:785:24)
+    at getAvailableLocations (src/app/actions.ts:86:33)
+  485 |   if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
+  486 |     logger.error('Shopify environment variables are not set.');
+> 487 |     throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
+      |          ^
+  488 |   }
+  489 |
+  490 |   const shopify = shopifyApi({ {
+  digest: '2084268254'
+}
+ POST / 500 in 755ms
+ POST / 200 in 63ms
+ POST / 200 in 52ms
+ POST / 200 in 47ms
+ POST / 200 in 48ms
+ POST / 200 in 74ms
+ POST / 200 in 112ms
+ GET / 200 in 181ms
+ POST / 200 in 90ms
+ POST / 200 in 46ms
+[2025-12-29T22:06:13.710Z] [ERROR] Shopify environment variables are not set.
+ ⨯ Error: Shopify environment variables are not set. Please create a .env.local file.
+    at getShopifyRestClient (src/lib/shopify.ts:487:10)
+    at getShopifyLocations (src/lib/shopify.ts:785:24)
+    at getAvailableLocations (src/app/actions.ts:86:33)
+  485 |   if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
+  486 |     logger.error('Shopify environment variables are not set.');
+> 487 |     throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
+      |          ^
+  488 |   }
+  489 |
+  490 |   const shopify = shopifyApi({ {
+  digest: '2084268254'
+}
+ POST / 500 in 520ms
