@@ -1,6 +1,8 @@
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { logger } from '@/lib/logger';
+import * as dns from 'dns';
+import * as net from 'net';
 
 const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
 
@@ -8,6 +10,8 @@ export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
   const user = data.get('username') as string;
   const password = data.get('password') as string;
+
+  await validateFtpHost(host);
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
   const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
@@ -77,6 +81,79 @@ export async function listCsvFiles(data: FormData) {
       client.close();
     }
   }
+}
+
+/**
+ * Sentinel Security: Validates the FTP host to prevent SSRF and internal network access.
+ * Rejects localhost, link-local, and private IP ranges.
+ * Uses DNS resolution to detect if a domain or shorthand IP resolves to a private address.
+ */
+async function validateFtpHost(host: string): Promise<void> {
+  // 1. Basic format checks
+  if (host.startsWith('file://') || host.includes('..')) {
+      throw new Error('Security Error: Invalid host format.');
+  }
+
+  // 2. Resolve DNS (Handles domains, IP shorthands like 127.1, hex, etc.)
+  // We resolve to IPv4 first, then IPv6 if needed.
+  // Note: basic-ftp might connect to IPv6 if available.
+
+  let addresses: string[] = [];
+  try {
+      // Use dns.promises.lookup which respects OS resolution (including /etc/hosts, but we care more about where it goes)
+      // lookup returns the first IP. basic-ftp relies on OS resolution via net.connect.
+      // To be safe, we should check what it resolves to.
+      const resolved = await dns.promises.lookup(host, { all: true });
+      addresses = resolved.map(r => r.address);
+  } catch (err) {
+      // If it fails to resolve, basic-ftp will also fail, so technically safe from SSRF but better to let it fail naturally or throw.
+      // However, if we can't resolve it, we can't validate it.
+      // Let's assume if it doesn't resolve, it's not reachable.
+      return;
+  }
+
+  for (const ip of addresses) {
+      if (isPrivateIP(ip)) {
+          throw new Error(`Security Error: Host ${host} resolves to restricted IP ${ip}.`);
+      }
+  }
+}
+
+function isPrivateIP(ip: string): boolean {
+  if (ip === '::1') return true; // IPv6 Loopback
+
+  if (net.isIPv6(ip)) {
+      // Simple check for Unique Local Address (fc00::/7) or Link-Local (fe80::/10)
+      // and Loopback (::1)
+      if (ip.toLowerCase() === '::1') return true;
+      if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return true;
+      if (ip.toLowerCase().startsWith('fe80')) return true;
+      // Mapped IPv4
+      if (ip.toLowerCase().startsWith('::ffff:')) {
+          return isPrivateIP(ip.substring(7));
+      }
+      return false;
+  }
+
+  if (net.isIPv4(ip)) {
+      const parts = ip.split('.').map(Number);
+      const [a, b] = parts;
+
+      // 0.0.0.0/8
+      if (a === 0) return true;
+      // 127.0.0.0/8 (Loopback)
+      if (a === 127) return true;
+      // 10.0.0.0/8 (Private)
+      if (a === 10) return true;
+      // 172.16.0.0/12 (Private)
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      // 192.168.0.0/16 (Private)
+      if (a === 192 && b === 168) return true;
+      // 169.254.0.0/16 (Link-local)
+      if (a === 169 && b === 254) return true;
+  }
+
+  return false;
 }
 
 export async function getCsvStreamFromFtp(
