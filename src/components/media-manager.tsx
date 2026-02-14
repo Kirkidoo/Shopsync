@@ -96,6 +96,11 @@ export function MediaManager({
     variantsRef.current = variants;
   }, [variants]);
 
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
   const fetchMediaData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -156,7 +161,6 @@ export function MediaManager({
       if (result.success && result.image) {
         const newImages = [...images, result.image];
         setImages(newImages);
-        onImageCountChange(newImages.length);
         setNewImageUrl('');
         toast({ title: 'Success!', description: 'Image has been added.' });
       } else {
@@ -207,7 +211,8 @@ export function MediaManager({
 
   const handleDeleteImage = useCallback(
     (imageId: number) => {
-      const imageToDelete = images.find((img) => img.id === imageId);
+      const currentImages = imagesRef.current;
+      const imageToDelete = currentImages.find((img) => img.id === imageId);
       if (imageToDelete && imageToDelete.variant_ids.length > 0) {
         toast({
           title: 'Cannot Delete',
@@ -221,16 +226,18 @@ export function MediaManager({
         const result = await deleteImage(productId, imageId);
         if (result.success) {
           toast({ title: 'Success!', description: 'Image has been deleted.' });
-          const newImages = images.filter((img) => img.id !== imageId);
-          setImages(newImages);
-          onImageCountChange(newImages.length);
+          setImages((prev) => prev.filter((img) => img.id !== imageId));
         } else {
           toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
       });
     },
-    [images, productId, onImageCountChange, toast]
+    [productId, toast]
   );
+
+  useEffect(() => {
+    onImageCountChange(images.length);
+  }, [images.length, onImageCountChange]);
 
   const handleBulkDelete = () => {
     const assignedImages = Array.from(selectedImageIds).filter((id) => {
@@ -276,7 +283,6 @@ export function MediaManager({
       if (successfullyDeletedIds.length > 0) {
         const newImages = images.filter((img) => !successfullyDeletedIds.includes(img.id));
         setImages(newImages);
-        onImageCountChange(newImages.length);
       }
       setSelectedImageIds(new Set());
     });
