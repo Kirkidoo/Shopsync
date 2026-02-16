@@ -37,6 +37,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
     const [fixedMismatches, setFixedMismatches] = useState<Set<string>>(new Set());
     const [createdProductHandles, setCreatedProductHandles] = useState<Set<string>>(new Set());
     const [updatedProductHandles, setUpdatedProductHandles] = useState<Set<string>>(new Set());
+    const [hideMissingVariants, setHideMissingVariants] = useState(false);
 
 
     // Initialize
@@ -87,7 +88,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
                     if (createdProductHandles.has(getHandle(item))) {
                         return { ...item, mismatches: [] }; // Effectively hide
                     }
-                    // Filter individual mismatches if any marked fixed (unlikely for 'missing' but good practice)
+                    // Filter individual mismatches if any marked fixed
                     const remainingMismatches = item.mismatches.filter(
                         (m) => !fixedMismatches.has(`${item.sku}-${m.field}`)
                     );
@@ -101,8 +102,6 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
 
                 if (item.status === 'missing_in_shopify') {
                     if (createdProductHandles.has(getHandle(item))) return false;
-                    // If the only mismatch was 'missing_in_shopify' and it's handled, hide it.
-                    // (Logic copied from original: if mismatches.length is 1 and it's missing_in_shopify, check created handles again)
                     if (item.mismatches.length === 1 && item.mismatches[0].field === 'missing_in_shopify') {
                         return !createdProductHandles.has(getHandle(item));
                     }
@@ -156,6 +155,15 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
             results = results.filter((item) => item.shopifyProducts[0]?.vendor === selectedVendor);
         }
 
+        // 3b. Hide Missing Variants toggle
+        if (hideMissingVariants && (filter === 'missing_in_shopify' || filter === 'all')) {
+            results = results.filter((item) => {
+                if (item.status !== 'missing_in_shopify') return true;
+                // Keep only items where at least one mismatch is missingType 'product'
+                return item.mismatches.some((m) => m.missingType === 'product');
+            });
+        }
+
         // 4. Single SKU Filter
         if (filterSingleSku) {
             // Re-implementing simplified grouping just for this check:
@@ -182,7 +190,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         }
 
         return results;
-    }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, deferredSearchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters]);
+    }, [reportData, fixedMismatches, createdProductHandles, filter, updatedProductHandles, filterCustomTag, deferredSearchTerm, mismatchFilters, selectedVendor, filterSingleSku, columnFilters, hideMissingVariants]);
 
     // Grouping
     const groupedByHandle = useMemo(() => {
@@ -246,6 +254,7 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         fixedMismatches, setFixedMismatches,
         createdProductHandles, setCreatedProductHandles,
         updatedProductHandles, setUpdatedProductHandles,
+        hideMissingVariants, setHideMissingVariants,
 
         columnFilters, setColumnFilters,
         availableCsvColumns,

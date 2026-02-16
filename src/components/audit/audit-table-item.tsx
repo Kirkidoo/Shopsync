@@ -12,7 +12,7 @@ import { ProductDetails } from './product-details';
 import { MissingProductDetailsDialog } from './missing-product-details-dialog';
 import { CsvShopifyComparison } from './csv-shopify-comparison';
 import { AuditResult, Product, AuditStatus, MismatchDetail } from '@/lib/types';
-import { CheckCircle2, AlertTriangle, PlusCircle, XCircle, Copy, Link, Trash2, Bot, Check, ChevronDown, ImageIcon, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, XCircle, Copy, Link, Trash2, Bot, Check, ChevronDown, ImageIcon, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AuditTableItemProps {
@@ -311,8 +311,10 @@ const AuditTableItem = React.memo(function AuditTableItem({
                         >
                             <ImageIcon className="mr-2 h-4 w-4" />
                             Manage Media
+                            Manage Media
                         </Button>
                     )}
+
                 </div>
             </AccordionHeader>
 
@@ -416,10 +418,12 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                            {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
-                                                <>
-                                                    <MissingProductDetailsDialog product={item.csvProducts[0]} />
-                                                </>
+                                            {item.status === 'missing_in_shopify' && (
+                                                <div className="flex items-center gap-2">
+                                                    {item.csvProducts[0] && (
+                                                        <MissingProductDetailsDialog product={item.csvProducts[0]} />
+                                                    )}
+                                                </div>
                                             )}
 
                                             {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (

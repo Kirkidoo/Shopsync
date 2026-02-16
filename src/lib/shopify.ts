@@ -1313,7 +1313,7 @@ export async function updateProduct(
 
 export async function updateProductVariant(
   variantId: number,
-  input: { image_id?: number | null; price?: number; weight?: number; weight_unit?: 'g' | 'lb' }
+  input: { image_id?: number | null; price?: number; compare_at_price?: number | null; weight?: number; weight_unit?: 'g' | 'lb' }
 ) {
   const shopifyClient = getShopifyRestClient();
   const payload = { variant: { id: variantId, ...input } };

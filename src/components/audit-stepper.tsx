@@ -207,6 +207,7 @@ export default function AuditStepper() {
   const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null } | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isCheckingCache, setIsCheckingCache] = useState(false);
 
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -299,6 +300,24 @@ export default function AuditStepper() {
     fetchLocations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (step === 'cache_check' && !cacheStatus && !isCheckingCache) {
+      const checkCache = async () => {
+        setIsCheckingCache(true);
+        try {
+          const status = await checkBulkCacheStatus();
+          setCacheStatus(status);
+        } catch (error) {
+          console.error('Failed to check cache status', error);
+          setCacheStatus({ lastModified: null });
+        } finally {
+          setIsCheckingCache(false);
+        }
+      };
+      checkCache();
+    }
+  }, [step, cacheStatus, isCheckingCache]);
 
   const handleConnect = (values: FtpFormData) => {
     startTransition(async () => {
@@ -491,10 +510,7 @@ export default function AuditStepper() {
       setSavedSession(getSavedSession());
 
       setStep('cache_check');
-      startTransition(async () => {
-        const status = await checkBulkCacheStatus();
-        setCacheStatus(status);
-      });
+      // Cache check will be triggered by useEffect
     }
   };
 
@@ -524,8 +540,7 @@ export default function AuditStepper() {
 
         toast({ title: 'Connected!', description: `Ready to audit ${targetCsv}` });
         setStep('cache_check');
-        const status = await checkBulkCacheStatus();
-        setCacheStatus(status);
+        // Cache check will be triggered by useEffect
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Quick connect failed.';
         toast({ title: 'Quick Connect Failed', description: message, variant: 'destructive' });
@@ -558,11 +573,8 @@ export default function AuditStepper() {
   const handleRefresh = () => {
     // Always go back to method selection for refresh to be safe, or just re-run the last method?
     // For simplicity, let's go back to cache_check which acts as the method selector now.
+    setCacheStatus(null);
     setStep('cache_check');
-    startTransition(async () => {
-      const status = await checkBulkCacheStatus();
-      setCacheStatus(status);
-    });
   };
 
   return (
@@ -816,80 +828,80 @@ export default function AuditStepper() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {isPending && !cacheStatus ? (
-                  <div className="flex flex-col items-center justify-center py-8">
-                    <Loader2 className="mb-4 h-12 w-12 animate-spin text-primary" />
-                    <p className="animate-pulse text-sm text-muted-foreground">
-                      Checking for cached data...
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {/* Option 1: Bulk / Cache */}
-                    <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
-                      <div className="flex items-center gap-2 font-semibold text-foreground">
-                        <Database className="h-4 w-4 text-blue-500" />
-                        Bulk Audit (Recommended)
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Uses Shopify&apos;s Bulk API. Best for large files and 100% accuracy.
-                        {cacheStatus?.lastModified ? (
-                          <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
-                            Cache available from{' '}
-                            {formatDistanceToNow(new Date(cacheStatus.lastModified), {
-                              addSuffix: true,
-                            })}
-                            .
-                          </span>
-                        ) : (
-                          <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
-                            No cache found. Will start a new export (takes time).
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex flex-col gap-2">
-                        <Button
-                          onClick={() => handleRunBulkAudit(true)}
-                          disabled={isPending || !cacheStatus?.lastModified}
-                          variant={cacheStatus?.lastModified ? 'default' : 'secondary'}
-                          className="w-full"
-                        >
-                          Use Cached Data
-                        </Button>
-                        <Button
-                          onClick={() => handleRunBulkAudit(false)}
-                          disabled={isPending}
-                          variant="outline"
-                          className="w-full"
-                        >
-                          Start New Bulk Export
-                        </Button>
-                      </div>
+                <div className="grid gap-6 md:grid-cols-2">
+                  {/* Option 1: Bulk / Cache */}
+                  <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
+                    <div className="flex items-center gap-2 font-semibold text-foreground">
+                      <Database className="h-4 w-4 text-blue-500" />
+                      Bulk Audit (Recommended)
                     </div>
-
-                    {/* Option 2: Live Audit */}
-                    <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
-                      <div className="flex items-center gap-2 font-semibold text-foreground">
-                        <Server className="h-4 w-4 text-green-500" />
-                        Live Audit
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Queries Shopify in real-time. Good for small files or quick checks.
-                        <span className="mt-2 block text-muted-foreground">
-                          Now includes verification step to prevent false positives.
-                        </span>
-                      </p>
+                    <div className="text-sm text-muted-foreground min-h-[40px]">
+                      {isCheckingCache ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Checking cache availability...</span>
+                        </div>
+                      ) : (
+                        <>
+                          Uses Shopify&apos;s Bulk API. Best for large files and 100% accuracy.
+                          {cacheStatus?.lastModified ? (
+                            <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
+                              Cache available from{' '}
+                              {formatDistanceToNow(new Date(cacheStatus.lastModified), {
+                                addSuffix: true,
+                              })}
+                              .
+                            </span>
+                          ) : (
+                            <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
+                              No cache found. Will start a new export (takes time).
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
                       <Button
-                        onClick={handleRunStandardAudit}
-                        disabled={isPending}
-                        variant="secondary"
-                        className="mt-auto w-full"
+                        onClick={() => handleRunBulkAudit(true)}
+                        disabled={isPending || !cacheStatus?.lastModified || isCheckingCache}
+                        variant={cacheStatus?.lastModified ? 'default' : 'secondary'}
+                        className="w-full"
                       >
-                        Run Live Audit
+                        Use Cached Data
+                      </Button>
+                      <Button
+                        onClick={() => handleRunBulkAudit(false)}
+                        disabled={isPending || isCheckingCache}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        Start New Bulk Export
                       </Button>
                     </div>
                   </div>
-                )}
+
+                  {/* Option 2: Live Audit */}
+                  <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
+                    <div className="flex items-center gap-2 font-semibold text-foreground">
+                      <Server className="h-4 w-4 text-green-500" />
+                      Live Audit
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Queries Shopify in real-time. Good for small files or quick checks.
+                      <span className="mt-2 block text-muted-foreground">
+                        Now includes verification step to prevent false positives.
+                      </span>
+                    </p>
+                    <Button
+                      onClick={handleRunStandardAudit}
+                      disabled={isPending}
+                      variant="secondary"
+                      className="mt-auto w-full"
+                    >
+                      Run Live Audit
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
               <CardFooter className="flex justify-start">
                 <Button variant="outline" onClick={() => setStep('select')}>

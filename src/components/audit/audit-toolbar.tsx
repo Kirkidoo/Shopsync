@@ -40,6 +40,8 @@ interface AuditToolbarProps {
     setFixDialogHandles: (s: Set<string>) => void;
     setShowFixDialog: (b: boolean) => void;
     MISMATCH_FILTER_TYPES: MismatchDetail['field'][];
+    hideMissingVariants: boolean;
+    setHideMissingVariants: (b: boolean) => void;
 }
 
 export function AuditToolbar({
@@ -48,7 +50,7 @@ export function AuditToolbar({
     selectedHandlesSize, hasSelectionWithMismatches, hasSelectionWithUnlinkedImages,
     handleBulkFix, handleBulkDeleteUnlinked, handleBulkCreate, startAutoRun, stopAutoRun, startAutoCreate, stopAutoCreate,
     availableMismatchTypes, setFixDialogHandles, setShowFixDialog, MISMATCH_FILTER_TYPES,
-    columnFilters, setColumnFilters, availableCsvColumns
+    columnFilters, setColumnFilters, availableCsvColumns, hideMissingVariants, setHideMissingVariants
 }: AuditToolbarProps & {
     columnFilters: Record<string, string>;
     setColumnFilters: (f: Record<string, string>) => void;
@@ -230,6 +232,21 @@ export function AuditToolbar({
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Create {selectedHandlesSize} Selected
                     </Button>
+                )}
+
+                {/* Hide Missing Variants Toggle */}
+                {filter === 'missing_in_shopify' && (
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="hide-missing-variants"
+                            checked={hideMissingVariants}
+                            onCheckedChange={(checked) => setHideMissingVariants(!!checked)}
+                            disabled={isFixing || isAutoRunning || isAutoCreating}
+                        />
+                        <Label htmlFor="hide-missing-variants" className="whitespace-nowrap font-normal">
+                            Hide missing variants
+                        </Label>
+                    </div>
                 )}
 
                 {/* Auto Fix / Create Buttons */}

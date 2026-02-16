@@ -411,7 +411,8 @@ export default function AuditReport({
     currentSummary,
     columnFilters,
     setColumnFilters,
-    availableCsvColumns
+    availableCsvColumns,
+    hideMissingVariants, setHideMissingVariants
   } = useAuditData({ initialData: data, initialSummary: summary });
 
   // Component Local State (UI)
@@ -1217,6 +1218,8 @@ export default function AuditReport({
             columnFilters={columnFilters}
             setColumnFilters={setColumnFilters}
             availableCsvColumns={availableCsvColumns}
+            hideMissingVariants={hideMissingVariants}
+            setHideMissingVariants={setHideMissingVariants}
           />
 
           <AuditTable
