@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils';
 
 interface PreCreationMediaManagerProps {
   variants: Product[];
-  onSave: (updatedVariants: Product[]) => void;
+  onSave: (updatedVariants: Product[], imageUrls: string[]) => void;
   onCancel: () => void;
 }
 
@@ -278,7 +278,7 @@ export function PreCreationMediaManager({
   };
 
   const handleSave = () => {
-    onSave(localVariants);
+    onSave(localVariants, imageUrls);
   };
 
   if (variants.length === 0) {

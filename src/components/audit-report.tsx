@@ -1391,14 +1391,18 @@ export default function AuditReport({
             <PreCreationMediaManager
               key={editingMissingMedia}
               variants={editingMissingMediaVariants}
-              onSave={(updatedVariants) => {
+              onSave={(updatedVariants, curatedImageUrls) => {
                 // Update reportData with new media assignments
+                // Null out mediaUrl if it references an image that was deleted from the gallery
                 setReportData(prev => prev.map(item => {
                   const updated = updatedVariants.find(v => v.sku === item.sku);
                   if (updated && item.csvProducts[0]) {
+                    const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
+                      ? updated.mediaUrl
+                      : null;
                     return {
                       ...item,
-                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: updated.mediaUrl }]
+                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
                     };
                   }
                   return item;
