@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Trash2, Link, Blocks } from 'lucide-react';
+import { Trash2, Link, Blocks, ImagePlus } from 'lucide-react';
 import { Product } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -143,6 +143,14 @@ export function PreCreationMediaManager({
 
   const handleAssignImage = (sku: string, url: string | null) => {
     setLocalVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, mediaUrl: url } : v)));
+  };
+
+  const handleAssignToAll = (url: string) => {
+    setLocalVariants((prev) => prev.map((v) => ({ ...v, mediaUrl: url })));
+    toast({
+      title: 'Assigned to All',
+      description: `Image assigned to all ${localVariants.length} variants.`,
+    });
   };
 
   const availableOptions = useMemo(() => {
@@ -406,27 +414,41 @@ export function PreCreationMediaManager({
                   </label>
                   <div
                     className={cn(
-                      'pointer-events-none absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 opacity-0 transition-opacity group-hover:opacity-100',
+                      'pointer-events-none absolute inset-0 flex flex-col justify-between bg-black/60 p-1.5 opacity-0 transition-opacity group-hover:opacity-100',
                       isSelected && 'opacity-100'
                     )}
                   >
-                    <Checkbox
-                      id={`pre-image-select-${i}`}
-                      className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
-                      checked={isSelected}
-                      onCheckedChange={(checked) => handleImageSelection(url, !!checked)}
-                      aria-label={`Select image`}
-                    />
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary"
-                      onClick={(e) => e.stopPropagation()}
-                      aria-label="View full image in new tab"
+                    <div className="flex items-start justify-between">
+                      <Checkbox
+                        id={`pre-image-select-${i}`}
+                        className="pointer-events-auto bg-white/80 data-[state=checked]:bg-primary"
+                        checked={isSelected}
+                        onCheckedChange={(checked) => handleImageSelection(url, !!checked)}
+                        aria-label={`Select image`}
+                      />
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="View full image in new tab"
+                      >
+                        <Link className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      className="pointer-events-auto mx-auto flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAssignToAll(url);
+                      }}
+                      aria-label="Assign this image to all variants"
                     >
-                      <Link className="h-3.5 w-3.5" />
-                    </a>
+                      <ImagePlus className="h-3 w-3" />
+                      Assign to All
+                    </button>
                   </div>
                   {assignedUrls.has(url) && (
                     <div className="pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground group-hover:hidden">

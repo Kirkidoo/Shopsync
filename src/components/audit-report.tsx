@@ -1391,13 +1391,20 @@ export default function AuditReport({
             <PreCreationMediaManager
               key={editingMissingMedia}
               variants={editingMissingMediaVariants}
-              onSave={(result) => {
-                // handle saving pre-creation media logic? 
-                // Original: handleSavePreCreationMedia. 
-                // Likely updates local state or something.
-                // For now, close logic.
+              onSave={(updatedVariants) => {
+                // Update reportData with new media assignments
+                setReportData(prev => prev.map(item => {
+                  const updated = updatedVariants.find(v => v.sku === item.sku);
+                  if (updated && item.csvProducts[0]) {
+                    return {
+                      ...item,
+                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: updated.mediaUrl }]
+                    };
+                  }
+                  return item;
+                }));
                 setEditingMissingMedia(null);
-                toast({ title: "Media saved (simulation)", description: "This feature requires implementation." });
+                toast({ title: "Media Updated", description: `Image assignments saved for ${updatedVariants.length} variants.` });
               }}
               onCancel={() => setEditingMissingMedia(null)}
             />
