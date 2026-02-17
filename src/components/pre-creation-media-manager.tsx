@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import {
   Dialog,
@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Trash2, Link, Blocks, ImagePlus } from 'lucide-react';
+import { Trash2, Link, Blocks, ImagePlus, X } from 'lucide-react';
 import { Product } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -69,12 +69,31 @@ export function PreCreationMediaManager({
   const [bulkAssignValue, setBulkAssignValue] = useState<string>('');
   const [isBulkAssignDialogOpen, setIsBulkAssignDialogOpen] = useState(false);
 
+  // Revision counter to force Select re-renders when assignments change externally
+  const [revision, setRevision] = useState(0);
+
   useEffect(() => {
     setLocalVariants(JSON.parse(JSON.stringify(variants)));
     const uniqueUrls = [...new Set(variants.map((v) => v.mediaUrl).filter(Boolean) as string[])];
     setImageUrls(uniqueUrls);
     setSelectedImageUrls(new Set());
   }, [variants]);
+
+  // Reactive: recompute assigned URLs whenever localVariants changes
+  const assignedUrls = useMemo(() => {
+    return new Set(localVariants.map((v) => v.mediaUrl).filter(Boolean) as string[]);
+  }, [localVariants]);
+
+  // Count how many variants each URL is assigned to
+  const assignmentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    localVariants.forEach((v) => {
+      if (v.mediaUrl) {
+        counts.set(v.mediaUrl, (counts.get(v.mediaUrl) || 0) + 1);
+      }
+    });
+    return counts;
+  }, [localVariants]);
 
   const handleImageSelection = (imageUrl: string, checked: boolean) => {
     const newSet = new Set(selectedImageUrls);
@@ -115,43 +134,56 @@ export function PreCreationMediaManager({
     setNewImageUrl('');
   };
 
-  const handleDeleteImageUrl = (urlToDelete: string) => {
+  // Delete a single image from gallery and unassign from all variants
+  const handleDeleteSingleImage = useCallback((urlToDelete: string) => {
     setImageUrls((prev) => prev.filter((url) => url !== urlToDelete));
     setLocalVariants((prev) =>
       prev.map((v) => (v.mediaUrl === urlToDelete ? { ...v, mediaUrl: null } : v))
     );
-  };
+    setSelectedImageUrls((prev) => {
+      const next = new Set(prev);
+      next.delete(urlToDelete);
+      return next;
+    });
+    setRevision((r) => r + 1);
+    toast({
+      title: 'Image Removed',
+      description: 'Image removed from gallery and unassigned from all variants.',
+    });
+  }, [toast]);
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = useCallback(() => {
     const urlsToKeep = imageUrls.filter((url) => !selectedImageUrls.has(url));
     setImageUrls(urlsToKeep);
-
-    const updatedVariants = localVariants.map((v) => {
-      if (v.mediaUrl && selectedImageUrls.has(v.mediaUrl)) {
-        return { ...v, mediaUrl: null };
-      }
-      return v;
-    });
-    setLocalVariants(updatedVariants);
-
+    setLocalVariants((prev) =>
+      prev.map((v) => {
+        if (v.mediaUrl && selectedImageUrls.has(v.mediaUrl)) {
+          return { ...v, mediaUrl: null };
+        }
+        return v;
+      })
+    );
+    setRevision((r) => r + 1);
     toast({
       title: 'Images Removed',
-      description: `${selectedImageUrls.size} image URLs were removed and unassigned.`,
+      description: `${selectedImageUrls.size} image(s) removed from gallery and unassigned.`,
     });
     setSelectedImageUrls(new Set());
-  };
+  }, [imageUrls, selectedImageUrls, toast]);
 
-  const handleAssignImage = (sku: string, url: string | null) => {
+  const handleAssignImage = useCallback((sku: string, url: string | null) => {
     setLocalVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, mediaUrl: url } : v)));
-  };
+    setRevision((r) => r + 1);
+  }, []);
 
-  const handleAssignToAll = (url: string) => {
+  const handleAssignToAll = useCallback((url: string) => {
     setLocalVariants((prev) => prev.map((v) => ({ ...v, mediaUrl: url })));
+    setRevision((r) => r + 1);
     toast({
       title: 'Assigned to All',
-      description: `Image assigned to all ${localVariants.length} variants.`,
+      description: `Image assigned to all variants.`,
     });
-  };
+  }, [toast]);
 
   const availableOptions = useMemo(() => {
     const options = new Map<string, Set<string>>();
@@ -232,6 +264,7 @@ export function PreCreationMediaManager({
       })
     );
 
+    setRevision((r) => r + 1);
     setIsBulkAssignDialogOpen(false);
     toast({
       title: 'Success!',
@@ -253,7 +286,6 @@ export function PreCreationMediaManager({
   }
 
   const productTitle = variants[0]?.name || 'New Product';
-  const assignedUrls = new Set(localVariants.map((v) => v.mediaUrl).filter(Boolean));
 
   return (
     <>
@@ -401,6 +433,8 @@ export function PreCreationMediaManager({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             {imageUrls.map((url, i) => {
               const isSelected = selectedImageUrls.has(url);
+              const isAssigned = assignedUrls.has(url);
+              const count = assignmentCounts.get(url) || 0;
               return (
                 <div key={url} className="group relative overflow-hidden rounded-md border">
                   <label htmlFor={`pre-image-select-${i}`} className="block cursor-pointer">
@@ -412,6 +446,7 @@ export function PreCreationMediaManager({
                       className="aspect-square w-full object-cover"
                     />
                   </label>
+                  {/* Hover overlay with actions */}
                   <div
                     className={cn(
                       'pointer-events-none absolute inset-0 flex flex-col justify-between bg-black/60 p-1.5 opacity-0 transition-opacity group-hover:opacity-100',
@@ -426,22 +461,37 @@ export function PreCreationMediaManager({
                         onCheckedChange={(checked) => handleImageSelection(url, !!checked)}
                         aria-label={`Select image`}
                       />
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary"
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label="View full image in new tab"
-                      >
-                        <Link className="h-3.5 w-3.5" />
-                      </a>
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-secondary/80 text-secondary-foreground hover:bg-secondary"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="View full image in new tab"
+                        >
+                          <Link className="h-3.5 w-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md bg-destructive/80 text-destructive-foreground hover:bg-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            handleDeleteSingleImage(url);
+                          }}
+                          aria-label="Delete image"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <button
                       type="button"
                       className="pointer-events-auto mx-auto flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         handleAssignToAll(url);
                       }}
                       aria-label="Assign this image to all variants"
@@ -450,9 +500,14 @@ export function PreCreationMediaManager({
                       Assign to All
                     </button>
                   </div>
-                  {assignedUrls.has(url) && (
-                    <div className="pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground group-hover:hidden">
-                      <Link className="h-3.5 w-3.5" />
+                  {/* Assignment badge — visible when NOT hovering */}
+                  {isAssigned ? (
+                    <div className="absolute bottom-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground shadow group-hover:hidden">
+                      {count} variant{count !== 1 ? 's' : ''}
+                    </div>
+                  ) : (
+                    <div className="absolute bottom-1 left-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow group-hover:hidden">
+                      Unassigned
                     </div>
                   )}
                 </div>
@@ -494,7 +549,9 @@ export function PreCreationMediaManager({
                       .join(' / ')}
                   </TableCell>
                   <TableCell>
+                    {/* key includes revision + mediaUrl to force Radix Select to remount on external changes */}
                     <Select
+                      key={`${variant.sku}-${revision}-${variant.mediaUrl || 'none'}`}
                       value={variant.mediaUrl || 'none'}
                       onValueChange={(value) =>
                         handleAssignImage(variant.sku, value === 'none' ? null : value)
