@@ -25,15 +25,29 @@ import {
 import {
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import {
-  Loader2,
   Trash2,
   Blocks,
   AlertTriangle,
+  Link,
+  ImagePlus,
+  X,
+  ArrowRightLeft,
+  MousePointer2,
+  Check,
+  Zap,
+  CheckSquare,
+  Square,
+  Search,
+  Maximize2,
+  ChevronDown,
+  Info,
+  Loader2
 } from 'lucide-react';
 import {
   getProductWithImages,
@@ -55,8 +69,18 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { VariantRow } from './media-manager-variant-row';
-import { MediaManagerImageCard } from './media-manager-image-card';
 
 interface MediaManagerProps {
   productId: string;
@@ -91,6 +115,23 @@ export function MediaManager({
   const [bulkAssignValue, setBulkAssignValue] = useState<string>('');
   const [isBulkAssignDialogOpen, setIsBulkAssignDialogOpen] = useState(false);
 
+  // State for merging images
+  const [mergingImageId, setMergingImageId] = useState<number | null>(null);
+  const [isMergingDialogOpen, setIsMergingDialogOpen] = useState(false);
+  const [masterImageId, setMasterImageId] = useState<string>('');
+
+  // State for focused variant (for gallery picking)
+  const [focusedVariantSku, setFocusedVariantSku] = useState<string | null>(null);
+
+  // Revision counter to force re-renders when assignments change externally
+  const [revision, setRevision] = useState(0);
+
+  // Multi-select for variants
+  const [selectedVariantSkus, setSelectedVariantSkus] = useState<Set<string>>(new Set());
+
+  // Search/Filter for gallery
+  const [gallerySearch, setGallerySearch] = useState('');
+
   const variantsRef = useRef(variants);
   useEffect(() => {
     variantsRef.current = variants;
@@ -118,24 +159,31 @@ export function MediaManager({
   const handleImageSelection = useCallback((imageId: number, checked: boolean) => {
     setSelectedImageIds((prev) => {
       const newSet = new Set(prev);
-      if (checked) {
-        newSet.add(imageId);
-      } else {
-        newSet.delete(imageId);
-      }
+      if (checked) newSet.add(imageId);
+      else newSet.delete(imageId);
       return newSet;
     });
   }, []);
 
-  const unlinkedImages = useMemo(
-    () => images.filter((img) => !img.variant_ids || img.variant_ids.length === 0),
-    [images]
-  );
+  // Extract unique media URLs from missing variants to show in gallery
+  const ftpImages = useMemo<ShopifyProductImage[]>(() => {
+    if (!isMissingVariantMode || missingVariants.length === 0) return [];
+    const uniqueUrls = Array.from(new Set(missingVariants.map((v) => v.mediaUrl).filter(Boolean) as string[]));
+    return uniqueUrls.map((url, index) => ({
+      id: -(index + 1),
+      product_id: parseInt(productId.split('/').pop() || '0', 10),
+      src: url,
+      variant_ids: missingVariants.filter((v) => v.mediaUrl === url).map((v) => parseInt(v.variantId.split('/').pop() || '0', 10)).filter((id) => !isNaN(id)),
+      isFtpSource: true,
+    }));
+  }, [isMissingVariantMode, missingVariants, productId]);
+
+  const allImages = useMemo(() => [...images, ...ftpImages], [images, ftpImages]);
+  const unlinkedImages = useMemo(() => allImages.filter((img) => !img.variant_ids || img.variant_ids.length === 0), [allImages]);
 
   const handleSelectAllUnlinked = (checked: boolean) => {
-    if (checked) {
-      setSelectedImageIds(new Set(unlinkedImages.map((img) => img.id)));
-    } else {
+    if (checked) setSelectedImageIds(new Set(unlinkedImages.map((img) => img.id)));
+    else {
       const newSet = new Set(selectedImageIds);
       unlinkedImages.forEach((img) => newSet.delete(img.id));
       setSelectedImageIds(newSet);
@@ -144,11 +192,7 @@ export function MediaManager({
 
   const handleAddImage = () => {
     if (!newImageUrl) {
-      toast({
-        title: 'URL Required',
-        description: 'Please enter an image URL.',
-        variant: 'destructive',
-      });
+      toast({ title: 'URL Required', description: 'Please enter an image URL.', variant: 'destructive' });
       return;
     }
     startSubmitting(async () => {
@@ -167,28 +211,17 @@ export function MediaManager({
 
   const handleAssignImage = useCallback(
     (variantId: string, imageId: number | null) => {
-      // Get the state before this update for potential rollback
       const previousVariant = variantsRef.current.find((v) => v.variantId === variantId);
       const previousImageId = previousVariant?.imageId ?? null;
-
-      // Optimistic update
-      setVariants((prev) =>
-        prev.map((v) => (v.variantId === variantId ? { ...v, imageId: imageId } : v))
-      );
-
+      setVariants((prev) => prev.map((v) => (v.variantId === variantId ? { ...v, imageId: imageId } : v)));
       startSubmitting(async () => {
         const result = await assignImageToVariant(variantId, imageId!);
         if (result.success) {
           toast({ title: 'Success!', description: 'Image assigned to variant.' });
-          // Refetch to confirm variant_ids on images
+          setRevision((r) => r + 1);
           fetchMediaData();
         } else {
-          // Rollback specifically this change
-          setVariants((prev) =>
-            prev.map((v) =>
-              v.variantId === variantId ? { ...v, imageId: previousImageId } : v
-            )
-          );
+          setVariants((prev) => prev.map((v) => (v.variantId === variantId ? { ...v, imageId: previousImageId } : v)));
           toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
       });
@@ -199,268 +232,232 @@ export function MediaManager({
   const handleAssignImageToMissingVariant = useCallback(
     (sku: string, imageId: number | null) => {
       setLocalMissingVariants((prev) =>
-        prev.map((v) => (v.sku === sku ? { ...v, imageId } : v))
+        prev.map((v) => {
+          if (v.sku === sku) {
+            if (imageId !== null && imageId < 0) {
+              const ftpImg = ftpImages.find((img) => img.id === imageId);
+              return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
+            }
+            return { ...v, imageId, mediaUrl: null };
+          }
+          return v;
+        })
       );
     },
-    []
+    [ftpImages]
   );
 
-  const handleDeleteImage = useCallback(
-    (imageId: number) => {
-      const imageToDelete = images.find((img) => img.id === imageId);
-      if (imageToDelete && imageToDelete.variant_ids.length > 0) {
-        toast({
-          title: 'Cannot Delete',
-          description:
-            'This image is currently assigned to one or more variants. Please unassign it first.',
-          variant: 'destructive',
-        });
-        return;
-      }
+  const handleAssignToAll = useCallback((imageId: number) => {
+    if (isMissingVariantMode) {
+      setLocalMissingVariants((prev) =>
+        prev.map((v) => {
+          if (imageId < 0) {
+            const ftpImg = ftpImages.find((img) => img.id === imageId);
+            return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
+          }
+          return { ...v, imageId, mediaUrl: null };
+        })
+      );
+    } else {
+      setVariants((prev) => prev.map((v) => ({ ...v, imageId })));
       startSubmitting(async () => {
-        const result = await deleteImage(productId, imageId);
-        if (result.success) {
-          toast({ title: 'Success!', description: 'Image has been deleted.' });
-          const newImages = images.filter((img) => img.id !== imageId);
-          setImages(newImages);
-          onImageCountChange(newImages.length);
+        const variantsToUpdate = variantsRef.current;
+        const results = await Promise.all(variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, imageId)));
+        const failedCount = results.filter((r) => !r.success).length;
+        if (failedCount > 0) {
+          fetchMediaData();
+          toast({ title: 'Bulk Assign Failed', description: `Could not assign to ${failedCount} variants.`, variant: 'destructive' });
         } else {
-          toast({ title: 'Error', description: result.message, variant: 'destructive' });
+          toast({ title: 'Assigned to All', description: `Image assigned to all ${variantsToUpdate.length} variants.` });
+          fetchMediaData();
         }
       });
-    },
-    [images, productId, onImageCountChange, toast]
-  );
+    }
+    setRevision((r) => r + 1);
+  }, [isMissingVariantMode, ftpImages, fetchMediaData, toast]);
+
+  const handleAssignToSelection = useCallback((imageId: number) => {
+    if (selectedVariantSkus.size === 0) return;
+    if (isMissingVariantMode) {
+      setLocalMissingVariants((prev) =>
+        prev.map((v) => {
+          if (selectedVariantSkus.has(v.sku)) {
+            if (imageId < 0) {
+              const ftpImg = ftpImages.find((img) => img.id === imageId);
+              return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
+            }
+            return { ...v, imageId, mediaUrl: null };
+          }
+          return v;
+        })
+      );
+    } else {
+      const variantsToUpdate = variants.filter(v => selectedVariantSkus.has(v.sku!));
+      setVariants((prev) => prev.map((v) => (selectedVariantSkus.has(v.sku!) ? { ...v, imageId } : v)));
+      startSubmitting(async () => {
+        const results = await Promise.all(variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, imageId)));
+        const failedCount = results.filter((r) => !r.success).length;
+        if (failedCount > 0) {
+          fetchMediaData();
+          toast({ title: 'Bulk Assign Failed', description: `Could not assign to ${failedCount} variants.`, variant: 'destructive' });
+        } else {
+          toast({ title: 'Success!', description: `Assigned to ${selectedVariantSkus.size} selected variants.` });
+          fetchMediaData();
+        }
+      });
+    }
+    setRevision((r) => r + 1);
+  }, [isMissingVariantMode, selectedVariantSkus, variants, ftpImages, fetchMediaData, toast]);
+
+  const toggleVariantSelection = (sku: string) => {
+    setSelectedVariantSkus((prev) => {
+      const next = new Set(prev);
+      if (next.has(sku)) next.delete(sku);
+      else next.add(sku);
+      return next;
+    });
+  };
+
+  const selectAllVariants = (checked: boolean) => {
+    const dataSource = isMissingVariantMode ? localMissingVariants : variants;
+    if (checked) setSelectedVariantSkus(new Set(dataSource.map((v) => v.sku!)));
+    else setSelectedVariantSkus(new Set());
+  };
+
+  const selectByOption = (optionName: string, value: string) => {
+    const dataSource = isMissingVariantMode ? localMissingVariants : variants;
+    const firstWithOpts = dataSource.find(v => v.option1Name === optionName || v.option2Name === optionName || v.option3Name === optionName);
+    let optionKey: keyof Product | null = null;
+    if (firstWithOpts?.option1Name === optionName) optionKey = 'option1Value';
+    else if (firstWithOpts?.option2Name === optionName) optionKey = 'option2Value';
+    else if (firstWithOpts?.option3Name === optionName) optionKey = 'option3Value';
+    if (!optionKey) return;
+    const matchingSkus = dataSource.filter((v) => (v as any)[optionKey!] === value).map((v) => v.sku!);
+    setSelectedVariantSkus((prev) => {
+      const next = new Set(prev);
+      matchingSkus.forEach((sku) => next.add(sku));
+      return next;
+    });
+    toast({ title: 'Selection Updated', description: `Selected ${matchingSkus.length} variants with ${optionName}: ${value}` });
+  };
+
+  const handleMergeImages = useCallback(() => {
+    if (mergingImageId === null || !masterImageId) return;
+    const masterId = parseInt(masterImageId);
+    const variantsToUpdate = variants.filter(v => v.imageId === mergingImageId);
+    startSubmitting(async () => {
+      const results = await Promise.all(variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, masterId)));
+      const failedCount = results.filter((r) => !r.success).length;
+      if (failedCount > 0) toast({ title: 'Merge Partially Failed', description: `Could not update ${failedCount} variants.`, variant: 'destructive' });
+      else {
+        await deleteImage(productId, mergingImageId);
+        toast({ title: 'Images Merged', description: 'Duplicate replaced and removed.' });
+      }
+      fetchMediaData();
+      setIsMergingDialogOpen(false);
+      setMergingImageId(null);
+      setMasterImageId('');
+    });
+  }, [mergingImageId, masterImageId, variants, productId, fetchMediaData, toast]);
+
+  const handleDeleteImage = useCallback((imageId: number) => {
+    if (imageId < 0) {
+      toast({ title: 'Not Deletable', description: 'FTP images cannot be deleted from here.', variant: 'destructive' });
+      return;
+    }
+    const imageToDelete = images.find((img) => img.id === imageId);
+    if (imageToDelete && imageToDelete.variant_ids.length > 0) {
+      toast({ title: 'Cannot Delete', description: 'Image is assigned to variants. Unassign first.', variant: 'destructive' });
+      return;
+    }
+    startSubmitting(async () => {
+      const result = await deleteImage(productId, imageId);
+      if (result.success) {
+        toast({ title: 'Success!', description: 'Image has been deleted.' });
+        fetchMediaData();
+      } else toast({ title: 'Error', description: result.message, variant: 'destructive' });
+    });
+  }, [images, productId, fetchMediaData, toast]);
 
   const handleBulkDelete = () => {
     const assignedImages = Array.from(selectedImageIds).filter((id) => {
       const image = images.find((img) => img.id === id);
       return image && image.variant_ids.length > 0;
     });
-
     if (assignedImages.length > 0) {
-      toast({
-        title: 'Cannot Delete',
-        description: `Some selected images are assigned to variants and cannot be deleted. Please unassign them first.`,
-        variant: 'destructive',
-      });
+      toast({ title: 'Cannot Delete', description: `Some selected images are assigned.`, variant: 'destructive' });
       return;
     }
-
     startSubmitting(async () => {
       const idsToDelete = Array.from(selectedImageIds);
-      let successfullyDeletedIds: number[] = [];
-
+      let successIds: number[] = [];
       for (const id of idsToDelete) {
         const res = await deleteImage(productId, id);
-        if (res.success) {
-          successfullyDeletedIds.push(id);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 600)); // Delay
+        if (res.success) successIds.push(id);
+        await new Promise((r) => setTimeout(r, 600));
       }
-
-      const failedCount = idsToDelete.length - successfullyDeletedIds.length;
-      if (failedCount > 0) {
-        toast({
-          title: 'Some Deletions Failed',
-          description: `Could not delete ${failedCount} images. Please try again.`,
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Success!',
-          description: `${successfullyDeletedIds.length} images have been deleted.`,
-        });
-      }
-
-      if (successfullyDeletedIds.length > 0) {
-        const newImages = images.filter((img) => !successfullyDeletedIds.includes(img.id));
-        setImages(newImages);
-        onImageCountChange(newImages.length);
-      }
-      setSelectedImageIds(new Set());
+      if (successIds.length < idsToDelete.length) toast({ title: 'Partial Failure', description: `Some deletions failed.`, variant: 'destructive' });
+      else toast({ title: 'Success!', description: `${successIds.length} images deleted.` });
+      fetchMediaData();
     });
   };
 
+  const assignmentCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    const dataSource = isMissingVariantMode ? localMissingVariants : (variants as Product[]);
+    dataSource.forEach((v) => { if (v.imageId) counts.set(v.imageId, (counts.get(v.imageId) || 0) + 1); });
+    return counts;
+  }, [localMissingVariants, variants, isMissingVariantMode]);
+
   const availableOptions = useMemo(() => {
-    if (!isBulkAssignDialogOpen) {
-      return new Map<string, Set<string>>();
-    }
-
-    const optionsSource = isMissingVariantMode ? missingVariants : variants;
+    const optionsSource = isMissingVariantMode ? localMissingVariants : (variants as Product[]);
     const options = new Map<string, Set<string>>();
-    if (optionsSource.length === 0) {
-      return options;
-    }
-
-    const optionNames = {
-      option1: optionsSource.find((v) => v.option1Name)?.option1Name || 'Option1',
-      option2: optionsSource.find((v) => v.option2Name)?.option2Name || 'Option2',
-      option3: optionsSource.find((v) => v.option3Name)?.option3Name || 'Option3',
-    };
-
-    optionsSource.forEach((variant) => {
-      if (variant.option1Value) {
-        if (!options.has(optionNames.option1)) options.set(optionNames.option1, new Set());
-        options.get(optionNames.option1)!.add(variant.option1Value);
-      }
-      if (variant.option2Value) {
-        if (!options.has(optionNames.option2)) options.set(optionNames.option2, new Set());
-        options.get(optionNames.option2)!.add(variant.option2Value);
-      }
-      if (variant.option3Value) {
-        if (!options.has(optionNames.option3)) options.set(optionNames.option3, new Set());
-        options.get(optionNames.option3)!.add(variant.option3Value);
-      }
+    if (optionsSource.length === 0) return options;
+    const first = optionsSource.find(v => v.option1Name || v.option2Name || v.option3Name);
+    const names = { opt1: first?.option1Name || 'Option 1', opt2: first?.option2Name || 'Option 2', opt3: first?.option3Name || 'Option 3' };
+    optionsSource.forEach(v => {
+      if (v.option1Value) { if (!options.has(names.opt1)) options.set(names.opt1, new Set()); options.get(names.opt1)!.add(v.option1Value); }
+      if (v.option2Value) { if (!options.has(names.opt2)) options.set(names.opt2, new Set()); options.get(names.opt2)!.add(v.option2Value); }
+      if (v.option3Value) { if (!options.has(names.opt3)) options.set(names.opt3, new Set()); options.get(names.opt3)!.add(v.option3Value); }
     });
-
     return options;
-  }, [variants, missingVariants, isMissingVariantMode, isBulkAssignDialogOpen]);
+  }, [variants, localMissingVariants, isMissingVariantMode]);
 
   const handleBulkAssign = () => {
     const imageId = parseInt(bulkAssignImageId);
-    if (!imageId || !bulkAssignOption) {
-      toast({
-        title: 'Incomplete Selection',
-        description: 'Please select an image and an option.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+    if (!imageId || !bulkAssignOption) return;
     if (isMissingVariantMode) {
-      let variantsToUpdate = [...localMissingVariants];
-      if (bulkAssignOption !== 'All Variants') {
-        if (!bulkAssignValue) {
-          toast({
-            title: 'Incomplete Selection',
-            description: 'Please select a value to match.',
-            variant: 'destructive',
-          });
-          return;
+      setLocalMissingVariants(prev => prev.map(v => {
+        let match = false;
+        if (bulkAssignOption === 'All Variants') match = true;
+        else {
+          const first = localMissingVariants.find(vm => vm.option1Name === bulkAssignOption || vm.option2Name === bulkAssignOption || vm.option3Name === bulkAssignOption);
+          if (first?.option1Name === bulkAssignOption && v.option1Value === bulkAssignValue) match = true;
+          else if (first?.option2Name === bulkAssignOption && v.option2Value === bulkAssignValue) match = true;
+          else if (first?.option3Name === bulkAssignOption && v.option3Value === bulkAssignValue) match = true;
         }
-
-        let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
-        const firstVariantWithOptions = missingVariants.find(
-          (v) => v.option1Name || v.option2Name || v.option3Name
-        );
-
-        if (firstVariantWithOptions?.option1Name === bulkAssignOption)
-          optionKeyToMatch = 'option1Value';
-        else if (firstVariantWithOptions?.option2Name === bulkAssignOption)
-          optionKeyToMatch = 'option2Value';
-        else if (firstVariantWithOptions?.option3Name === bulkAssignOption)
-          optionKeyToMatch = 'option3Value';
-
-        if (!optionKeyToMatch) {
-          toast({
-            title: 'Option matching error',
-            description: 'Could not determine which option to match on.',
-            variant: 'destructive',
-          });
-          return;
-        }
-        variantsToUpdate = localMissingVariants.filter(
-          (v) => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue
-        );
-      }
-
-      setLocalMissingVariants((prev) =>
-        prev.map((v) => (variantsToUpdate.some((vtu) => vtu.sku === v.sku) ? { ...v, imageId } : v))
-      );
-
-      toast({
-        title: 'Success!',
-        description: `Image assigned to ${variantsToUpdate.length} variants.`,
-      });
-    } else {
-      let variantsToUpdate: Partial<Product>[] = [];
-
-      if (bulkAssignOption === 'All Variants') {
-        variantsToUpdate = [...variants];
-      } else {
-        if (!bulkAssignValue) {
-          toast({
-            title: 'Incomplete Selection',
-            description: 'Please select a value to match.',
-            variant: 'destructive',
-          });
-          return;
-        }
-
-        let optionKeyToMatch: 'option1Value' | 'option2Value' | 'option3Value' | null = null;
-        const firstVariantWithOptions = variants.find(
-          (v) => v.option1Name || v.option2Name || v.option3Name
-        );
-        if (firstVariantWithOptions?.option1Name === bulkAssignOption)
-          optionKeyToMatch = 'option1Value';
-        else if (firstVariantWithOptions?.option2Name === bulkAssignOption)
-          optionKeyToMatch = 'option2Value';
-        else if (firstVariantWithOptions?.option3Name === bulkAssignOption)
-          optionKeyToMatch = 'option3Value';
-        else if (bulkAssignOption === 'Option1') optionKeyToMatch = 'option1Value';
-        else if (bulkAssignOption === 'Option2') optionKeyToMatch = 'option2Value';
-        else if (bulkAssignOption === 'Option3') optionKeyToMatch = 'option3Value';
-
-        if (!optionKeyToMatch) {
-          toast({
-            title: 'Option matching error',
-            description: 'Could not determine which option to match on.',
-            variant: 'destructive',
-          });
-          return;
-        }
-        variantsToUpdate = variants.filter(
-          (v) => v[optionKeyToMatch as keyof typeof v] === bulkAssignValue
-        );
-      }
-
-      if (variantsToUpdate.length === 0) {
-        toast({
-          title: 'No variants found',
-          description: 'No variants match the selected criteria.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const originalVariants = [...variants];
-      const newVariants = variants.map((v) => {
-        if (variantsToUpdate.some((vtu) => vtu.variantId === v.variantId)) {
-          return { ...v, imageId: imageId };
+        if (match) {
+          if (imageId < 0) { const ftpImg = ftpImages.find(img => img.id === imageId); return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl }; }
+          return { ...v, imageId, mediaUrl: null };
         }
         return v;
+      }));
+    } else {
+      const targets = variants.filter(v => {
+        if (bulkAssignOption === 'All Variants') return true;
+        const first = variants.find(vm => vm.option1Name === bulkAssignOption || vm.option2Name === bulkAssignOption || vm.option3Name === bulkAssignOption);
+        if (first?.option1Name === bulkAssignOption) return v.option1Value === bulkAssignValue;
+        if (first?.option2Name === bulkAssignOption) return v.option2Value === bulkAssignValue;
+        if (first?.option3Name === bulkAssignOption) return v.option3Value === bulkAssignValue;
+        return false;
       });
-      setVariants(newVariants);
-      setIsBulkAssignDialogOpen(false);
-
       startSubmitting(async () => {
-        const results = await Promise.all(
-          variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, imageId))
-        );
-
-        const failedCount = results.filter((r) => !r.success).length;
-        if (failedCount > 0) {
-          setVariants(originalVariants); // Revert on failure
-          toast({
-            title: 'Bulk Assign Failed',
-            description: `Could not assign image to ${failedCount} variants.`,
-            variant: 'destructive',
-          });
-        } else {
-          toast({
-            title: 'Success!',
-            description: `Image assigned to ${variantsToUpdate.length} variants.`,
-          });
-        }
+        const res = await Promise.all(targets.map(v => assignImageToVariant(v.variantId!, imageId)));
+        if (res.filter(r => !r.success).length > 0) toast({ title: 'Partial Failure', variant: 'destructive' });
+        else toast({ title: 'Success', description: `Assigned to ${targets.length} variants.` });
         fetchMediaData();
       });
     }
-
-    // Reset form
-    setBulkAssignImageId('');
-    setBulkAssignOption('');
-    setBulkAssignValue('');
     setIsBulkAssignDialogOpen(false);
   };
 
@@ -469,301 +466,242 @@ export function MediaManager({
     return unlinkedImages.every((img) => selectedImageIds.has(img.id));
   }, [unlinkedImages, selectedImageIds]);
 
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Manage Product Media</DialogTitle>
-        <DialogDescription>
-          {isMissingVariantMode
-            ? 'Assign an existing image from the parent product to the new variant(s).'
-            : 'Add, remove, and assign images for this product and its variants. Use checkboxes for bulk actions.'}
-        </DialogDescription>
-      </DialogHeader>
-      {isLoading && (
-        <div className="flex h-96 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  if (isLoading && images.length === 0) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-background/50 backdrop-blur-xl -m-6 rounded-lg">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm font-medium text-muted-foreground animate-pulse">Synchronizing Shopify assets...</p>
         </div>
-      )}
-      {error && (
-        <div className="flex items-center gap-4 rounded-md bg-destructive/80 p-4 text-destructive-foreground">
-          <AlertTriangle className="h-5 w-5" />
+      </div>
+    );
+  }
+
+  const handleSaveData = () => { if (isMissingVariantMode && onSaveMissingVariant) onSaveMissingVariant(localMissingVariants); };
+  const productTitle = isMissingVariantMode ? (missingVariants[0]?.name || 'New Product') : (variants[0]?.name || 'Product Media');
+
+  return (
+    <TooltipProvider>
+      <div className="flex flex-col h-[85vh] -m-6 bg-background/50 backdrop-blur-xl overflow-hidden rounded-lg">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-background/80 backdrop-blur-md sticky top-0 z-20">
           <div>
-            <h4 className="font-bold">Error Loading Media</h4>
-            <p>{error}</p>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="text-xl font-bold tracking-tight">{productTitle}</DialogTitle>
+              <Badge variant="outline" className="text-[10px] font-bold uppercase bg-primary/5 text-primary">Media Manager</Badge>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground">{isMissingVariantMode ? 'Assign media to missing variants.' : 'Manage Shopify product media.'}</DialogDescription>
+          </div>
+          <div className="flex items-center gap-3">
+            <DialogClose asChild><Button variant="ghost" size="sm">Discard</Button></DialogClose>
+            {isMissingVariantMode && <Button onClick={handleSaveData} size="sm">Save Changes</Button>}
           </div>
         </div>
-      )}
-      {!isLoading && !error && (
-        <>
-          <div className="grid max-h-[70vh] grid-cols-1 gap-8 overflow-hidden md:grid-cols-2">
-            <div className="flex flex-col gap-4 overflow-y-auto pr-2">
-              <div className="flex items-center justify-between border-b pb-2">
-                <h3 className="text-lg font-semibold">Image Gallery ({images.length})</h3>
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* Gallery */}
+          <div className="w-1/2 border-r flex flex-col bg-muted/5">
+            <div className="p-4 border-b flex items-center justify-between bg-background/40 backdrop-blur-sm sticky top-0 z-10">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search..." className="pl-9 h-9" value={gallerySearch} onChange={e => setGallerySearch(e.target.value)} />
+                </div>
                 <div className="flex items-center gap-2">
-                  <Dialog open={isBulkAssignDialogOpen} onOpenChange={setIsBulkAssignDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isSubmitting || images.length === 0}
-                      >
-                        <Blocks className="mr-2 h-4 w-4" />
-                        Bulk Assign
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Bulk Assign Image</DialogTitle>
-                        <DialogDescription>
-                          Assign a single image to multiple variants based on an option or to all
-                          variants.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="bulk-assign-image">1. Select Image to Assign</Label>
-                          <Select value={bulkAssignImageId} onValueChange={setBulkAssignImageId}>
-                            <SelectTrigger id="bulk-assign-image">
-                              <SelectValue placeholder="Select an image..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {images.map((image) => (
-                                <SelectItem key={image.id} value={image.id.toString()}>
-                                  <div className="flex items-center gap-2">
-                                    <Image
-                                      src={image.src}
-                                      alt=""
-                                      width={20}
-                                      height={20}
-                                      className="rounded-sm"
-                                    />
-                                    <span>Image #{image.id}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="bulk-assign-option">2. Select Target Variants</Label>
-                          <Select
-                            value={bulkAssignOption}
-                            onValueChange={(val) => {
-                              setBulkAssignOption(val);
-                              setBulkAssignValue('');
-                            }}
-                          >
-                            <SelectTrigger id="bulk-assign-option">
-                              <SelectValue placeholder="Group by option or select all..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="All Variants">All Variants</SelectItem>
-                              {[...availableOptions.keys()].map((optionName) => (
-                                <SelectItem key={optionName} value={optionName}>
-                                  {optionName}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {bulkAssignOption && bulkAssignOption !== 'All Variants' && (
-                          <div className="space-y-2">
-                            <Label htmlFor="bulk-assign-value">3. Select Value to Match</Label>
-                            <Select value={bulkAssignValue} onValueChange={setBulkAssignValue}>
-                              <SelectTrigger id="bulk-assign-value">
-                                <SelectValue placeholder="Select a value..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {availableOptions.get(bulkAssignOption)?.size &&
-                                  Array.from(availableOptions.get(bulkAssignOption)!).map(
-                                    (value) => (
-                                      <SelectItem key={value} value={value}>
-                                        {value}
-                                      </SelectItem>
-                                    )
-                                  )}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsBulkAssignDialogOpen(false)}>
-                          Cancel
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              disabled={
-                                !bulkAssignImageId ||
-                                !bulkAssignOption ||
-                                (bulkAssignOption !== 'All Variants' && !bulkAssignValue)
-                              }
-                            >
-                              Assign Image
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will overwrite the current image assignments for all selected
-                                variants. This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleBulkAssign}>
-                                Yes, Assign
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  {!isMissingVariantMode && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={isSubmitting || selectedImageIds.size === 0}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete ({selectedImageIds.size})
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Selected Images?</AlertDialogTitle>
-                        </AlertDialogHeader>
-                        <AlertDialogDescription>
-                          Are you sure you want to permanently delete the {selectedImageIds.size}{' '}
-                          selected images? This action cannot be undone.
-                        </AlertDialogDescription>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={handleBulkDelete}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Delete Images
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
+                  <Checkbox checked={areAllUnlinkedSelected} onCheckedChange={checked => handleSelectAllUnlinked(!!checked)} disabled={unlinkedImages.length === 0} />
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Unlinked</span>
                 </div>
               </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="select-all"
-                  onCheckedChange={(checked) => handleSelectAllUnlinked(!!checked)}
-                  checked={areAllUnlinkedSelected}
-                  disabled={unlinkedImages.length === 0 || isMissingVariantMode}
-                />
-                <Label htmlFor="select-all" className="text-sm font-normal">
-                  Select All Unlinked ({unlinkedImages.length})
-                </Label>
+              <div className="flex items-center gap-2">
+                {selectedImageIds.size > 0 && (
+                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>Delete ({selectedImageIds.size})</Button>
+                )}
+                <Dialog open={isBulkAssignDialogOpen} onOpenChange={setIsBulkAssignDialogOpen}>
+                  <DialogTrigger asChild><Button variant="outline" size="sm" className="h-8 gap-1"><Zap className="h-3 w-3" /> Bulk</Button></DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Bulk Assignment Tool</DialogTitle></DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase">1. Select Source Image</Label>
+                        <Select value={bulkAssignImageId} onValueChange={setBulkAssignImageId}>
+                          <SelectTrigger><SelectValue placeholder="Pick image..." /></SelectTrigger>
+                          <SelectContent>
+                            {allImages.map(img => (
+                              <SelectItem key={img.id} value={img.id.toString()}>
+                                <div className="flex items-center gap-2">
+                                  <Image src={img.src} alt="" width={24} height={24} className="rounded" />
+                                  <span>#{img.id} {img.isFtpSource ? '(FTP)' : ''}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase">2. Target Logic</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select value={bulkAssignOption} onValueChange={v => { setBulkAssignOption(v); setBulkAssignValue(''); }}>
+                            <SelectTrigger><SelectValue placeholder="Group by..." /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="All Variants">All Variants</SelectItem>
+                              {[...availableOptions.keys()].map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {bulkAssignOption && bulkAssignOption !== 'All Variants' && (
+                            <Select value={bulkAssignValue} onValueChange={setBulkAssignValue}>
+                              <SelectTrigger><SelectValue placeholder="Match..." /></SelectTrigger>
+                              <SelectContent>
+                                {[...availableOptions.get(bulkAssignOption)!].map(val => <SelectItem key={val as string} value={val as string}>{val as string}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <DialogFooter><Button onClick={handleBulkAssign} disabled={!bulkAssignImageId}>Apply</Button></DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                {images.map((image) => {
-                  const isAssigned = image.variant_ids && image.variant_ids.length > 0;
+            <ScrollArea className="flex-1 p-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                {allImages.filter(img => !gallerySearch || img.src.toLowerCase().includes(gallerySearch) || img.id.toString().includes(gallerySearch)).map(image => {
                   const isSelected = selectedImageIds.has(image.id);
+                  const count = assignmentCounts.get(image.id) || 0;
                   return (
-                    <MediaManagerImageCard
-                      key={image.id}
-                      image={image}
-                      isSelected={isSelected}
-                      isAssigned={isAssigned!}
-                      isMissingVariantMode={isMissingVariantMode}
-                      isSubmitting={isSubmitting}
-                      onSelectionChange={handleImageSelection}
-                      onDelete={handleDeleteImage}
-                    />
+                    <div key={image.id} className={cn("group relative aspect-square rounded-xl border-2 overflow-hidden transition-all", isSelected ? "border-primary scale-[0.98]" : "border-border/60")}>
+                      <Image src={image.src} alt="" fill className="object-cover" />
+                      <div className="absolute top-2 left-2"><Checkbox checked={isSelected} onCheckedChange={c => handleImageSelection(image.id, !!c)} /></div>
+                      <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button size="sm" className="w-full h-7 text-[10px]" onClick={() => selectedVariantSkus.size > 0 ? handleAssignToSelection(image.id) : handleAssignToAll(image.id)}>Assign</Button>
+                      </div>
+                      <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                        {count > 0 && <Badge className="bg-green-500 text-[10px] h-4">{count} USED</Badge>}
+                        {image.isFtpSource && <Badge className="bg-blue-500 text-[10px] h-4">FTP</Badge>}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
-              {!isMissingVariantMode && (
-                <div className="mt-auto rounded-md border bg-muted/20 p-4">
-                  <Label htmlFor="new-image-url" className="text-base font-medium">
-                    Add New Image
-                  </Label>
-                  <div className="mt-2 flex gap-2">
-                    <Input
-                      id="new-image-url"
-                      placeholder="https://example.com/image.jpg"
-                      value={newImageUrl}
-                      onChange={(e) => setNewImageUrl(e.target.value)}
-                      disabled={isSubmitting}
-                    />
-                    <Button onClick={handleAddImage} disabled={isSubmitting}>
-                      {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Add
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Right side: Variant Assignments */}
-            <div className="flex flex-col gap-4 overflow-y-auto pr-2">
-              <h3 className="border-b pb-2 text-lg font-semibold">
-                {isMissingVariantMode
-                  ? 'Assign to New Variants'
-                  : `Variant Assignments (${variants.length})`}
-              </h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Options</TableHead>
-                    <TableHead>Assigned Image</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isMissingVariantMode
-                    ? localMissingVariants.map((variant) => (
-                        <VariantRow
-                          key={variant.sku}
-                          variant={variant}
-                          images={images}
-                          isSubmitting={isSubmitting}
-                          onAssign={handleAssignImageToMissingVariant}
-                          idType="sku"
-                        />
-                      ))
-                    : variants.map((variant) => (
-                        <VariantRow
-                          key={variant.variantId}
-                          variant={variant}
-                          images={images}
-                          isSubmitting={isSubmitting}
-                          onAssign={handleAssignImage}
-                          idType="variantId"
-                        />
-                      ))}
-                </TableBody>
-              </Table>
+            </ScrollArea>
+            <div className="p-4 bg-background/80 border-t flex gap-2">
+              <Input placeholder="Image URL..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} className="h-9" />
+              <Button size="sm" onClick={handleAddImage} disabled={isSubmitting}><ImagePlus className="h-4 w-4" /></Button>
             </div>
           </div>
-          {isMissingVariantMode && (
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button
-                onClick={() => onSaveMissingVariant?.(localMissingVariants)}
-                disabled={localMissingVariants.length === 0}
-              >
-                Save Assignments
-              </Button>
-            </DialogFooter>
-          )}
-        </>
-      )}
-    </>
+
+          {/* Variants */}
+          <div className="w-1/2 flex flex-col bg-background/20">
+            <div className="p-4 border-b flex items-center justify-between h-[57px]">
+              <div className="flex items-center gap-2">
+                <Checkbox checked={selectedVariantSkus.size === (isMissingVariantMode ? localMissingVariants : variants).length} onCheckedChange={c => selectAllVariants(!!c)} />
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Select ({selectedVariantSkus.size})</span>
+              </div>
+            </div>
+            <ScrollArea className="flex-1">
+              <Table>
+                <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead className="text-[10px] uppercase">Identity</TableHead><TableHead className="text-[10px] uppercase">Assignment</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(isMissingVariantMode ? localMissingVariants : (variants as Product[])).map(variant => {
+                    const sku = variant.sku || variant.variantId || 'unknown';
+                    const isSelected = selectedVariantSkus.has(sku);
+                    return (
+                      <TableRow key={sku} className={cn(isSelected && "bg-primary/5")} onClick={() => toggleVariantSelection(sku)}>
+                        <TableCell className="w-12"><Checkbox checked={isSelected} onCheckedChange={() => toggleVariantSelection(sku)} /></TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold">{sku}</span>
+                            <span className="text-[10px] text-muted-foreground">{[variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join(' / ')}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <VariantRow variant={variant} images={allImages} isSubmitting={isSubmitting} onAssign={isMissingVariantMode ? handleAssignImageToMissingVariant : handleAssignImage} idType={isMissingVariantMode ? 'sku' : 'variantId'} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </div>
+        </div>
+        {/* Merge Dialog */}
+        <Dialog open={isMergingDialogOpen} onOpenChange={setIsMergingDialogOpen}>
+          <DialogContent className="max-w-xl p-0 overflow-hidden rounded-3xl border-muted/50 shadow-2xl">
+            <div className="p-8 space-y-8">
+              <DialogHeader className="space-y-2 text-left">
+                <DialogTitle className="text-2xl font-bold tracking-tight">Image Harmonization</DialogTitle>
+                <DialogDescription className="text-sm leading-relaxed">
+                  Consolidate your media assets by merging a duplicate into a master image.
+                  All variant links will be instantly swapped.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="flex items-center justify-between gap-6 p-6 rounded-2xl bg-muted/30 border border-muted shadow-inner">
+                <div className="flex flex-col items-center gap-3 flex-1">
+                  <span className="text-[10px] font-bold text-destructive uppercase tracking-widest px-2 py-0.5 rounded bg-destructive/10 ring-1 ring-destructive/20">Removal Target</span>
+                  <div className="relative h-28 w-28 rounded-xl overflow-hidden ring-4 ring-destructive/10 shadow-xl">
+                    {mergingImageId && images.find(img => img.id === mergingImageId) && (
+                      <Image src={images.find(img => img.id === mergingImageId)!.src} alt="Duplicate" fill className="object-cover grayscale" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="h-12 w-12 rounded-full bg-background border shadow-md flex items-center justify-center animate-pulse">
+                  <ArrowRightLeft className="h-5 w-5 text-primary" />
+                </div>
+
+                <div className="flex flex-col items-center gap-3 flex-1">
+                  <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest px-2 py-0.5 rounded bg-green-500/10 ring-1 ring-green-500/20">Primary Anchor</span>
+                  <div className={cn(
+                    "relative h-28 w-28 rounded-xl overflow-hidden transition-all duration-500",
+                    masterImageId ? "ring-4 ring-green-500/20 shadow-2xl scale-110" : "bg-muted/50 border-2 border-dashed border-muted-foreground/30 flex items-center justify-center"
+                  )}>
+                    {masterImageId ? (
+                      <Image src={images.find(img => img.id.toString() === masterImageId)?.src || ''} alt="Master" fill className="object-cover" />
+                    ) : (
+                      <div className="text-2xl font-bold text-muted-foreground/20">?</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-xs font-bold text-muted-foreground tracking-widest uppercase ml-1">Select the Master Reference</Label>
+                <Select value={masterImageId} onValueChange={setMasterImageId}>
+                  <SelectTrigger className="h-12 text-base font-medium bg-background border-none ring-1 ring-border/60 shadow-lg shadow-black/5">
+                    <SelectValue placeholder="Search target master image..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {allImages.filter(img => img.id !== mergingImageId).map(img => (
+                      <SelectItem key={img.id} value={img.id.toString()} className="py-2.5">
+                        <div className="flex items-center gap-4">
+                          <Image src={img.src} alt="" width={32} height={32} className="rounded-lg object-cover ring-1 ring-primary/10" />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold">Image Reference #{img.id}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono truncate w-64">{img.src}</span>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-4 pt-4 border-t">
+                <Button variant="ghost" onClick={() => { setIsMergingDialogOpen(false); setMergingImageId(null); setMasterImageId(''); }} className="flex-1 h-12 text-sm font-semibold rounded-xl">
+                  Cancel
+                </Button>
+                <Button onClick={handleMergeImages} disabled={!masterImageId} className="flex-1 h-12 text-sm font-bold rounded-xl shadow-xl shadow-primary/20 gap-2">
+                  <Blocks className="h-4 w-4" />
+                  Harmonize Media
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   );
 }

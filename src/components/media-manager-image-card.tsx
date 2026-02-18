@@ -133,6 +133,11 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           </Tooltip>
         </TooltipProvider>
       )}
+      {image.isFtpSource && (
+        <div className="absolute left-1.5 top-1.5 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+          FTP
+        </div>
+      )}
     </div>
   );
 });

@@ -430,7 +430,7 @@ export async function runAuditComparison(
         report.push({
           sku: csvProduct.sku,
           csvProducts: [csvProduct],
-          shopifyProducts: [],
+          shopifyProducts: productsWithHandle,
           status: 'missing_in_shopify',
           mismatches: mismatches,
         });

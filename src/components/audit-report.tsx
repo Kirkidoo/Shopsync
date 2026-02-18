@@ -608,17 +608,28 @@ export default function AuditReport({
 
 
   // Helpers for Media Manager
-  const editingMissingMediaVariants = editingMissingMedia
-    ? groupedByHandle[editingMissingMedia]?.map(i => i.csvProducts[0]).filter(Boolean) || []
-    : [];
+  const editingMissingMediaVariants = useMemo(() => {
+    return editingMissingMedia
+      ? groupedByHandle[editingMissingMedia]?.map(i => i.csvProducts[0]).filter(Boolean) || []
+      : [];
+  }, [editingMissingMedia, groupedByHandle]);
 
 
 
   const handleOpenMissingVariantMediaManager = (items: AuditResult[]) => {
     if (items.length === 0) return;
-    const parentId = items[0].shopifyProducts[0]?.id; // Assuming valid parent
+    // Look for the first item that has a shopify product (context we just added in audit.ts)
+    const itemWithShopifyProduct = items.find(i => i.shopifyProducts.length > 0);
+    const parentId = itemWithShopifyProduct?.shopifyProducts[0]?.id;
+
     if (parentId) {
       setEditingMissingVariantMedia({ items, parentProductId: parentId });
+    } else {
+      toast({
+        title: "Could not find parent product",
+        description: "This variant's parent product was not found in Shopify.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -1369,7 +1380,10 @@ export default function AuditReport({
 
       {/* Dialogs */}
       <Dialog open={!!editingMediaFor} onOpenChange={(open) => !open && setEditingMediaFor(null)}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Media Manager</DialogTitle>
+          </DialogHeader>
           {editingMediaFor && (
             <MediaManager
               key={editingMediaFor}
@@ -1386,7 +1400,10 @@ export default function AuditReport({
         open={!!editingMissingMedia}
         onOpenChange={(open) => !open && setEditingMissingMedia(null)}
       >
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Pre-Creation Media Manager</DialogTitle>
+          </DialogHeader>
           {editingMissingMedia && (
             <PreCreationMediaManager
               key={editingMissingMedia}
@@ -1420,7 +1437,10 @@ export default function AuditReport({
         open={!!editingMissingVariantMedia}
         onOpenChange={(open) => !open && setEditingMissingVariantMedia(null)}
       >
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Missing Variant Media Manager</DialogTitle>
+          </DialogHeader>
           {editingMissingVariantMedia && (
             <MediaManager
               key={editingMissingVariantMedia.parentProductId}

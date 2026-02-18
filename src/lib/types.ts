@@ -85,6 +85,7 @@ export interface ShopifyProductImage {
   product_id: number;
   src: string;
   variant_ids: number[];
+  isFtpSource?: boolean;
 }
 
 export interface LogEntry {

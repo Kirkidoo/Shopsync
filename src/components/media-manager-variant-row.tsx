@@ -32,7 +32,7 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
               height={20}
               className="rounded-sm"
             />
-            <span>Image #{image.id}</span>
+            <span>{image.isFtpSource ? 'FTP: ' : ''}Image #{image.id}</span>
           </div>
         </SelectItem>
       ))}
@@ -47,31 +47,21 @@ export const VariantRow = memo(
     const id = idType === 'variantId' ? variant.variantId! : variant.sku!;
 
     return (
-      <TableRow>
-        <TableCell className="font-medium">{variant.sku}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">
-          {[variant.option1Value, variant.option2Value, variant.option3Value]
-            .filter(Boolean)
-            .join(' / ')}
-        </TableCell>
-        <TableCell>
-          <Select
-            value={variant.imageId?.toString() ?? 'none'}
-            onValueChange={(value) =>
-              onAssign(id, value === 'none' ? null : parseInt(value))
-            }
-            disabled={isSubmitting}
-          >
-            <SelectTrigger
-              className="w-[180px]"
-              aria-label={`Assign image for variant ${variant.sku}`}
-            >
-              <SelectValue placeholder="Select image..." />
-            </SelectTrigger>
-            <ImageSelectContent images={images} />
-          </Select>
-        </TableCell>
-      </TableRow>
+      <Select
+        value={variant.imageId?.toString() ?? 'none'}
+        onValueChange={(value) =>
+          onAssign(id, value === 'none' ? null : parseInt(value))
+        }
+        disabled={isSubmitting}
+      >
+        <SelectTrigger
+          className="w-[140px] h-8 bg-background/50 border-none ring-1 ring-border/40 focus:ring-primary/40"
+          aria-label={`Assign image for variant ${variant.sku}`}
+        >
+          <SelectValue placeholder="Select image..." />
+        </SelectTrigger>
+        <ImageSelectContent images={images} />
+      </Select>
     );
   }
 );
