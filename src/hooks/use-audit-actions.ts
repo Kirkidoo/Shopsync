@@ -193,7 +193,13 @@ export function useAuditActions({
                         });
                         markProductAsCreated(handle);
                     } else {
-                        onRefresh();
+                        const handle = getHandle(item);
+                        setCreatedProductHandles(prev => {
+                            const newSet = new Set(prev);
+                            newSet.add(handle);
+                            return newSet;
+                        });
+                        markProductAsCreated(handle);
                     }
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
@@ -288,7 +294,13 @@ export function useAuditActions({
                 const result = await createMultipleVariantsForProduct(variants);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    onRefresh();
+                    const handle = getHandle(items[0]);
+                    setCreatedProductHandles(prev => {
+                        const next = new Set(prev);
+                        next.add(handle);
+                        return next;
+                    });
+                    markProductAsCreated(handle);
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
