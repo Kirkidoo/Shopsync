@@ -291,7 +291,9 @@ export function useAuditActions({
         startTransition(async () => {
             try {
                 const variants = items.map(i => i.csvProducts[0]).filter(Boolean);
-                const result = await createMultipleVariantsForProduct(variants);
+                // Extract the parent product GID from shopifyProducts so the pre-upload phase can find it
+                const parentProductId = items.find(i => i.shopifyProducts.length > 0)?.shopifyProducts[0]?.id;
+                const result = await createMultipleVariantsForProduct(variants, parentProductId);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
                     const handle = getHandle(items[0]);

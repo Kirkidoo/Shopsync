@@ -254,7 +254,8 @@ export async function createMultipleInShopify(
 }
 
 export async function createMultipleVariantsForProduct(
-    variants: Product[]
+    variants: Product[],
+    parentProductId?: string
 ): Promise<{ success: boolean; message: string; results: any[] }> {
     let successCount = 0;
     const itemResults: any[] = [];
@@ -275,8 +276,8 @@ export async function createMultipleVariantsForProduct(
     if (uniqueMediaUrls.length > 0) {
         logger.info(`Pre-upload phase: ${uniqueMediaUrls.length} unique image URL(s) to process.`);
 
-        // Get the product ID from the first variant's product GID
-        const productGid = variants[0].id;
+        // Use parentProductId if provided, otherwise fall back to variant's id
+        const productGid = parentProductId || variants[0].id;
         const numericProductId = parseInt(productGid?.split('/').pop() || '0', 10);
 
         if (numericProductId) {
