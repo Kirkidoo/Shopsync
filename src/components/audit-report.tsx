@@ -24,6 +24,7 @@ import { FixMismatchesDialog } from './audit/fix-mismatches-dialog';
 import { UpdateTagsDialog } from './audit/update-tags-dialog';
 import { MediaManager } from '@/components/media-manager';
 import { PreCreationMediaManager } from '@/components/pre-creation-media-manager';
+import { PreCreationMediaManagerVariant } from '@/components/pre-creation-media-manager-variant';
 
 // Hooks
 import { useAuditData } from '@/hooks/use-audit-data';
@@ -1442,26 +1443,28 @@ export default function AuditReport({
             <DialogTitle>Missing Variant Media Manager</DialogTitle>
           </DialogHeader>
           {editingMissingVariantMedia && (
-            <MediaManager
+            <PreCreationMediaManagerVariant
               key={editingMissingVariantMedia.parentProductId}
-              productId={editingMissingVariantMedia.parentProductId}
-              onImageCountChange={() => { }}
-              isMissingVariantMode={true}
-              missingVariants={memoizedMissingVariants}
-              onSaveMissingVariant={(result) => {
+              variants={memoizedMissingVariants}
+              parentProductId={editingMissingVariantMedia.parentProductId}
+              onSave={(updatedVariants, curatedImageUrls) => {
                 setReportData(prev => prev.map(item => {
-                  const updated = result.find(v => v.sku === item.sku);
+                  const updated = updatedVariants.find(v => v.sku === item.sku);
                   if (updated && item.csvProducts[0]) {
+                    const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
+                      ? updated.mediaUrl
+                      : null;
                     return {
                       ...item,
-                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: updated.mediaUrl, imageId: updated.imageId }]
+                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
                     };
                   }
                   return item;
                 }));
                 setEditingMissingVariantMedia(null);
-                toast({ title: "Media Updated", description: `Assignments saved for ${result.length} variants.` });
+                toast({ title: "Media Updated", description: `Assignments saved for ${updatedVariants.length} variants.` });
               }}
+              onCancel={() => setEditingMissingVariantMedia(null)}
             />
           )}
         </DialogContent>
