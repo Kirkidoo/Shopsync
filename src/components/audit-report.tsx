@@ -1448,9 +1448,19 @@ export default function AuditReport({
               onImageCountChange={() => { }}
               isMissingVariantMode={true}
               missingVariants={memoizedMissingVariants}
-              onSaveMissingVariant={(result) => { // handleSaveMissingVariantMedia
+              onSaveMissingVariant={(result) => {
+                setReportData(prev => prev.map(item => {
+                  const updated = result.find(v => v.sku === item.sku);
+                  if (updated && item.csvProducts[0]) {
+                    return {
+                      ...item,
+                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: updated.mediaUrl, imageId: updated.imageId }]
+                    };
+                  }
+                  return item;
+                }));
                 setEditingMissingVariantMedia(null);
-                onRefresh(); // Refresh to show changes?
+                toast({ title: "Media Updated", description: `Assignments saved for ${result.length} variants.` });
               }}
             />
           )}

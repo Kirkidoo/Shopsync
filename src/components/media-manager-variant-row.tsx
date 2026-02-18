@@ -46,9 +46,18 @@ export const VariantRow = memo(
   ({ variant, images, isSubmitting, onAssign, idType = 'variantId' }: VariantRowProps) => {
     const id = idType === 'variantId' ? variant.variantId! : variant.sku!;
 
+    const currentImageId = (() => {
+      if (variant.imageId) return variant.imageId.toString();
+      if (variant.mediaUrl) {
+        const matchingImg = images.find(img => img.src === variant.mediaUrl);
+        return matchingImg?.id.toString() || 'none';
+      }
+      return 'none';
+    })();
+
     return (
       <Select
-        value={variant.imageId?.toString() ?? 'none'}
+        value={currentImageId}
         onValueChange={(value) =>
           onAssign(id, value === 'none' ? null : parseInt(value))
         }
