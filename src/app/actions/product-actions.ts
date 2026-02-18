@@ -7,6 +7,8 @@ import {
     inventorySetQuantities,
     createProduct,
     addProductVariant,
+    addProductImage,
+    getFullProduct,
     connectInventoryToLocation,
     getShopifyLocations,
     disconnectInventoryFromLocation,
@@ -264,6 +266,78 @@ export async function createMultipleVariantsForProduct(
     const handle = variants[0].handle;
     logger.info(`Starting bulk variant creation for handle: ${handle}`);
 
+    // --- Pre-upload phase: upload each unique mediaUrl exactly once ---
+    // This prevents duplicate images when multiple variants share the same mediaUrl
+    const uniqueMediaUrls = [...new Set(
+        variants.map(v => v.mediaUrl).filter(Boolean) as string[]
+    )];
+
+    if (uniqueMediaUrls.length > 0) {
+        logger.info(`Pre-upload phase: ${uniqueMediaUrls.length} unique image URL(s) to process.`);
+
+        // Get the product ID from the first variant's product GID
+        const productGid = variants[0].id;
+        const numericProductId = parseInt(productGid?.split('/').pop() || '0', 10);
+
+        if (numericProductId) {
+            try {
+                // Fetch existing images on the product
+                const productData = await getFullProduct(numericProductId);
+                const existingImages = productData.images || [];
+                const getImageFilename = (url: string) => url.split('/').pop()?.split('?')[0];
+
+                // Build a map of existing filenames to image IDs
+                const existingFilenameToId = new Map<string, number>();
+                existingImages.forEach((img: any) => {
+                    const filename = getImageFilename(img.src);
+                    if (filename) {
+                        existingFilenameToId.set(filename, img.id);
+                    }
+                });
+
+                // Map from mediaUrl to the resolved imageId
+                const urlToImageId = new Map<string, number>();
+
+                for (const url of uniqueMediaUrls) {
+                    const filename = getImageFilename(url);
+
+                    // Check if this image already exists on the product
+                    if (filename && existingFilenameToId.has(filename)) {
+                        const existingId = existingFilenameToId.get(filename)!;
+                        logger.info(`Image already exists for "${filename}" (ID: ${existingId}). Reusing.`);
+                        urlToImageId.set(url, existingId);
+                    } else {
+                        // Upload the image once
+                        try {
+                            logger.info(`Uploading image: ${filename}...`);
+                            const newImage = await addProductImage(numericProductId, url);
+                            urlToImageId.set(url, newImage.id);
+                            // Also add to existing map so subsequent URLs with same filename don't re-upload
+                            if (filename) {
+                                existingFilenameToId.set(filename, newImage.id);
+                            }
+                            logger.info(`Uploaded image "${filename}" -> ID: ${newImage.id}`);
+                        } catch (err) {
+                            logger.warn(`Failed to pre-upload image from URL ${url}. Variant creation will proceed without it.`);
+                        }
+                    }
+                }
+
+                // Set imageId on each variant so addProductVariant skips image upload
+                for (const variant of variants) {
+                    if (variant.mediaUrl && urlToImageId.has(variant.mediaUrl)) {
+                        variant.imageId = urlToImageId.get(variant.mediaUrl)!;
+                    }
+                }
+
+                logger.info(`Pre-upload complete. Resolved ${urlToImageId.size} image(s).`);
+            } catch (err) {
+                logger.warn(`Pre-upload phase failed. Falling back to per-variant image upload.`);
+            }
+        }
+    }
+
+    // --- Create variants (images already uploaded, so no duplicates) ---
     const CONCURRENCY_LIMIT = 2;
     const queue = [...variants];
 
