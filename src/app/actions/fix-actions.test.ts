@@ -38,6 +38,7 @@ describe('fixMultipleMismatches - compare_at_price', () => {
         id: 'gid://shopify/Product/1',
         variantId: 'gid://shopify/ProductVariant/12345',
         inventoryItemId: 'gid://shopify/InventoryItem/1',
+        handle: 'test-product',
         sku: 'TEST-SKU',
         name: 'Test Product',
         price: 100,

@@ -12,67 +12,7 @@ const GAMMA_WAREHOUSE_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
 
 // --- Zod Schemas ---
 
-const ShopifyRestImageSchema = z.object({
-  id: z.number(),
-  product_id: z.number(),
-  position: z.number(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  alt: z.string().nullable(),
-  width: z.number(),
-  height: z.number(),
-  src: z.string(),
-  variant_ids: z.array(z.number()),
-});
 
-const ShopifyRestVariantSchema = z.object({
-  id: z.number(),
-  product_id: z.number(),
-  title: z.string(),
-  price: z.string(),
-  sku: z.string().nullable(),
-  position: z.number(),
-  inventory_policy: z.string(),
-  compare_at_price: z.string().nullable(),
-  fulfillment_service: z.string(),
-  inventory_management: z.string().nullable(),
-  option1: z.string().nullable(),
-  option2: z.string().nullable(),
-  option3: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  taxable: z.boolean(),
-  barcode: z.string().nullable(),
-  grams: z.number(),
-  image_id: z.number().nullable(),
-  weight: z.number(),
-  weight_unit: z.string(),
-  inventory_item_id: z.number(),
-  inventory_quantity: z.number().optional(), // field might be missing in some contexts
-  old_inventory_quantity: z.number().optional(),
-  requires_shipping: z.boolean(),
-});
-
-const ShopifyRestProductSchema = z.object({
-  id: z.number(),
-  title: z.string(),
-  body_html: z.string().nullable(),
-  vendor: z.string(),
-  product_type: z.string(),
-  created_at: z.string(),
-  handle: z.string(),
-  updated_at: z.string(),
-  published_at: z.string().nullable(),
-  template_suffix: z.string().nullable(),
-  status: z.string(),
-  published_scope: z.string(),
-  tags: z.string(),
-  admin_graphql_api_id: z.string(),
-  variants: z.array(ShopifyRestVariantSchema),
-  options: z.array(z.object({ id: z.number(), product_id: z.number(), name: z.string(), position: z.number(), values: z.array(z.string()) })),
-  images: z.array(ShopifyRestImageSchema),
-  image: ShopifyRestImageSchema.nullable(),
-});
 
 const ShopifyGraphQLErrorSchema = z.object({
   message: z.string(),
@@ -101,16 +41,7 @@ const createGraphQLResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) => z
   }).optional(),
 });
 
-const ShopifyRestErrorSchema = z.object({
-  errors: z.union([z.string(), z.record(z.union([z.string(), z.array(z.string())]))]),
-});
 
-// Helper for generic REST response validation
-// Note: Shopify REST responses usually wrap the object in a key, e.g. { product: ... }
-const createRestResponseSchema = <T extends z.ZodTypeAny>(bodySchema: T) => z.object({
-  body: bodySchema.and(ShopifyRestErrorSchema.partial()), // Errors might be present mixed in or exclusively
-  headers: z.record(z.union([z.string(), z.array(z.string()), z.undefined()])),
-});
 
 // Specific GraphQL Response Schemas
 
@@ -481,41 +412,7 @@ function getShopifyGraphQLClient() {
   return new shopify.clients.Graphql({ session });
 }
 
-function getShopifyRestClient() {
-  if (!process.env.SHOPIFY_SHOP_NAME || !process.env.SHOPIFY_API_ACCESS_TOKEN) {
-    logger.error('Shopify environment variables are not set.');
-    throw new Error('Shopify environment variables are not set. Please create a .env.local file.');
-  }
 
-  const shopify = shopifyApi({
-    apiKey: 'dummy',
-    apiSecretKey: 'dummy',
-    scopes: [
-      'read_products',
-      'write_products',
-      'read_inventory',
-      'write_inventory',
-      'read_locations',
-    ],
-    hostName: 'dummy.ngrok.io',
-    apiVersion: LATEST_API_VERSION,
-    isEmbeddedApp: false,
-    maxRetries: 3,
-    future: {
-      lineItemBilling: true,
-    },
-  });
-
-  const session = new Session({
-    id: 'offline_' + process.env.SHOPIFY_SHOP_NAME,
-    shop: process.env.SHOPIFY_SHOP_NAME!,
-    accessToken: process.env.SHOPIFY_API_ACCESS_TOKEN!,
-    isOnline: false,
-    state: 'state',
-  });
-
-  return new shopify.clients.Rest({ session, apiVersion: LATEST_API_VERSION });
-}
 
 // --- Data Fetching Functions ---
 
@@ -973,20 +870,35 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
   return allProducts;
 }
 
+const GET_LOCATIONS_QUERY = `
+  query getLocations {
+    locations(first: 250) {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
 export async function getShopifyLocations(): Promise<{ id: number; name: string }[]> {
-  const shopifyClient = getShopifyRestClient();
-  const LocationSchema = z.object({
-    id: z.number(),
-    name: z.string()
-  });
-  const LocationsResponseSchema = createRestResponseSchema(z.object({
-    locations: z.array(LocationSchema)
-  }));
+  const shopifyClient = getShopifyGraphQLClient();
 
   try {
-    const response = await shopifyClient.get({ path: 'locations' });
-    const parsed = LocationsResponseSchema.parse(response);
-    return parsed.body.locations;
+    const response = await retryOperation(async () => {
+      return await shopifyClient.request(GET_LOCATIONS_QUERY);
+    });
+
+    // Extract the locations from the GraphQL response
+    const edges = (response as any).data?.locations?.edges || [];
+    const locations = edges.map((edge: any) => ({
+      id: parseInt(edge.node.id.split('/').pop() || '0', 10),
+      name: edge.node.name
+    }));
+
+    return locations;
   } catch (error: unknown) {
     logger.error('Error fetching Shopify locations:', error);
     throw new Error('Failed to fetch locations');
@@ -1015,13 +927,54 @@ export async function getProductByHandle(handle: string): Promise<any> {
 
 // --- Data Mutation Functions ---
 
+const PRODUCT_SET_MUTATION = `
+  mutation productSet($synchronous: Boolean!, $input: ProductSetInput!) {
+    productSet(synchronous: $synchronous, input: $input) {
+      product {
+        id
+        title
+        handle
+        vendor
+        productType
+        tags
+        bodyHtml
+        templateSuffix
+        status
+        variants(first: 250) {
+          edges {
+            node {
+              id
+              sku
+              inventoryItem {
+                id
+              }
+            }
+          }
+        }
+        images(first: 250) {
+          edges {
+            node {
+              id
+              url
+            }
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function createProduct(
   productVariants: Product[],
   addClearanceTag: boolean
-): Promise<z.infer<typeof ShopifyRestProductSchema>> {
-  const shopifyClient = getShopifyRestClient();
-
+) {
+  const shopifyClient = getShopifyGraphQLClient();
   const firstVariant = productVariants[0];
+
   const sanitizedDescription = firstVariant.descriptionHtml
     ? firstVariant.descriptionHtml.replace(/<h1/gi, '<h2').replace(/<\/h1>/gi, '</h2>')
     : '';
@@ -1034,227 +987,237 @@ export async function createProduct(
   const getOptionValue = (value: string | null | undefined, fallback: string | null) =>
     value?.trim() ? value.trim() : fallback;
 
-  // Create a mutable copy for processing
   const processedVariants = structuredClone(productVariants);
   const seenOptionValues = new Set<string>();
 
   for (const variant of processedVariants) {
-    const optionKey = [variant.option1Value, variant.option2Value, variant.option3Value]
-      .filter(Boolean)
-      .join('/');
+    const optionKey = [variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join('/');
     if (seenOptionValues.has(optionKey) && optionKey && optionKey !== 'Default Title') {
-      if (variant.option1Value) {
-        variant.option1Value = `${variant.option1Value} (${variant.sku})`;
-      }
+      if (variant.option1Value) variant.option1Value = `${variant.option1Value} (${variant.sku})`;
     }
-    if (optionKey) {
-      seenOptionValues.add(optionKey);
-    }
+    if (optionKey) seenOptionValues.add(optionKey);
   }
 
   const optionNames: string[] = [];
-  if (firstVariant.option1Name && !isSingleDefaultVariant)
-    optionNames.push(firstVariant.option1Name);
+  if (firstVariant.option1Name && !isSingleDefaultVariant) optionNames.push(firstVariant.option1Name);
   if (firstVariant.option2Name) optionNames.push(firstVariant.option2Name);
   if (firstVariant.option3Name) optionNames.push(firstVariant.option3Name);
 
-  const restOptions = optionNames.length > 0 ? optionNames.map((name) => ({ name })) : [];
+  const gqlOptions = optionNames.length > 0 ? optionNames : undefined;
 
-  const restVariants = processedVariants.map((p: Product) => {
-    const variantPayload: any = {
-      price: p.price,
+  const gqlVariants = processedVariants.map((p: Product) => {
+    const variantInput: any = {
+      price: p.price.toString(),
       sku: p.sku,
       barcode: p.barcode,
-      compare_at_price: p.compareAtPrice,
-      inventory_management: 'shopify',
-      inventory_policy: 'deny',
-      requires_shipping: true,
-      weight: p.weight,
-      weight_unit: 'g',
-      cost: p.costPerItem,
+      compareAtPrice: p.compareAtPrice?.toString(),
+      inventoryItem: {
+        tracked: true,
+        measurement: {
+          weight: {
+            value: p.weight || 0,
+            unit: 'GRAMS'
+          }
+        }
+      }
     };
 
-    if (!isSingleDefaultVariant) {
-      if (p.option1Name) variantPayload.option1 = getOptionValue(p.option1Value, p.sku);
-      if (p.option2Name) variantPayload.option2 = getOptionValue(p.option2Value, null);
-      if (p.option3Name) variantPayload.option3 = getOptionValue(p.option3Value, null);
+    if (p.costPerItem) {
+      variantInput.inventoryItem.cost = p.costPerItem.toString();
     }
 
-    return variantPayload;
+    if (!isSingleDefaultVariant) {
+      const optionValues = [];
+      if (p.option1Name) optionValues.push({ name: p.option1Name, value: getOptionValue(p.option1Value, p.sku) });
+      if (p.option2Name) optionValues.push({ name: p.option2Name, value: getOptionValue(p.option2Value, null) });
+      if (p.option3Name) optionValues.push({ name: p.option3Name, value: getOptionValue(p.option3Value, null) });
+      variantInput.optionValues = optionValues;
+    }
+
+    return variantInput;
   });
 
-  const uniqueImageUrls = [
-    ...new Set(processedVariants.map((p: Product) => p.mediaUrl).filter(Boolean) as string[]),
-  ];
-  const restImages = uniqueImageUrls.map((url) => ({ src: url }));
+  // Media
+  const uniqueImageUrls = [...new Set(processedVariants.map((p: Product) => p.mediaUrl).filter(Boolean) as string[])];
+  const gqlFiles = uniqueImageUrls.map((url) => ({
+    originalSource: url,
+    mediaContentType: "IMAGE"
+  }));
 
   let tags = firstVariant.tags || '';
-
   if (tags) {
     const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean);
-    if (tagList.length > 3) {
-      tags = tagList.slice(0, 3).join(', ');
-    }
+    if (tagList.length > 3) tags = tagList.slice(0, 3).join(', ');
   }
-
-  if (firstVariant.category) {
-    tags = tags ? `${tags}, ${firstVariant.category}` : firstVariant.category;
-  }
-
-  if (addClearanceTag && !tags.toLowerCase().includes('clearance')) {
-    tags = tags ? `Clearance, ${tags}` : 'Clearance';
-  }
-
-  const productPayload: { product: any } = {
-    product: {
-      title: firstVariant.name,
-      handle: firstVariant.handle,
-      body_html: sanitizedDescription,
-      vendor: firstVariant.vendor,
-      product_type: firstVariant.productType,
-      status: 'active',
-      tags: tags,
-      variants: restVariants,
-      images: restImages,
-    },
-  };
-
-  if (restOptions.length > 0) {
-    productPayload.product.options = restOptions;
-  }
+  if (firstVariant.category) tags = tags ? `${tags}, ${firstVariant.category}` : firstVariant.category;
+  if (addClearanceTag && !tags.toLowerCase().includes('clearance')) tags = tags ? `Clearance, ${tags}` : 'Clearance';
 
   const isHeavy = productVariants.some((p) => p.weight && p.weight > 22679.6);
+  let templateSuffix: string | undefined = undefined;
+  if (addClearanceTag) templateSuffix = 'clearance';
+  else if (isHeavy) templateSuffix = 'heavy-products';
 
-  if (addClearanceTag) {
-    productPayload.product.template_suffix = 'clearance';
-  } else if (isHeavy) {
-    productPayload.product.template_suffix = 'heavy-products';
-  }
+  const productSetInput: any = {
+    title: firstVariant.name,
+    handle: firstVariant.handle,
+    descriptionHtml: sanitizedDescription,
+    vendor: firstVariant.vendor,
+    productType: firstVariant.productType,
+    status: 'ACTIVE',
+    tags: tags ? tags.split(',').map(t => t.trim()) : [],
+    variants: gqlVariants,
+  };
 
-  const CreateProductResponseSchema = createRestResponseSchema(z.object({
-    product: ShopifyRestProductSchema
-  }));
+  if (gqlOptions) productSetInput.productOptions = gqlOptions.map(name => ({ name, values: [] }));
+  if (gqlFiles.length > 0) productSetInput.files = gqlFiles;
+  if (templateSuffix) productSetInput.templateSuffix = templateSuffix;
 
   try {
     const response = await retryOperation(async () => {
-      return await shopifyClient.post({
-        path: 'products',
-        data: productPayload,
+      // productSet requires synchronous: true to ensure product+variants are ready
+      return await shopifyClient.request(PRODUCT_SET_MUTATION, {
+        variables: { synchronous: true, input: productSetInput },
       });
     });
 
-    // Validate with Zod
-    const parsed = CreateProductResponseSchema.parse(response);
-    return parsed.body.product;
-
-  } catch (error: unknown) {
-    if (typeof error === 'object' && error !== null && 'response' in error) {
-      console.error('Error creating product:', (error as any).response?.body);
-    } else {
-      console.error('Error creating product:', error);
+    const userErrors = (response as any).data?.productSet?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`GraphQL productSet userErrors: ${JSON.stringify(userErrors)}`);
     }
+
+    const createdGqlProduct = (response as any).data?.productSet?.product;
+
+    // Transform back to expected REST shape.
+    return {
+      id: parseInt(createdGqlProduct.id.split('/').pop(), 10),
+      variants: createdGqlProduct.variants.edges.map((edge: any) => ({
+        id: edge.node.id, // Keeping some as ID string maybe?
+        numeric_id: parseInt(edge.node.id.split('/').pop(), 10),
+        sku: edge.node.sku,
+        inventory_item_id: edge.node.inventoryItem?.id ? parseInt(edge.node.inventoryItem.id.split('/').pop(), 10) : null
+      })),
+      images: createdGqlProduct.images.edges.map((edge: any) => ({
+        id: parseInt(edge.node.id.split('/').pop(), 10),
+        src: edge.node.url
+      }))
+    } as any;
+  } catch (error: unknown) {
+    console.error('Error creating product:', error);
     throw new Error(`Failed to create product`);
   }
 }
 
-export async function addProductVariant(product: Product): Promise<any> {
-  // Keeping implementation similar but with schemas where possible
-  // This function had complex logic for image reuse.
-  // ... [Original logic preserved but types guarded] ...
+const PRODUCT_VARIANT_CREATE_MUTATION = `
+  mutation productVariantCreate($input: ProductVariantInput!) {
+    productVariantCreate(input: $input) {
+      productVariant {
+        id
+        sku
+        price
+        compareAtPrice
+        inventoryItem {
+          id
+        }
+        product {
+          id
+          title
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
 
-  const shopifyClient = getShopifyRestClient();
+export async function addProductVariant(product: Product): Promise<any> {
   const graphQLClient = getShopifyGraphQLClient();
 
+  // Find product by handle to get GID and existing options
   const productResponse = await graphQLClient.request(GET_PRODUCT_BY_HANDLE_QUERY, {
     variables: { handle: product.handle },
   });
 
-  // Minimal schema validation for this lookup
-  const LookupSchema = createGraphQLResponseSchema(z.object({
-    productByHandle: z.object({
-      id: z.string(),
-      images: z.object({
-        edges: z.array(z.object({
-          node: z.object({ id: z.string(), url: z.string() })
-        }))
-      }).optional()
-    }).nullable()
-  }));
-
-  const parsedLookup = LookupSchema.parse(productResponse);
-  const productByHandle = parsedLookup.data?.productByHandle;
+  const productByHandle = (productResponse as any).data?.productByHandle;
   const productGid = productByHandle?.id;
 
   if (!productGid) {
     throw new Error(`Could not find product with handle ${product.handle} to add variant to.`);
   }
+
   const productId = parseInt(productGid.split('/').pop()!, 10);
-  const existingImages = productByHandle?.images?.edges.map((e) => e.node) || [];
+  const existingImages = productByHandle?.images?.edges.map((e: any) => e.node) || [];
 
   const getOptionValue = (value: string | null | undefined, fallback: string | null) =>
     value?.trim() ? value.trim() : fallback;
 
-  let imageId = product.imageId;
+  let imageIdGid = product.imageId ? `gid://shopify/MediaImage/${product.imageId}` : null;
 
-  if (product.mediaUrl && !imageId) {
+  if (product.mediaUrl && !imageIdGid) {
     const imageFilename = product.mediaUrl.split('/').pop()?.split('?')[0];
-    const existingImage = existingImages.find((img) =>
+    const existingImage = existingImages.find((img: any) =>
       img.url.includes(imageFilename as string)
     );
 
     if (existingImage) {
-      imageId = parseInt(existingImage.id.split('/').pop()!);
+      // Ensure we have a MedaImage GID
+      imageIdGid = existingImage.id.includes('MediaImage') ? existingImage.id : `gid://shopify/MediaImage/${existingImage.id.split('/').pop()}`;
     } else {
       try {
         const newImage = await addProductImage(productId, product.mediaUrl);
-        imageId = newImage.id;
+        imageIdGid = `gid://shopify/MediaImage/${newImage.id}`;
       } catch (error) {
         console.warn(`Failed to upload image from URL ${product.mediaUrl}.`);
       }
     }
   }
 
-  const variantPayload = {
-    variant: {
-      price: product.price,
-      sku: product.sku,
-      compare_at_price: product.compareAtPrice,
-      cost: product.costPerItem,
-      barcode: product.barcode,
-      weight: product.weight,
-      weight_unit: 'g',
-      inventory_management: 'shopify',
-      inventory_policy: 'deny',
-      option1: getOptionValue(product.option1Value, product.sku),
-      option2: getOptionValue(product.option2Value, null),
-      option3: getOptionValue(product.option3Value, null),
-      image_id: imageId,
-    },
+  const variantInput: any = {
+    productId: productGid,
+    price: product.price.toString(),
+    sku: product.sku,
+    barcode: product.barcode,
+    compareAtPrice: product.compareAtPrice?.toString(),
+    mediaId: imageIdGid,
+    inventoryItem: {
+      tracked: true,
+      measurement: {
+        weight: {
+          value: product.weight || 0,
+          unit: 'GRAMS'
+        }
+      }
+    }
   };
 
-  const CreateVariantResponseSchema = createRestResponseSchema(z.object({
-    variant: ShopifyRestVariantSchema
-  }));
+  if (product.costPerItem) {
+    variantInput.inventoryItem.cost = product.costPerItem.toString();
+  }
+
+  const option1 = getOptionValue(product.option1Value, product.sku);
+  const option2 = getOptionValue(product.option2Value, null);
+  const option3 = getOptionValue(product.option3Value, null);
+
+  const positionalOptions = [option1, option2, option3].filter(Boolean) as string[];
+  if (positionalOptions.length > 0) {
+    variantInput.options = positionalOptions;
+  }
 
   try {
     const response = await retryOperation(async () => {
-      return await shopifyClient.post({
-        path: `products/${productId}/variants`,
-        data: variantPayload,
+      return await graphQLClient.request(PRODUCT_VARIANT_CREATE_MUTATION, {
+        variables: { input: variantInput },
       });
     });
 
-    // Validate
-    const parsed = CreateVariantResponseSchema.parse(response);
+    const userErrors = (response as any).data?.productVariantCreate?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`GraphQL productVariantCreate userErrors: ${JSON.stringify(userErrors)}`);
+    }
 
-    // Fetch full product to return
-    const GetProductResponseSchema = createRestResponseSchema(z.object({ product: z.any() }));
-    const fullProductResponse = await retryOperation(async () => {
-      return await shopifyClient.get({ path: `products/${productId}` });
-    });
-    const parsedProduct = GetProductResponseSchema.parse(fullProductResponse);
-    return parsedProduct.body.product;
-
+    // Since product-actions.ts needs a full product returned:
+    return await getFullProduct(productId);
   } catch (error: unknown) {
     console.error('Error adding variant:', error);
     throw new Error(`Failed to add variant`);
@@ -1265,102 +1228,152 @@ export async function updateProduct(
   id: string,
   input: { title?: string; bodyHtml?: string; templateSuffix?: string; tags?: string }
 ) {
-  if (input.title && !input.bodyHtml && !input.templateSuffix && !input.tags) {
-    const shopifyClient = getShopifyGraphQLClient();
-    const response = await retryOperation(async () => {
-      return await shopifyClient.request(UPDATE_PRODUCT_MUTATION, {
-        variables: { input: { id: id, title: input.title } },
-      });
-    });
-    // Can validate response here if strictness required
-    return (response as any).data?.productUpdate?.product;
+  const shopifyClient = getShopifyGraphQLClient();
+
+  if (!id.includes('gid://shopify/Product/')) {
+    id = `gid://shopify/Product/${id.split('/').pop()}`;
   }
 
-  const shopifyClient = getShopifyRestClient();
-  const numericProductId = id.split('/').pop();
+  const payload: any = { id };
 
-  if (!numericProductId) {
-    throw new Error(`Invalid Product ID GID for REST update: ${id}`);
-  }
-
-  const payload: { product: any } = {
-    product: {
-      id: numericProductId,
-    },
-  };
-
-  if (input.bodyHtml) payload.product.body_html = input.bodyHtml;
-  if (input.title) payload.product.title = input.title;
-  if (input.templateSuffix) payload.product.template_suffix = input.templateSuffix;
-  if (input.tags !== undefined) payload.product.tags = input.tags;
-
-  const UpdateProductResponseSchema = createRestResponseSchema(z.object({ product: z.any() }));
+  if (input.bodyHtml !== undefined) payload.bodyHtml = input.bodyHtml;
+  if (input.title !== undefined) payload.title = input.title;
+  if (input.templateSuffix !== undefined) payload.templateSuffix = input.templateSuffix;
+  if (input.tags !== undefined) payload.tags = input.tags;
 
   try {
     const response = await retryOperation(async () => {
-      return await shopifyClient.put({
-        path: `products/${numericProductId}`,
-        data: payload,
+      return await shopifyClient.request(UPDATE_PRODUCT_MUTATION, {
+        variables: { input: payload },
       });
     });
-    const parsed = UpdateProductResponseSchema.parse(response);
-    return parsed.body.product;
+    const userErrors = (response as any).data?.productUpdate?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`GraphQL productUpdate userErrors: ${JSON.stringify(userErrors)}`);
+    }
+    return (response as any).data?.productUpdate?.product;
   } catch (error: unknown) {
     console.error('Error updating product:', error);
     throw new Error(`Failed to update product`);
   }
 }
 
+const UPDATE_PRODUCT_VARIANT_MUTATION = `
+  mutation productVariantUpdate($input: ProductVariantInput!) {
+    productVariantUpdate(input: $input) {
+      productVariant {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function updateProductVariant(
   variantId: number,
   input: { image_id?: number | null; price?: number; compare_at_price?: number | null; weight?: number; weight_unit?: 'g' | 'lb' }
 ) {
-  const shopifyClient = getShopifyRestClient();
-  const payload = { variant: { id: variantId, ...input } };
-  const UpdateVariantResponseSchema = createRestResponseSchema(z.object({ variant: z.any() }));
+  const shopifyClient = getShopifyGraphQLClient();
+
+  const payload: any = {
+    id: `gid://shopify/ProductVariant/${variantId}`
+  };
+
+  if (input.image_id !== undefined) payload.mediaId = input.image_id ? `gid://shopify/MediaImage/${input.image_id}` : null;
+  if (input.price !== undefined) payload.price = input.price;
+  if (input.compare_at_price !== undefined) payload.compareAtPrice = input.compare_at_price !== null ? input.compare_at_price : null;
+
+  if (input.weight !== undefined) {
+    payload.inventoryItem = {
+      measurement: {
+        weight: {
+          value: input.weight,
+          unit: input.weight_unit === 'lb' ? 'POUNDS' : 'GRAMS'
+        }
+      }
+    };
+  }
 
   try {
     const response = await retryOperation(async () => {
-      return await shopifyClient.put({
-        path: `variants/${variantId}`,
-        data: payload,
+      return await shopifyClient.request(UPDATE_PRODUCT_VARIANT_MUTATION, {
+        variables: { input: payload },
       });
     });
-    const parsed = UpdateVariantResponseSchema.parse(response);
-    return parsed.body.variant;
+
+    const userErrors = (response as any).data?.productVariantUpdate?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`GraphQL productVariantUpdate userErrors: ${JSON.stringify(userErrors)}`);
+    }
+
+    return (response as any).data?.productVariantUpdate?.productVariant;
   } catch (error: unknown) {
     console.error('Error updating variant:', error);
     throw new Error(`Failed to update variant`);
   }
 }
 
-export async function deleteProduct(productId: string): Promise<void> {
-  const shopifyClient = getShopifyRestClient();
-  const numericProductId = productId.split('/').pop();
+const PRODUCT_DELETE_MUTATION = `
+  mutation productDelete($input: ProductDeleteInput!) {
+    productDelete(input: $input) {
+      deletedProductId
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
 
-  if (!numericProductId) {
-    throw new Error(`Invalid Product ID GID: ${productId}`);
+export async function deleteProduct(productId: string): Promise<void> {
+  const shopifyClient = getShopifyGraphQLClient();
+
+  if (!productId.includes('gid://shopify/Product/')) {
+    productId = `gid://shopify/Product/${productId.split('/').pop()}`;
   }
 
   try {
     await retryOperation(async () => {
-      await shopifyClient.delete({
-        path: `products/${numericProductId}`,
+      const response = await shopifyClient.request(PRODUCT_DELETE_MUTATION, {
+        variables: { input: { id: productId } }
       });
+      const userErrors = (response as any).data?.productDelete?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        throw new Error(`GraphQL productDelete userErrors: ${JSON.stringify(userErrors)}`);
+      }
     });
   } catch (error: unknown) {
-    console.error(`Error deleting product ID ${numericProductId}:`, error);
+    console.error(`Error deleting product ID ${productId}:`, error);
     throw new Error(`Failed to delete product.`);
   }
 }
 
+const PRODUCT_VARIANT_DELETE_MUTATION = `
+  mutation productVariantDelete($id: ID!) {
+     productVariantDelete(id: $id) {
+        deletedProductVariantId
+        userErrors {
+           field
+           message
+        }
+     }
+  }
+`;
+
 export async function deleteProductVariant(productId: number, variantId: number): Promise<void> {
-  const shopifyClient = getShopifyRestClient();
+  const shopifyClient = getShopifyGraphQLClient();
   try {
     await retryOperation(async () => {
-      await shopifyClient.delete({
-        path: `products/${productId}/variants/${variantId}`,
+      const response = await shopifyClient.request(PRODUCT_VARIANT_DELETE_MUTATION, {
+        variables: { id: `gid://shopify/ProductVariant/${variantId}` }
       });
+      const userErrors = (response as any).data?.productVariantDelete?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        throw new Error(`GraphQL productVariantDelete userErrors: ${JSON.stringify(userErrors)}`);
+      }
     });
   } catch (error: unknown) {
     console.error(`Error deleting variant ID ${variantId}:`, error);
@@ -1370,62 +1383,67 @@ export async function deleteProductVariant(productId: number, variantId: number)
 
 // --- Inventory and Collection Functions ---
 
+const INVENTORY_BULK_TOGGLE_MUTATION = `
+  mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemAdjustments: [InventoryItemAdjustmentInput!]!) {
+    inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemAdjustments: $inventoryItemAdjustments) {
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function connectInventoryToLocation(inventoryItemId: string, locationId: number) {
-  const shopifyClient = getShopifyRestClient();
-  const numericInventoryItemId = inventoryItemId.split('/').pop();
+  const shopifyClient = getShopifyGraphQLClient();
+
+  if (!inventoryItemId.includes('gid://')) {
+    inventoryItemId = `gid://shopify/InventoryItem/${inventoryItemId.split('/').pop()}`;
+  }
 
   try {
     await retryOperation(async () => {
-      await shopifyClient.post({
-        path: 'inventory_levels/connect',
-        data: {
-          location_id: locationId,
-          inventory_item_id: numericInventoryItemId,
-        },
+      const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
+        variables: {
+          inventoryItemId,
+          inventoryItemAdjustments: [{ locationId: `gid://shopify/Location/${locationId}`, activate: true }]
+        }
       });
+      const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        // Ignore "already stocked" error
+        if (JSON.stringify(userErrors).toLowerCase().includes('already stocked')) return;
+        throw new Error(JSON.stringify(userErrors));
+      }
     });
   } catch (error: unknown) {
-    if (typeof error === 'object' && error !== null && 'response' in error) {
-      const errorBody = (error as any).response?.body;
-      if (errorBody?.errors && JSON.stringify(errorBody.errors).includes('is already stocked at the location')) {
-        return;
-      }
-    }
     console.error(`Error connecting inventory:`, error);
     throw new Error(`Failed to connect inventory to location`);
   }
 }
 
 export async function disconnectInventoryFromLocation(inventoryItemId: string, locationId: number) {
-  const shopifyClient = getShopifyRestClient();
-  const numericInventoryItemId = inventoryItemId.split('/').pop();
+  const shopifyClient = getShopifyGraphQLClient();
 
-  // Skip if no valid inventory item ID
-  if (!numericInventoryItemId) {
-    console.warn('disconnectInventoryFromLocation: No valid inventory item ID provided');
-    return;
+  if (!inventoryItemId) return;
+  if (!inventoryItemId.includes('gid://')) {
+    inventoryItemId = `gid://shopify/InventoryItem/${inventoryItemId.split('/').pop()}`;
   }
 
   try {
     await retryOperation(async () => {
-      await shopifyClient.delete({
-        path: 'inventory_levels',
-        query: {
-          inventory_item_id: numericInventoryItemId,
-          location_id: locationId,
-        },
+      const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
+        variables: {
+          inventoryItemId,
+          inventoryItemAdjustments: [{ locationId: `gid://shopify/Location/${locationId}`, activate: false }]
+        }
       });
+      const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        throw new Error(JSON.stringify(userErrors));
+      }
     });
   } catch (error: unknown) {
-    // Shopify DELETE often returns empty body which causes "invalid-json" parsing error
-    // This is expected and not a real error - the operation likely succeeded
-    if (typeof error === 'object' && error !== null && 'type' in error) {
-      if ((error as any).type === 'invalid-json') {
-        // This is expected for DELETE requests that return empty body
-        return;
-      }
-    }
-    // Log but don't throw - this is a non-critical operation
     console.warn(`Warning: Could not disconnect inventory from location:`, error);
   }
 }
@@ -1471,22 +1489,32 @@ export async function getCollectionIdByTitle(title: string): Promise<string | nu
   }
 }
 
+const COLLECTION_ADD_PRODUCTS_MUTATION = `
+  mutation collectionAddProducts($id: ID!, $productIds: [ID!]!) {
+    collectionAddProducts(id: $id, productIds: $productIds) {
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function linkProductToCollection(productGid: string, collectionGid: string) {
-  const shopifyClient = getShopifyRestClient();
-  const legacyProductId = productGid.split('/').pop();
-  const legacyCollectionId = collectionGid.split('/').pop();
+  const shopifyClient = getShopifyGraphQLClient();
+
+  if (!productGid.includes('gid://')) productGid = `gid://shopify/Product/${productGid.split('/').pop()}`;
+  if (!collectionGid.includes('gid://')) collectionGid = `gid://shopify/Collection/${collectionGid.split('/').pop()}`;
 
   try {
     await retryOperation(async () => {
-      await shopifyClient.post({
-        path: 'collects',
-        data: {
-          collect: {
-            product_id: legacyProductId,
-            collection_id: legacyCollectionId,
-          },
-        },
+      const response = await shopifyClient.request(COLLECTION_ADD_PRODUCTS_MUTATION, {
+        variables: { id: collectionGid, productIds: [productGid] }
       });
+      const userErrors = (response as any).data?.collectionAddProducts?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        throw new Error(JSON.stringify(userErrors));
+      }
     });
   } catch (error: unknown) {
     console.warn(`Could not link product to collection:`, error);
@@ -1540,50 +1568,110 @@ export async function removeProductTags(productId: string, tags: string[]): Prom
 }
 
 // --- MEDIA FUNCTIONS ---
+const PRODUCT_CREATE_MEDIA_MUTATION = `
+  mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
+    productCreateMedia(media: $media, productId: $productId) {
+      media {
+        id
+        ... on MediaImage {
+          image {
+            url
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function addProductImage(
   productId: number,
   imageUrl: string
 ): Promise<ShopifyProductImage> {
-  const shopifyClient = getShopifyRestClient();
-
-  const AddImageResponseSchema = createRestResponseSchema(z.object({
-    image: z.object({
-      id: z.number(),
-      product_id: z.number(),
-      src: z.string(),
-      variant_ids: z.array(z.number()).optional().default([]),
-      // include other fields if needed for ShopifyProductImage generic
-    }).passthrough()
-  }));
+  const shopifyClient = getShopifyGraphQLClient();
+  const productGid = `gid://shopify/Product/${productId}`;
 
   try {
     const response = await retryOperation(async () => {
-      return await shopifyClient.post({
-        path: `products/${productId}/images`,
-        data: {
-          image: {
-            src: imageUrl,
-          },
-        },
+      return await shopifyClient.request(PRODUCT_CREATE_MEDIA_MUTATION, {
+        variables: {
+          productId: productGid,
+          media: [
+            {
+              mediaContentType: "IMAGE",
+              originalSource: imageUrl
+            }
+          ]
+        }
       });
     });
 
-    // Validate
-    const parsed = AddImageResponseSchema.parse(response);
-    return parsed.body.image as ShopifyProductImage; // Casting as our internal type based on validation
+    const userErrors = (response as any).data?.productCreateMedia?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`GraphQL productCreateMedia userErrors: ${JSON.stringify(userErrors)}`);
+    }
+
+    const createdMedia = (response as any).data?.productCreateMedia?.media?.[0];
+
+    // Return REST-like shape for ShopifyProductImage compatibility
+    return {
+      id: parseInt(createdMedia?.id?.split('/').pop() || '0', 10),
+      product_id: productId,
+      src: createdMedia?.image?.url || imageUrl,
+      variant_ids: []
+    } as any;
   } catch (error: unknown) {
     logger.error(`Error adding image:`, error);
     throw new Error(`Failed to add image`);
   }
 }
 
+const PRODUCT_DELETE_MEDIA_MUTATION = `
+  mutation productDeleteMedia($mediaIds: [ID!]!, $productId: ID!) {
+    productDeleteMedia(mediaIds: $mediaIds, productId: $productId) {
+      deletedMediaIds
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export async function deleteProductImage(productId: number, imageId: number): Promise<void> {
-  const shopifyClient = getShopifyRestClient();
+  const shopifyClient = getShopifyGraphQLClient();
   try {
     await retryOperation(async () => {
-      await shopifyClient.delete({
-        path: `products/${productId}/images/${imageId}`,
+      // Typically REST image IDs map to MediaImage IDs directly.
+      const response = await shopifyClient.request(PRODUCT_DELETE_MEDIA_MUTATION, {
+        variables: {
+          mediaIds: [`gid://shopify/MediaImage/${imageId}`],
+          productId: `gid://shopify/Product/${productId}`
+        }
       });
+
+      const userErrors = (response as any).data?.productDeleteMedia?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        // Fallback: try deleting as generic Media if MediaImage fails
+        // This handles cases where the media is a Video/Model3d and not specifically MediaImage
+        if (userErrors.some((e: any) => e.message.includes('not found') || e.message.includes('invalid'))) {
+          const fallbackResponse = await shopifyClient.request(PRODUCT_DELETE_MEDIA_MUTATION, {
+            variables: {
+              mediaIds: [`gid://shopify/Media/${imageId}`],
+              productId: `gid://shopify/Product/${productId}`
+            }
+          });
+          const fallbackErrors = (fallbackResponse as any).data?.productDeleteMedia?.userErrors;
+          if (fallbackErrors && fallbackErrors.length > 0) {
+            throw new Error(JSON.stringify(fallbackErrors));
+          }
+          return;
+        }
+        throw new Error(JSON.stringify(userErrors));
+      }
     });
   } catch (error: unknown) {
     logger.error(`Error deleting image:`, error);
@@ -1864,12 +1952,56 @@ export async function parseBulkOperationResult(jsonlContent: string, locationId?
   return products;
 }
 
+const GET_FULL_PRODUCT_QUERY = `
+  query getFullProduct($id: ID!) {
+    product(id: $id) {
+       id
+       title
+       handle
+       vendor
+       productType
+       tags
+       bodyHtml
+       templateSuffix
+       status
+       variants(first: 250) {
+         edges {
+           node {
+              id
+              sku
+              price
+              compareAtPrice
+              inventoryQuantity
+              inventoryItem {
+                  id
+                  measurement {
+                      weight { value unit }
+                  }
+              }
+           }
+         }
+       }
+       images(first: 250) {
+         edges {
+           node {
+             id
+             url
+           }
+         }
+       }
+    }
+  }
+`;
+
 export async function getFullProduct(productId: number): Promise<any> {
-  // Keeping safe
-  const shopifyClient = getShopifyRestClient();
+  const shopifyClient = getShopifyGraphQLClient();
   try {
-    const response = await shopifyClient.get({ path: `products/${productId}` });
-    return (response as any).body?.product;
+    const response = await retryOperation(async () => {
+      return await shopifyClient.request(GET_FULL_PRODUCT_QUERY, {
+        variables: { id: `gid://shopify/Product/${productId}` }
+      });
+    });
+    return (response as any).data?.product;
   } catch (error: unknown) {
     console.error(`Error fetching full product :`, error);
     throw new Error(`Failed to fetch product`);
