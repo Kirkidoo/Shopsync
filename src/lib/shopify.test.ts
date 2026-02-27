@@ -6,7 +6,7 @@ jest.mock('@shopify/shopify-api', () => ({
   shopifyApi: jest.fn(() => ({
     clients: {
       Graphql: jest.fn(() => ({
-        query: mockQuery,
+        request: mockQuery,
       })),
     },
   })),
