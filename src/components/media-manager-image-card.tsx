@@ -119,8 +119,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
             <TooltipTrigger asChild>
               <div
                 className={cn(
-                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                  !isSelected && 'group-hover:hidden',
+                  'pointer-events-auto absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
                   isMissingVariantMode && 'hidden'
                 )}
               >
