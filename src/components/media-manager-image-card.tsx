@@ -117,15 +117,16 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div
+              <button
+                type="button"
                 className={cn(
-                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                  !isSelected && 'group-hover:hidden',
+                  'pointer-events-auto absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
                   isMissingVariantMode && 'hidden'
                 )}
+                aria-label={`Assigned to ${image.variant_ids.length} variants`}
               >
-                <Link className="h-3.5 w-3.5" />
-              </div>
+                <Link className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>Assigned to {image.variant_ids.length} variant(s)</p>
