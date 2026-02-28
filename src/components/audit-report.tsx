@@ -405,6 +405,7 @@ export default function AuditReport({
     filteredData,
     uniqueVendors,
     groupedByHandle,
+    allGroupedByHandle,
     groupedBySku,
     handleKeys,
     paginatedHandleKeys,
@@ -1238,6 +1239,7 @@ export default function AuditReport({
             paginatedHandleKeys={paginatedHandleKeys}
             filteredGroupedByHandle={groupedByHandle} // filteredData is flat, groupedByHandle is derived from it
             groupedBySku={groupedBySku}
+            allGroupedByHandle={allGroupedByHandle}
             filter={filter}
             selectedHandles={selectedHandles}
             data={reportData} // needed for duplicates lookup or internal logic
