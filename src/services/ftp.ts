@@ -83,6 +83,12 @@ export async function getCsvStreamFromFtp(
   csvFileName: string,
   ftpData: FormData
 ): Promise<Readable> {
+  // Sentinel Security Fix: Input Validation to prevent Path Traversal
+  if (csvFileName.includes('..') || csvFileName.includes('/') || csvFileName.includes('\\')) {
+    logger.error(`Security blocked attempt to access invalid filename: ${csvFileName}`);
+    throw new Error('Invalid CSV filename. Path traversal not allowed.');
+  }
+
   const client = await getFtpClient(ftpData);
   try {
     logger.info('Navigating to FTP directory:', FTP_DIRECTORY);
