@@ -404,6 +404,7 @@ export default function AuditReport({
     updatedProductHandles, setUpdatedProductHandles,
     filteredData,
     uniqueVendors,
+    allGroupedByHandle,
     groupedByHandle,
     groupedBySku,
     handleKeys,
@@ -1237,6 +1238,7 @@ export default function AuditReport({
           <AuditTable
             paginatedHandleKeys={paginatedHandleKeys}
             filteredGroupedByHandle={groupedByHandle} // filteredData is flat, groupedByHandle is derived from it
+            allGroupedByHandle={allGroupedByHandle}
             groupedBySku={groupedBySku}
             filter={filter}
             selectedHandles={selectedHandles}
