@@ -61,7 +61,7 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
           'absolute inset-0 flex items-start justify-between bg-black/60 p-1.5 transition-opacity',
           isSelected || isSubmitting
             ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+            : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
           isSubmitting ? 'pointer-events-none' : 'pointer-events-none',
           isMissingVariantMode && 'hidden'
         )}
@@ -92,12 +92,10 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
               <AlertDialogTitle>Delete this image?</AlertDialogTitle>
             </AlertDialogHeader>
             <AlertDialogDescription>
-              This will permanently delete the image from Shopify. This action
-              cannot be undone.
+              This will permanently delete the image from Shopify. This action cannot be undone.
               {isAssigned && (
                 <span className="mt-2 block font-bold text-destructive-foreground">
-                  Warning: This image is assigned to {image.variant_ids.length}{' '}
-                  variant(s).
+                  Warning: This image is assigned to {image.variant_ids.length} variant(s).
                 </span>
               )}
             </AlertDialogDescription>
@@ -117,15 +115,16 @@ export const MediaManagerImageCard = memo(function MediaManagerImageCard({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div
+              <button
+                type="button"
+                aria-label={`Assigned to ${image.variant_ids.length} variants`}
                 className={cn(
-                  'pointer-events-auto absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
-                  !isSelected && 'group-hover:hidden',
+                  'pointer-events-auto absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-secondary/80 text-secondary-foreground',
                   isMissingVariantMode && 'hidden'
                 )}
               >
-                <Link className="h-3.5 w-3.5" />
-              </div>
+                <Link className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>Assigned to {image.variant_ids.length} variant(s)</p>
