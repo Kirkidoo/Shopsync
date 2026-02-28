@@ -406,6 +406,7 @@ export default function AuditReport({
     uniqueVendors,
     groupedByHandle,
     groupedBySku,
+    allShopifyVariantsByHandle,
     handleKeys,
     paginatedHandleKeys,
     totalPages,
@@ -1241,6 +1242,7 @@ export default function AuditReport({
             filter={filter}
             selectedHandles={selectedHandles}
             data={reportData} // needed for duplicates lookup or internal logic
+            allShopifyVariantsByHandle={allShopifyVariantsByHandle}
             imageCounts={imageCounts}
             loadingImageCounts={loadingImageCounts}
             isFixing={isFixing}
