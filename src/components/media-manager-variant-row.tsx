@@ -14,7 +14,7 @@ interface VariantRowProps {
   variant: Partial<Product>;
   images: ShopifyProductImage[];
   isSubmitting: boolean;
-  onAssign: (id: string, imageId: number | null) => void;
+  onAssign: (id: string, imageId: string | null) => void;
   idType?: 'variantId' | 'sku';
 }
 
@@ -23,7 +23,7 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
     <SelectContent>
       <SelectItem value="none">No Image</SelectItem>
       {images.map((image) => (
-        <SelectItem key={image.id} value={image.id.toString()}>
+        <SelectItem key={image.id} value={image.id}>
           <div className="flex items-center gap-2">
             <Image
               src={image.src}
@@ -32,7 +32,7 @@ const ImageSelectContent = memo(({ images }: { images: ShopifyProductImage[] }) 
               height={20}
               className="rounded-sm"
             />
-            <span>{image.isFtpSource ? 'FTP: ' : ''}Image #{image.id}</span>
+            <span className="truncate w-32">{image.isFtpSource ? 'FTP: ' : ''}Image #{image.id}</span>
           </div>
         </SelectItem>
       ))}
@@ -47,10 +47,10 @@ export const VariantRow = memo(
     const id = idType === 'variantId' ? variant.variantId! : variant.sku!;
 
     const currentImageId = (() => {
-      if (variant.imageId) return variant.imageId.toString();
+      if (variant.imageId) return variant.imageId;
       if (variant.mediaUrl) {
         const matchingImg = images.find(img => img.src === variant.mediaUrl);
-        return matchingImg?.id.toString() || 'none';
+        return matchingImg?.id || 'none';
       }
       return 'none';
     })();
@@ -59,7 +59,7 @@ export const VariantRow = memo(
       <Select
         value={currentImageId}
         onValueChange={(value) =>
-          onAssign(id, value === 'none' ? null : parseInt(value))
+          onAssign(id, value === 'none' ? null : value)
         }
         disabled={isSubmitting}
       >

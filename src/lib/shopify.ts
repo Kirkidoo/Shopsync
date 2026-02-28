@@ -99,6 +99,40 @@ const GetVariantsBySkuQuerySchema = z.object({
   })
 });
 
+const GetUpdatedProductsQuerySchema = z.object({
+  products: z.object({
+    edges: z.array(z.object({
+      node: z.object({
+        id: z.string(),
+        title: z.string(),
+        handle: z.string(),
+        bodyHtml: z.string().nullable().optional(),
+        vendor: z.string().nullable().optional(),
+        productType: z.string().nullable().optional(),
+        tags: z.array(z.string()),
+        templateSuffix: z.string().nullable().optional(),
+        featuredImage: z.object({ url: z.string() }).nullable().optional(),
+        variants: z.object({
+          edges: z.array(z.object({
+            node: z.object({
+              id: z.string(),
+              sku: z.string().nullable(),
+              price: z.string(),
+              compareAtPrice: z.string().nullable().optional(),
+              inventoryItem: InventoryItemSchema.nullable().optional(),
+              image: z.object({ id: z.string() }).nullable().optional(),
+            })
+          }))
+        })
+      })
+    })),
+    pageInfo: z.object({
+      hasNextPage: z.boolean(),
+      endCursor: z.string().nullable().optional(),
+    })
+  })
+});
+
 // --- Helper function to introduce a delay ---
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -299,6 +333,67 @@ const UPDATE_PRODUCT_MUTATION = `
             }
         }
     }
+`;
+
+const GET_UPDATED_PRODUCTS_QUERY = `
+  query getUpdatedProducts($query: String!, $cursor: String) {
+    products(first: 5, query: $query, after: $cursor) {
+      edges {
+        node {
+          id
+          title
+          handle
+          bodyHtml
+          vendor
+          productType
+          tags
+          templateSuffix
+          featuredImage {
+            url
+          }
+          variants(first: 20) {
+            edges {
+              node {
+                id
+                sku
+                price
+                compareAtPrice
+                inventoryItem {
+                  id
+                  measurement {
+                    weight {
+                      value
+                      unit
+                    }
+                  }
+                  inventoryLevels(first: 5) {
+                    edges {
+                      node {
+                        quantities(names: ["available"]) {
+                          name
+                          quantity
+                        }
+                        location {
+                          id
+                        }
+                      }
+                    }
+                  }
+                }
+                image {
+                  id
+                }
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
 `;
 
 const BULK_OPERATION_RUN_QUERY_MUTATION = `
@@ -523,9 +618,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
                 variant.inventoryItem?.measurement?.weight?.unit
               ),
               mediaUrl: product.featuredImage?.url || null,
-              imageId: variant.image?.id
-                ? parseInt(variant.image.id.split('/').pop() || '0', 10)
-                : null,
+              imageId: variant.image?.id || null,
               category: null,
               option1Name: null,
               option1Value: null,
@@ -652,7 +745,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
                 node.inventoryItem?.measurement?.weight?.unit
               ),
               mediaUrl: product.featuredImage?.url || null,
-              imageId: node.image?.id ? parseInt(node.image.id.split('/').pop() || '0', 10) : null,
+              imageId: node.image?.id || null,
               category: null,
               option1Name: null,
               option1Value: null,
@@ -831,9 +924,7 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
               variant.inventoryItem?.measurement?.weight?.unit
             ),
             mediaUrl: product.featuredImage?.url || null,
-            imageId: variant.image?.id
-              ? parseInt(variant.image.id.split('/').pop() || '0', 10)
-              : null,
+            imageId: variant.image?.id || null,
             category: null,
             option1Name: null,
             option1Value: null,
@@ -870,6 +961,108 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
   return allProducts;
 }
 
+/**
+ * Fetches Shopify products updated since the given lastSyncDate.
+ */
+export async function syncUpdatedProducts(lastSyncDate: string, locationId?: number): Promise<Product[]> {
+  const shopifyClient = getShopifyGraphQLClient();
+  const allProducts: Product[] = [];
+  const query = `updated_at:>='${lastSyncDate}'`;
+  let cursor: string | null = null;
+  let hasNextPage = true;
+
+  logger.info(`Starting incremental sync for products updated since ${lastSyncDate}`);
+
+  while (hasNextPage) {
+    try {
+      const ResponseSchema = createGraphQLResponseSchema(GetUpdatedProductsQuerySchema);
+      const response = await retryOperation(async () => {
+        return await shopifyClient.request(GET_UPDATED_PRODUCTS_QUERY, {
+          variables: { query, cursor },
+        });
+      });
+
+      const parsedResponse = ResponseSchema.parse(response);
+      const productEdges = parsedResponse.data?.products?.edges || [];
+
+      for (const edge of productEdges) {
+        const productNode = edge.node;
+        const variantEdges = productNode.variants?.edges || [];
+
+        for (const variantEdge of variantEdges) {
+          const variant = variantEdge.node;
+
+          let locationInventory = 0;
+          let isAtLocation = false;
+          const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+          const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
+
+          if (variant.inventoryItem?.inventoryLevels?.edges) {
+            for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
+              if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                const available = levelEdge.node.quantities?.find((q: any) => q.name === 'available');
+                if (available) {
+                  locationInventory = available.quantity;
+                }
+                isAtLocation = true;
+                break;
+              }
+            }
+          }
+
+          if (!isAtLocation) continue;
+
+          allProducts.push({
+            id: productNode.id,
+            variantId: variant.id,
+            inventoryItemId: variant.inventoryItem?.id || '',
+            handle: productNode.handle,
+            sku: variant.sku || '',
+            name: productNode.title,
+            price: parseFloat(variant.price),
+            inventory: locationInventory,
+            descriptionHtml: productNode.bodyHtml || null,
+            productType: productNode.productType || null,
+            vendor: productNode.vendor || null,
+            tags: productNode.tags.join(', '),
+            compareAtPrice: variant.compareAtPrice ? parseFloat(variant.compareAtPrice) : null,
+            costPerItem: null,
+            barcode: null,
+            weight: convertWeightToGrams(
+              variant.inventoryItem?.measurement?.weight?.value,
+              variant.inventoryItem?.measurement?.weight?.unit
+            ),
+            mediaUrl: productNode.featuredImage?.url || null,
+            imageId: variant.image?.id || null,
+            category: null,
+            option1Name: null,
+            option1Value: null,
+            option2Name: null,
+            option2Value: null,
+            option3Name: null,
+            option3Value: null,
+            templateSuffix: productNode.templateSuffix || null,
+            locationIds:
+              variant.inventoryItem?.inventoryLevels?.edges?.map(
+                (edge: any) => edge.node.location.id
+              ) || [],
+          });
+        }
+      }
+
+      hasNextPage = parsedResponse.data?.products?.pageInfo.hasNextPage || false;
+      cursor = parsedResponse.data?.products?.pageInfo.endCursor || null;
+
+    } catch (error) {
+      logger.error('Error during incremental sync:', error);
+      throw error;
+    }
+  }
+
+  logger.info(`Incremental sync completed. Found ${allProducts.length} updated variants at target location.`);
+  return allProducts;
+}
+
 const GET_LOCATIONS_QUERY = `
   query getLocations {
     locations(first: 250) {
@@ -883,7 +1076,7 @@ const GET_LOCATIONS_QUERY = `
   }
 `;
 
-export async function getShopifyLocations(): Promise<{ id: number; name: string }[]> {
+export async function getShopifyLocations(): Promise<{ id: string; name: string }[]> {
   const shopifyClient = getShopifyGraphQLClient();
 
   try {
@@ -891,10 +1084,9 @@ export async function getShopifyLocations(): Promise<{ id: number; name: string 
       return await shopifyClient.request(GET_LOCATIONS_QUERY);
     });
 
-    // Extract the locations from the GraphQL response
     const edges = (response as any).data?.locations?.edges || [];
     const locations = edges.map((edge: any) => ({
-      id: parseInt(edge.node.id.split('/').pop() || '0', 10),
+      id: edge.node.id,
       name: edge.node.name
     }));
 
@@ -1089,15 +1281,14 @@ export async function createProduct(
 
     // Transform back to expected REST shape.
     return {
-      id: parseInt(createdGqlProduct.id.split('/').pop(), 10),
+      id: createdGqlProduct.id,
       variants: createdGqlProduct.variants.edges.map((edge: any) => ({
-        id: edge.node.id, // Keeping some as ID string maybe?
-        numeric_id: parseInt(edge.node.id.split('/').pop(), 10),
+        id: edge.node.id,
         sku: edge.node.sku,
-        inventory_item_id: edge.node.inventoryItem?.id ? parseInt(edge.node.inventoryItem.id.split('/').pop(), 10) : null
+        inventory_item_id: edge.node.inventoryItem?.id || null
       })),
       images: createdGqlProduct.images.edges.map((edge: any) => ({
-        id: parseInt(edge.node.id.split('/').pop(), 10),
+        id: edge.node.id,
         src: edge.node.url
       }))
     } as any;
@@ -1146,7 +1337,7 @@ export async function addProductVariant(product: Product): Promise<any> {
     throw new Error(`Could not find product with handle ${product.handle} to add variant to.`);
   }
 
-  const productId = parseInt(productGid.split('/').pop()!, 10);
+  // No numeric ID needed anymore
   const existingImages = productByHandle?.images?.edges.map((e: any) => e.node) || [];
 
   const getOptionValue = (value: string | null | undefined, fallback: string | null) =>
@@ -1162,10 +1353,10 @@ export async function addProductVariant(product: Product): Promise<any> {
 
     if (existingImage) {
       // Ensure we have a MedaImage GID
-      imageIdGid = existingImage.id.includes('MediaImage') ? existingImage.id : `gid://shopify/MediaImage/${existingImage.id.split('/').pop()}`;
+      imageIdGid = existingImage.id;
     } else {
       try {
-        const newImage = await addProductImage(productId, product.mediaUrl);
+        const newImage = await addProductImage(productGid, product.mediaUrl);
         imageIdGid = `gid://shopify/MediaImage/${newImage.id}`;
       } catch (error) {
         console.warn(`Failed to upload image from URL ${product.mediaUrl}.`);
@@ -1217,7 +1408,7 @@ export async function addProductVariant(product: Product): Promise<any> {
     }
 
     // Since product-actions.ts needs a full product returned:
-    return await getFullProduct(productId);
+    return await getFullProduct(productGid);
   } catch (error: unknown) {
     console.error('Error adding variant:', error);
     throw new Error(`Failed to add variant`);
@@ -1230,8 +1421,9 @@ export async function updateProduct(
 ) {
   const shopifyClient = getShopifyGraphQLClient();
 
+  // Ensure id is a GID if not already
   if (!id.includes('gid://shopify/Product/')) {
-    id = `gid://shopify/Product/${id.split('/').pop()}`;
+    id = `gid://shopify/Product/${id}`;
   }
 
   const payload: any = { id };
@@ -1273,16 +1465,16 @@ const UPDATE_PRODUCT_VARIANT_MUTATION = `
 `;
 
 export async function updateProductVariant(
-  variantId: number,
-  input: { image_id?: number | null; price?: number; compare_at_price?: number | null; weight?: number; weight_unit?: 'g' | 'lb' }
+  variantId: string | number,
+  input: { image_id?: string | null; price?: number; compare_at_price?: number | null; weight?: number; weight_unit?: 'g' | 'lb' }
 ) {
   const shopifyClient = getShopifyGraphQLClient();
 
   const payload: any = {
-    id: `gid://shopify/ProductVariant/${variantId}`
+    id: variantId.toString().includes('gid://') ? variantId.toString() : `gid://shopify/ProductVariant/${variantId}`
   };
 
-  if (input.image_id !== undefined) payload.mediaId = input.image_id ? `gid://shopify/MediaImage/${input.image_id}` : null;
+  if (input.image_id !== undefined) payload.mediaId = input.image_id;
   if (input.price !== undefined) payload.price = input.price;
   if (input.compare_at_price !== undefined) payload.compareAtPrice = input.compare_at_price !== null ? input.compare_at_price : null;
 
@@ -1332,7 +1524,7 @@ export async function deleteProduct(productId: string): Promise<void> {
   const shopifyClient = getShopifyGraphQLClient();
 
   if (!productId.includes('gid://shopify/Product/')) {
-    productId = `gid://shopify/Product/${productId.split('/').pop()}`;
+    productId = `gid://shopify/Product/${productId}`;
   }
 
   try {
@@ -1363,12 +1555,12 @@ const PRODUCT_VARIANT_DELETE_MUTATION = `
   }
 `;
 
-export async function deleteProductVariant(productId: number, variantId: number): Promise<void> {
+export async function deleteProductVariant(productId: string, variantId: string): Promise<void> {
   const shopifyClient = getShopifyGraphQLClient();
   try {
     await retryOperation(async () => {
       const response = await shopifyClient.request(PRODUCT_VARIANT_DELETE_MUTATION, {
-        variables: { id: `gid://shopify/ProductVariant/${variantId}` }
+        variables: { id: variantId.includes('gid://') ? variantId : `gid://shopify/ProductVariant/${variantId}` }
       });
       const userErrors = (response as any).data?.productVariantDelete?.userErrors;
       if (userErrors && userErrors.length > 0) {
@@ -1394,7 +1586,7 @@ const INVENTORY_BULK_TOGGLE_MUTATION = `
   }
 `;
 
-export async function connectInventoryToLocation(inventoryItemId: string, locationId: number) {
+export async function connectInventoryToLocation(inventoryItemId: string, locationId: string | number) {
   const shopifyClient = getShopifyGraphQLClient();
 
   if (!inventoryItemId.includes('gid://')) {
@@ -1406,7 +1598,7 @@ export async function connectInventoryToLocation(inventoryItemId: string, locati
       const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
         variables: {
           inventoryItemId,
-          inventoryItemAdjustments: [{ locationId: `gid://shopify/Location/${locationId}`, activate: true }]
+          inventoryItemAdjustments: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: true }]
         }
       });
       const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;
@@ -1422,7 +1614,7 @@ export async function connectInventoryToLocation(inventoryItemId: string, locati
   }
 }
 
-export async function disconnectInventoryFromLocation(inventoryItemId: string, locationId: number) {
+export async function disconnectInventoryFromLocation(inventoryItemId: string, locationId: string | number) {
   const shopifyClient = getShopifyGraphQLClient();
 
   if (!inventoryItemId) return;
@@ -1435,7 +1627,7 @@ export async function disconnectInventoryFromLocation(inventoryItemId: string, l
       const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
         variables: {
           inventoryItemId,
-          inventoryItemAdjustments: [{ locationId: `gid://shopify/Location/${locationId}`, activate: false }]
+          inventoryItemAdjustments: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: false }]
         }
       });
       const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;
@@ -1451,10 +1643,10 @@ export async function disconnectInventoryFromLocation(inventoryItemId: string, l
 export async function inventorySetQuantities(
   inventoryItemId: string,
   quantity: number,
-  locationId: number
+  locationId: string | number
 ) {
   const shopifyClient = getShopifyGraphQLClient();
-  const locationGid = `gid://shopify/Location/${locationId}`;
+  const locationGid = locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`;
   const input = {
     name: 'available',
     reason: 'correction',
@@ -1503,8 +1695,8 @@ const COLLECTION_ADD_PRODUCTS_MUTATION = `
 export async function linkProductToCollection(productGid: string, collectionGid: string) {
   const shopifyClient = getShopifyGraphQLClient();
 
-  if (!productGid.includes('gid://')) productGid = `gid://shopify/Product/${productGid.split('/').pop()}`;
-  if (!collectionGid.includes('gid://')) collectionGid = `gid://shopify/Collection/${collectionGid.split('/').pop()}`;
+  if (!productGid.includes('gid://')) productGid = `gid://shopify/Product/${productGid}`;
+  if (!collectionGid.includes('gid://')) collectionGid = `gid://shopify/Collection/${collectionGid}`;
 
   try {
     await retryOperation(async () => {
@@ -1588,11 +1780,11 @@ const PRODUCT_CREATE_MEDIA_MUTATION = `
 `;
 
 export async function addProductImage(
-  productId: number,
+  productId: string | number,
   imageUrl: string
 ): Promise<ShopifyProductImage> {
   const shopifyClient = getShopifyGraphQLClient();
-  const productGid = `gid://shopify/Product/${productId}`;
+  const productGid = productId.toString().includes('gid://') ? productId.toString() : `gid://shopify/Product/${productId}`;
 
   try {
     const response = await retryOperation(async () => {
@@ -1618,8 +1810,8 @@ export async function addProductImage(
 
     // Return REST-like shape for ShopifyProductImage compatibility
     return {
-      id: parseInt(createdMedia?.id?.split('/').pop() || '0', 10),
-      product_id: productId,
+      id: createdMedia?.id || '0',
+      product_id: productGid,
       src: createdMedia?.image?.url || imageUrl,
       variant_ids: []
     } as any;
@@ -1641,15 +1833,15 @@ const PRODUCT_DELETE_MEDIA_MUTATION = `
   }
 `;
 
-export async function deleteProductImage(productId: number, imageId: number): Promise<void> {
+export async function deleteProductImage(productId: string, imageId: string): Promise<void> {
   const shopifyClient = getShopifyGraphQLClient();
   try {
     await retryOperation(async () => {
       // Typically REST image IDs map to MediaImage IDs directly.
       const response = await shopifyClient.request(PRODUCT_DELETE_MEDIA_MUTATION, {
         variables: {
-          mediaIds: [`gid://shopify/MediaImage/${imageId}`],
-          productId: `gid://shopify/Product/${productId}`
+          mediaIds: [imageId.includes('gid://') ? imageId : `gid://shopify/MediaImage/${imageId}`],
+          productId: productId.includes('gid://') ? productId : `gid://shopify/Product/${productId}`
         }
       });
 
@@ -1933,9 +2125,7 @@ export async function parseBulkOperationResult(jsonlContent: string, locationId?
             )
             : null,
           mediaUrl: null,
-          imageId: shopifyProduct.image?.id
-            ? parseInt(shopifyProduct.image.id.split('/').pop(), 10)
-            : null,
+          imageId: shopifyProduct.image?.id || null,
           category: null,
           option1Name: null,
           option1Value: null,
@@ -1993,12 +2183,12 @@ const GET_FULL_PRODUCT_QUERY = `
   }
 `;
 
-export async function getFullProduct(productId: number): Promise<any> {
+export async function getFullProduct(productId: string | number): Promise<any> {
   const shopifyClient = getShopifyGraphQLClient();
   try {
     const response = await retryOperation(async () => {
       return await shopifyClient.request(GET_FULL_PRODUCT_QUERY, {
-        variables: { id: `gid://shopify/Product/${productId}` }
+        variables: { id: productId.toString().includes('gid://') ? productId.toString() : `gid://shopify/Product/${productId}` }
       });
     });
     return (response as any).data?.product;
@@ -2008,11 +2198,12 @@ export async function getFullProduct(productId: number): Promise<any> {
   }
 }
 
-export async function getProductImageCounts(productIds: number[]): Promise<Record<number, number>> {
+export async function getProductImageCounts(productIds: (string | number)[]): Promise<Record<string, number>> {
   const shopifyClient = getShopifyGraphQLClient();
-  const counts: Record<number, number> = {};
+  const counts: Record<string, number> = {};
 
   for (const id of productIds) {
+    const productGid = id.toString().includes('gid://') ? id.toString() : `gid://shopify/Product/${id}`;
     const query = `
             query getProductImageCount($id: ID!) {
                 product(id: $id) {
@@ -2024,17 +2215,17 @@ export async function getProductImageCounts(productIds: number[]): Promise<Recor
         `;
     try {
       const response = await shopifyClient.request(query, {
-        variables: { id: `gid://shopify/Product/${id}` },
+        variables: { id: productGid },
       });
       const data = (response as any).data?.product?.media;
       if (data) {
-        counts[id] = data.totalCount;
+        counts[id.toString()] = data.totalCount;
       } else {
-        counts[id] = 0;
+        counts[id.toString()] = 0;
       }
       await sleep(100);
     } catch (error) {
-      counts[id] = 0;
+      counts[id.toString()] = 0;
     }
   }
   return counts;

@@ -17,7 +17,7 @@ export interface Product {
   weight: number | null; // Always in grams from source
   mediaUrl: string | null;
   category: string | null; // For mapping to Shopify Collections
-  imageId: number | null; // Shopify Image ID
+  imageId: string | null; // Shopify Image GID
   option1Name: string | null;
   option1Value: string | null;
   option2Name: string | null;
@@ -81,10 +81,10 @@ export interface Summary {
 }
 
 export interface ShopifyProductImage {
-  id: number;
-  product_id: number;
+  id: string;
+  product_id: string;
   src: string;
-  variant_ids: number[];
+  variant_ids: string[];
   isFtpSource?: boolean;
 }
 

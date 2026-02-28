@@ -9,13 +9,21 @@ import {
     startProductExportBulkOperation as startShopifyBulkOp,
     checkBulkOperationStatus as checkShopifyBulkOpStatus,
     downloadBulkOperationResultToFile,
+    syncUpdatedProducts
 } from '@/lib/shopify';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
 import { logger } from '@/lib/logger';
-import { parseJsonlGenerator, parseJsonlWithAllSkus } from '@/services/jsonl-parser';
+import {
+    seedDatabaseFromJsonl,
+    getProductsFromDb,
+    getAllSkusFromDb,
+    getLastSyncDate,
+    setLastSyncDate,
+    updateProductsInDb
+} from '@/lib/db';
 
 // ── Cache helpers (private to this module) ──────────────────────────
 
@@ -38,17 +46,39 @@ export async function runAudit(
     ftpData: FormData,
     locationId?: number
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
-    return await auditService.runAudit(csvFileName, ftpData, locationId);
+    // 1. Get CSV products
+    const csvProducts = await csvService.getCsvProducts(csvFileName, ftpData);
+    if (!csvProducts) return null;
+
+    // 2. Perform incremental sync
+    try {
+        const lastSyncDate = getLastSyncDate();
+        if (lastSyncDate) {
+            const updated = await syncUpdatedProducts(lastSyncDate, locationId);
+            if (updated.length > 0) {
+                updateProductsInDb(updated);
+            }
+        }
+        setLastSyncDate(new Date().toISOString());
+    } catch (error) {
+        logger.error('Incremental sync failed during runAudit, proceeding with existing data', error);
+    }
+
+    // 3. Get all products from DB for audit
+    const shopifyProducts = getProductsFromDb();
+    const allSkusInShopify = getAllSkusFromDb();
+
+    // 4. Run comparison
+    return await auditService.runBulkAuditComparison(
+        csvProducts,
+        shopifyProducts,
+        csvFileName,
+        allSkusInShopify
+    );
 }
 
 export async function checkBulkCacheStatus(): Promise<{ lastModified: string | null }> {
-    try {
-        await fsPromises.access(CACHE_INFO_PATH);
-        const info = JSON.parse(await fsPromises.readFile(CACHE_INFO_PATH, 'utf-8'));
-        return { lastModified: info.lastModified };
-    } catch (error) {
-        return { lastModified: null };
-    }
+    return { lastModified: getLastSyncDate() };
 }
 
 export async function getCsvProducts(
@@ -60,14 +90,9 @@ export async function getCsvProducts(
 
 export async function getShopifyProductsFromCache(locationId?: number): Promise<Product[] | null> {
     try {
-        await fsPromises.access(CACHE_FILE_PATH);
-        const products: Product[] = [];
-        for await (const product of parseJsonlGenerator(CACHE_FILE_PATH, locationId)) {
-            products.push(product);
-        }
-        return products;
+        return getProductsFromDb();
     } catch (error) {
-        logger.error('Failed to read or parse cache file.', error);
+        logger.error('Failed to read products from database.', error);
         return null;
     }
 }
@@ -77,10 +102,12 @@ export async function getShopifyProductsFromCacheWithAllSkus(locationId?: number
     allSkusInShopify: Set<string>;
 } | null> {
     try {
-        await fsPromises.access(CACHE_FILE_PATH);
-        return await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
+        return {
+            products: getProductsFromDb(),
+            allSkusInShopify: getAllSkusFromDb()
+        };
     } catch (error) {
-        logger.error('Failed to read or parse cache file.', error);
+        logger.error('Failed to read products or SKUs from database.', error);
         return null;
     }
 }
@@ -106,17 +133,12 @@ export async function getBulkOperationResultAndParse(
     await ensureCacheDirExists();
     try {
         await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
-        await fsPromises.writeFile(
-            CACHE_INFO_PATH,
-            JSON.stringify({ lastModified: new Date().toISOString() })
-        );
-        const products: Product[] = [];
-        for await (const product of parseJsonlGenerator(CACHE_FILE_PATH, locationId)) {
-            products.push(product);
-        }
+        await seedDatabaseFromJsonl(CACHE_FILE_PATH, locationId);
+
+        const products = getProductsFromDb();
         return products;
     } catch (error) {
-        logger.error('Failed to download or parse bulk result', error);
+        logger.error('Failed to download or seed database', error);
         return null;
     }
 }
@@ -131,13 +153,14 @@ export async function getBulkOperationResultAndParseWithAllSkus(
     await ensureCacheDirExists();
     try {
         await downloadBulkOperationResultToFile(url, CACHE_FILE_PATH);
-        await fsPromises.writeFile(
-            CACHE_INFO_PATH,
-            JSON.stringify({ lastModified: new Date().toISOString() })
-        );
-        return await parseJsonlWithAllSkus(CACHE_FILE_PATH, locationId);
+        await seedDatabaseFromJsonl(CACHE_FILE_PATH, locationId);
+
+        return {
+            products: getProductsFromDb(),
+            allSkusInShopify: getAllSkusFromDb()
+        };
     } catch (error) {
-        logger.error('Failed to download or parse bulk result', error);
+        logger.error('Failed to download or seed database', error);
         return null;
     }
 }
@@ -162,13 +185,22 @@ export async function runBulkAuditFromCache(
     locationId?: number
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
     try {
-        await fsPromises.access(CACHE_FILE_PATH);
-        const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(
-            CACHE_FILE_PATH,
-            locationId
-        );
+        // 1. Perform incremental sync
+        const lastSyncDate = getLastSyncDate();
+        if (lastSyncDate) {
+            const updated = await syncUpdatedProducts(lastSyncDate, locationId);
+            if (updated.length > 0) {
+                updateProductsInDb(updated);
+            }
+        }
+        setLastSyncDate(new Date().toISOString());
+
+        // 2. Get data from DB
+        const shopifyProducts = getProductsFromDb();
+        const allSkusInShopify = getAllSkusFromDb();
+
         logger.info(
-            `Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`
+            `Parsed ${shopifyProducts.length} products from DB, ${allSkusInShopify.size} total SKUs in Shopify`
         );
         return await auditService.runBulkAuditComparison(
             csvProducts,
@@ -177,7 +209,7 @@ export async function runBulkAuditFromCache(
             allSkusInShopify
         );
     } catch (error) {
-        logger.error('Failed to run bulk audit from cache', error);
+        logger.error('Failed to run bulk audit from database', error);
         return null;
     }
 }
@@ -191,16 +223,13 @@ export async function runBulkAuditFromDownload(
     await ensureCacheDirExists();
     try {
         await downloadBulkOperationResultToFile(resultUrl, CACHE_FILE_PATH);
-        await fsPromises.writeFile(
-            CACHE_INFO_PATH,
-            JSON.stringify({ lastModified: new Date().toISOString() })
-        );
-        const { products: shopifyProducts, allSkusInShopify } = await parseJsonlWithAllSkus(
-            CACHE_FILE_PATH,
-            locationId
-        );
+        await seedDatabaseFromJsonl(CACHE_FILE_PATH, locationId);
+
+        const shopifyProducts = getProductsFromDb();
+        const allSkusInShopify = getAllSkusFromDb();
+
         logger.info(
-            `Parsed ${shopifyProducts.length} products at location, ${allSkusInShopify.size} total SKUs in Shopify`
+            `Parsed ${shopifyProducts.length} products from DB, ${allSkusInShopify.size} total SKUs in Shopify`
         );
         return await auditService.runBulkAuditComparison(
             csvProducts,

@@ -39,20 +39,14 @@ async function _fixSingleMismatch(
         switch (fixType) {
             case 'price':
                 if (fixPayload.variantId) {
-                    const numericVariantId = parseInt(fixPayload.variantId.split('/').pop() || '0', 10);
-                    if (numericVariantId) {
-                        await updateProductVariant(numericVariantId, { price: fixPayload.price });
-                    }
+                    await updateProductVariant(fixPayload.variantId, { price: csvProduct.price });
                 }
                 break;
             case 'compare_at_price':
                 if (fixPayload.variantId) {
-                    const numericVariantId = parseInt(fixPayload.variantId.split('/').pop() || '0', 10);
-                    if (numericVariantId) {
-                        // For "Sticky Sale" (compare_at_price mismatch), the fix is to remove the sale
-                        // by setting compare_at_price to null.
-                        await updateProductVariant(numericVariantId, { compare_at_price: null });
-                    }
+                    // For "Sticky Sale" (compare_at_price mismatch), the fix is to remove the sale
+                    // by setting compare_at_price to null.
+                    await updateProductVariant(fixPayload.variantId, { compare_at_price: null });
                 }
                 break;
             case 'inventory':

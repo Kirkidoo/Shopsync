@@ -69,7 +69,7 @@ export async function createInShopify(
             throw new Error('Product creation or variant addition failed to return a valid result.');
         }
 
-        const productGid = `gid://shopify/Product/${createdProduct.id}`;
+        const productGid = createdProduct.id; // It's already a string GID
 
         // --- Phase 2: Post-creation/addition tasks ---
 
@@ -78,7 +78,7 @@ export async function createInShopify(
             logger.info('Phase 2: Linking images to variants...');
             const getImageFilename = (url: string) => url.split('/').pop()?.split('?')[0];
 
-            const imageFilenameToIdMap = new Map<string, number>();
+            const imageFilenameToIdMap = new Map<string, string>();
             createdProduct.images.forEach((img: any) => {
                 const filename = getImageFilename(img.src);
                 if (filename) {
@@ -94,7 +94,7 @@ export async function createInShopify(
                 );
                 if (!createdVariant) continue;
 
-                let imageIdToAssign: number | null = null;
+                let imageIdToAssign: string | null = null;
 
                 if (sourceVariant.mediaUrl) {
                     const sourceFilename = getImageFilename(sourceVariant.mediaUrl);
@@ -130,7 +130,7 @@ export async function createInShopify(
             const sourceVariant = allVariantsForHandle.find((p) => p.sku === variant.sku);
             if (!sourceVariant) continue;
 
-            const inventoryItemIdGid = `gid://shopify/InventoryItem/${variant.inventory_item_id}`;
+            const inventoryItemIdGid = variant.inventory_item_id;
 
             if (sourceVariant.inventory !== null && inventoryItemIdGid) {
                 logger.info(
@@ -278,26 +278,25 @@ export async function createMultipleVariantsForProduct(
 
         // Use parentProductId if provided, otherwise fall back to variant's id
         const productGid = parentProductId || variants[0].id;
-        const numericProductId = parseInt(productGid?.split('/').pop() || '0', 10);
 
-        if (numericProductId) {
+        if (productGid) {
             try {
                 // Fetch existing images on the product
-                const productData = await getFullProduct(numericProductId);
-                const existingImages = productData.images || [];
+                const productData = await getFullProduct(productGid);
+                const existingImages = (productData.images?.edges || []).map((e: any) => e.node);
                 const getImageFilename = (url: string) => url.split('/').pop()?.split('?')[0];
 
                 // Build a map of existing filenames to image IDs
-                const existingFilenameToId = new Map<string, number>();
+                const existingFilenameToId = new Map<string, string>();
                 existingImages.forEach((img: any) => {
-                    const filename = getImageFilename(img.src);
+                    const filename = getImageFilename(img.url);
                     if (filename) {
                         existingFilenameToId.set(filename, img.id);
                     }
                 });
 
                 // Map from mediaUrl to the resolved imageId
-                const urlToImageId = new Map<string, number>();
+                const urlToImageId = new Map<string, string>();
 
                 for (const url of uniqueMediaUrls) {
                     const filename = getImageFilename(url);
@@ -311,7 +310,7 @@ export async function createMultipleVariantsForProduct(
                         // Upload the image once
                         try {
                             logger.info(`Uploading image: ${filename}...`);
-                            const newImage = await addProductImage(numericProductId, url);
+                            const newImage = await addProductImage(productGid, url);
                             urlToImageId.set(url, newImage.id);
                             // Also add to existing map so subsequent URLs with same filename don't re-upload
                             if (filename) {
@@ -383,16 +382,13 @@ export async function deleteFromShopify(productId: string) {
 export async function deleteVariantFromShopify(productId: string, variantId: string) {
     logger.info(`Attempting to delete variant ${variantId} from product ${productId}`);
     try {
-        const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
-        const numericVariantId = parseInt(variantId.split('/').pop() || '0', 10);
-
-        if (!numericProductId || !numericVariantId) {
+        if (!productId || !variantId) {
             throw new Error(
                 `Invalid Product or Variant GID. Product: ${productId}, Variant: ${variantId}`
             );
         }
 
-        await deleteProductVariant(numericProductId, numericVariantId);
+        await deleteProductVariant(productId, variantId);
         revalidatePath('/');
         return { success: true, message: `Successfully deleted variant ${variantId}` };
     } catch (error) {

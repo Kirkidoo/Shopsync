@@ -18,39 +18,48 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function getProductWithImages(
     productId: string
-): Promise<{ variants: Product[]; images: ShopifyProductImage[] }> {
+): Promise<{ success: boolean; message: string; data?: { variants: Product[]; images: ShopifyProductImage[] } }> {
     try {
-        const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
-        if (!numericProductId) {
+        if (!productId) {
             throw new Error(`Invalid Product GID: ${productId}`);
         }
-        const productData = await getFullProduct(numericProductId);
+        const productData = await getFullProduct(productId);
 
-        const variants = productData.variants.map((v: any) => ({
-            id: `gid://shopify/Product/${productData.id}`,
-            variantId: `gid://shopify/ProductVariant/${v.id}`,
-            sku: v.sku,
-            name: productData.title,
-            price: parseFloat(v.price),
-            option1Name: productData.options[0]?.name || null,
-            option1Value: v.option1,
-            option2Name: productData.options[1]?.name || null,
-            option2Value: v.option2,
-            option3Name: productData.options[2]?.name || null,
-            option3Value: v.option3,
-            imageId: v.image_id,
-        }));
+        if (!productData) {
+            throw new Error(`Product not found: ${productId}`);
+        }
 
-        const images = productData.images.map((img: any) => ({
-            id: img.id,
-            productId: img.product_id,
-            src: img.src,
-            variant_ids: img.variant_ids,
-        }));
+        const variants = (productData.variants?.edges || []).map((edge: any) => {
+            const v = edge.node;
+            return {
+                id: productData.id,
+                variantId: v.id,
+                sku: v.sku,
+                name: productData.title,
+                price: parseFloat(v.price),
+                option1Name: productData.options?.[0]?.name || null,
+                option1Value: v.selectedOptions?.find((o: any) => o.name === 'Option1')?.value || v.option1,
+                option2Name: productData.options?.[1]?.name || null,
+                option2Value: v.selectedOptions?.find((o: any) => o.name === 'Option2')?.value || v.option2,
+                option3Name: productData.options?.[2]?.name || null,
+                option3Value: v.selectedOptions?.find((o: any) => o.name === 'Option3')?.value || v.option3,
+                imageId: v.image?.id || null,
+            };
+        });
 
-        return { variants, images };
+        const images = (productData.images?.edges || []).map((edge: any) => {
+            const img = edge.node;
+            return {
+                id: img.id,
+                product_id: productData.id,
+                src: img.url,
+                variant_ids: [], // Not easily available in a single flat list
+            };
+        });
+
+        return { success: true, message: 'Product fetched successfully', data: { variants, images } };
     } catch (error) {
-        throwActionError(`Failed to get product with images for ID ${productId}`, error);
+        return handleActionError(`Failed to get product with images for ID ${productId}`, error);
     }
 }
 
@@ -73,28 +82,15 @@ export async function getProductImageCounts(
     productIds: string[]
 ): Promise<Record<string, number>> {
     try {
-        const numericProductIds = productIds.map((gid) => {
-            const id = gid.split('/').pop();
-            if (!id || isNaN(parseInt(id, 10))) {
-                throw new Error(`Invalid Product GID for image count: ${gid}`);
-            }
-            return parseInt(id, 10);
-        });
-
-        if (numericProductIds.length === 0) {
+        if (productIds.length === 0) {
             return {};
         }
 
-        const counts = await getShopifyProductImageCounts(numericProductIds);
-
-        const gidCounts: Record<string, number> = {};
-        for (const [numericId, count] of Object.entries(counts)) {
-            gidCounts[`gid://shopify/Product/${numericId}`] = count;
-        }
-
-        return gidCounts;
+        const counts = await getShopifyProductImageCounts(productIds);
+        return counts;
     } catch (error) {
         throwActionError(`Failed to get product image counts for IDs ${productIds.join(', ')}`, error);
+        throw error;
     }
 }
 
@@ -103,12 +99,7 @@ export async function addImageFromUrl(
     imageUrl: string
 ): Promise<{ success: boolean; message: string; image?: ShopifyProductImage }> {
     try {
-        await sleep(600);
-        const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
-        if (!numericProductId) {
-            throw new Error(`Invalid Product GID: ${productId}`);
-        }
-        const newImage = await addProductImage(numericProductId, imageUrl);
+        const newImage = await addProductImage(productId, imageUrl);
         return { success: true, message: 'Image added successfully.', image: newImage };
     } catch (error) {
         return handleActionError(`Failed to add image for product ${productId}`, error);
@@ -117,15 +108,10 @@ export async function addImageFromUrl(
 
 export async function assignImageToVariant(
     variantId: string,
-    imageId: number | null
+    imageId: string | null
 ): Promise<{ success: boolean; message: string }> {
     try {
-        await sleep(600);
-        const numericVariantId = parseInt(variantId.split('/').pop() || '0', 10);
-        if (!numericVariantId) {
-            throw new Error(`Invalid Variant GID: ${variantId}`);
-        }
-        await updateProductVariant(numericVariantId, { image_id: imageId });
+        await updateProductVariant(variantId, { image_id: imageId });
         return { success: true, message: 'Image assigned successfully.' };
     } catch (error) {
         return handleActionError(`Failed to assign image ${imageId} to variant ${variantId}`, error);
@@ -134,15 +120,10 @@ export async function assignImageToVariant(
 
 export async function deleteImage(
     productId: string,
-    imageId: number
+    imageId: string
 ): Promise<{ success: boolean; message: string }> {
     try {
-        await sleep(600);
-        const numericProductId = parseInt(productId.split('/').pop() || '0', 10);
-        if (!numericProductId) {
-            throw new Error(`Invalid Product GID: ${productId}`);
-        }
-        await deleteProductImage(numericProductId, imageId);
+        await deleteProductImage(productId, imageId);
         return { success: true, message: 'Image deleted successfully.' };
     } catch (error) {
         return handleActionError(`Failed to delete image ${imageId} from product ${productId}`, error);
@@ -154,8 +135,13 @@ export async function deleteUnlinkedImages(
 ): Promise<{ success: boolean; message: string; deletedCount: number }> {
     logger.info(`Starting to delete unlinked images for product GID: ${productId}`);
     try {
-        const { images, variants } = await getProductWithImages(productId);
-        const linkedImageIds = new Set(variants.map((v) => v.imageId).filter((id) => id !== null));
+        const result = await getProductWithImages(productId);
+        if (!result.success || !result.data) {
+            throw new Error(result.message || "Could not fetch product images");
+        }
+        const { images, variants } = result.data;
+
+        const linkedImageIds = new Set(variants.map((v) => v.imageId).filter((id): id is string => id !== null));
 
         const unlinkedImages = images.filter((image) => !linkedImageIds.has(image.id));
 
@@ -201,7 +187,7 @@ export async function deleteUnlinkedImagesForMultipleProducts(
     for (const productId of productIds) {
         const result = await deleteUnlinkedImages(productId);
         results.push({ productId, ...result });
-        if (result.success && result.deletedCount > 0) {
+        if (result.success) {
             totalSuccessCount++;
             totalDeletedCount += result.deletedCount;
         }
