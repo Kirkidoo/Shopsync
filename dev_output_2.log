@@ -1,0 +1,13 @@
+
+> nextn@0.1.0 dev /app
+> next dev --turbopack -p 9002 --turbopack -p 9002
+
+   ▲ Next.js 15.3.3 (Turbopack)
+   - Local:        http://localhost:9002
+   - Network:      http://192.168.0.2:9002
+
+ ✓ Starting...
+ ✓ Ready in 1448ms
+ ○ Compiling /verify-ux ...
+ ✓ Compiled /verify-ux in 5.5s
+ GET /verify-ux 200 in 6113ms

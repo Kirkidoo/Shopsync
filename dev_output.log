@@ -1,15 +1,21 @@
 
 > nextn@0.1.0 dev /app
-> next dev --turbopack -p 9002
+> next dev --turbopack -p 9002 --turbopack -p 9002
 
    ▲ Next.js 15.3.3 (Turbopack)
    - Local:        http://localhost:9002
    - Network:      http://192.168.0.2:9002
 
  ✓ Starting...
- ✓ Ready in 1327ms
- ○ Compiling / ...
- ✓ Compiled / in 11.5s
- HEAD / 200 in 13119ms
- GET / 200 in 300ms
- POST / 200 in 471ms
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+ ✓ Ready in 2.1s
+ ○ Compiling /verify-ux ...
+ ✓ Compiled /verify-ux in 8.8s
+ GET /verify-ux 200 in 9901ms
+ ✓ Compiled in 239ms
+ ELIFECYCLE  Command failed.
+[?25h
