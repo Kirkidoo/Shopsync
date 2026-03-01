@@ -1,56 +1,71 @@
+import { useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Accordion } from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DuplicateAuditTable } from './duplicate-audit-table';
 import { AuditResult, Product, AuditStatus, MismatchDetail } from '@/lib/types';
 import { Search } from 'lucide-react';
 import { AuditTableItem } from './audit-table-item';
+import { useAuditUIStore, useAuditDataStore } from '@/store/audit-store';
+import { useAuditData } from '@/hooks/use-audit-data';
+import { useAuditActions } from '@/hooks/use-audit-actions';
 
 interface AuditTableProps {
-    paginatedHandleKeys: string[];
-    filteredGroupedByHandle: Record<string, AuditResult[]>;
-    groupedBySku: Record<string, Product[]>;
-    filter: string;
-    selectedHandles: Set<string>;
-    data: AuditResult[];
-    imageCounts: Record<string, number>;
-    loadingImageCounts: Set<string>;
-    isFixing: boolean;
-    isAutoRunning: boolean;
-    isAutoCreating: boolean;
-
-    // Actions
-    handleSelectHandle: (handle: string, checked: boolean) => void;
-    handleDeleteUnlinked: (productId: string) => void;
-    handleBulkFix: (handles?: Set<string>, types?: MismatchDetail['field'][]) => void;
-    handleMarkAsCreated: (handle: string) => void;
-    handleCreate: (item: AuditResult) => void;
-    handleOpenMissingVariantMediaManager: (items: AuditResult[]) => void;
-    handleBulkCreateVariants: (items: AuditResult[]) => void;
-    setEditingMediaFor: (id: string) => void;
-    setEditingMissingMedia: (handle: string) => void;
-    handleFixSingleMismatch: (item: AuditResult, fixType: MismatchDetail['field']) => void;
-    handleMarkAsFixed: (sku: string, fixType: MismatchDetail['field']) => void;
-    handleDeleteVariant: (item: AuditResult) => void;
-    handleDeleteProduct: (item: AuditResult, product?: Product) => void;
-
-    // Utils
     statusConfig: any;
     MISMATCH_FILTER_TYPES: MismatchDetail['field'][];
-    setFixDialogHandles: (s: Set<string>) => void;
-    setShowFixDialog: (b: boolean) => void;
-    onSelectAllPage: () => void;
-    isAllPageSelected: boolean;
+    fileName: string;
+    onRefresh: () => void;
 }
 
 export function AuditTable({
-    paginatedHandleKeys, filteredGroupedByHandle, groupedBySku, filter, selectedHandles, data,
-    imageCounts, loadingImageCounts, isFixing, isAutoRunning, isAutoCreating,
-    handleSelectHandle, handleDeleteUnlinked, handleBulkFix, handleMarkAsCreated, handleCreate,
-    handleOpenMissingVariantMediaManager, handleBulkCreateVariants, setEditingMediaFor, setEditingMissingMedia,
-    handleFixSingleMismatch, handleMarkAsFixed, handleDeleteVariant, handleDeleteProduct,
-    statusConfig, MISMATCH_FILTER_TYPES, setFixDialogHandles, setShowFixDialog,
-    onSelectAllPage, isAllPageSelected
+    statusConfig, MISMATCH_FILTER_TYPES, fileName, onRefresh
 }: AuditTableProps) {
+    const parentRef = useRef<HTMLDivElement>(null);
+
+    // Data Hook (contains derived data like groupedByHandle, paginatedHandleKeys)
+    const {
+        paginatedHandleKeys,
+        groupedByHandle,
+        groupedBySku,
+        reportData
+    } = useAuditData();
+
+    // UI Store Selectors
+    const filter = useAuditUIStore((state) => state.filter);
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const isAutoCreating = useAuditUIStore((state) => state.isAutoCreating);
+    const setSelectedHandles = useAuditUIStore((state) => state.setSelectedHandles);
+    const selectedHandles = useAuditUIStore((state) => state.selectedHandles);
+    const imageCounts = useAuditDataStore((state) => state.imageCounts);
+    const loadingImageCounts = useAuditDataStore((state) => state.loadingImageCounts);
+
+    // Derived Selection State (keeping it local for now as it depends on paginatedHandleKeys)
+    const isAllOnPageSelected = paginatedHandleKeys.length > 0 &&
+        paginatedHandleKeys.every(h => selectedHandles.has(h));
+
+    const toggleSelectAllPage = () => {
+        if (isAllOnPageSelected) {
+            setSelectedHandles((prev: Set<string>) => {
+                const next = new Set(prev);
+                paginatedHandleKeys.forEach(h => next.delete(h));
+                return next;
+            });
+        } else {
+            setSelectedHandles((prev: Set<string>) => {
+                const next = new Set(prev);
+                paginatedHandleKeys.forEach(h => next.add(h));
+                return next;
+            });
+        }
+    };
+
+    const rowVirtualizer = useVirtualizer({
+        count: paginatedHandleKeys.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 64, // Estimated height of an AccordionItem
+        overscan: 10,
+    });
 
     if (paginatedHandleKeys.length === 0) {
         return (
@@ -69,24 +84,26 @@ export function AuditTable({
             <DuplicateAuditTable
                 paginatedHandleKeys={paginatedHandleKeys}
                 groupedBySku={groupedBySku}
-                data={data}
+                data={reportData}
                 statusConfig={statusConfig}
-                isFixing={isFixing}
-                isAutoRunning={isAutoRunning}
-                handleDeleteProduct={handleDeleteProduct}
+                fileName={fileName}
+                onRefresh={onRefresh}
             />
         );
     }
 
     return (
-        <div className="space-y-0">
+        <div
+            ref={parentRef}
+            className="h-[calc(100vh-250px)] overflow-auto"
+        >
             {(filter === 'mismatched' || filter === 'missing_in_shopify' || filter === 'all') && (
-                <div className="sticky top-0 z-10 flex items-center border-b bg-background/95 px-0 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <div className="sticky top-0 z-20 flex items-center border-b bg-background/95 px-0 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <div className="flex w-full items-center gap-4 px-3">
                         <div className="pl-1">
                             <Checkbox
-                                checked={isAllPageSelected}
-                                onCheckedChange={onSelectAllPage}
+                                checked={isAllOnPageSelected}
+                                onCheckedChange={toggleSelectAllPage}
                                 aria-label="Select all on page"
                                 disabled={isFixing || isAutoRunning || isAutoCreating}
                             />
@@ -100,56 +117,59 @@ export function AuditTable({
                     </div>
                 </div>
             )}
-            <Accordion type="single" collapsible className="w-full">
-                {paginatedHandleKeys.map((handle) => {
-                    const items = filteredGroupedByHandle[handle];
+            <div
+                style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                }}
+            >
+                <Accordion type="single" collapsible className="w-full">
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                        const handle = paginatedHandleKeys[virtualRow.index];
+                        const items = groupedByHandle[handle];
 
-                    // Optimization: calculate these here instead of inside the item or passing large data
-                    const allVariantsForHandleInShopify = data.filter(
-                        (d) => d.shopifyProducts[0]?.handle === handle
-                    );
-                    const notInCsv = items?.every((i) => i.status === 'not_in_csv');
-                    const isOnlyVariantNotInCsv =
-                        !!(notInCsv && items && allVariantsForHandleInShopify.length === items.length);
+                        // Optimization: calculate these here instead of inside the item or passing large data
+                        const allVariantsForHandleInShopify = reportData.filter(
+                            (d) => d.shopifyProducts[0]?.handle === handle
+                        );
+                        const notInCsv = items?.every((i) => i.status === 'not_in_csv');
+                        const isOnlyVariantNotInCsv =
+                            !!(notInCsv && items && allVariantsForHandleInShopify.length === items.length);
 
-                    const productId = items?.[0]?.shopifyProducts[0]?.id;
-                    const imageCount = productId ? imageCounts[productId] : undefined;
-                    const isLoadingImages = productId ? loadingImageCounts.has(productId) : false;
+                        const productId = items?.[0]?.shopifyProducts[0]?.id;
+                        const imageCount = productId ? imageCounts[productId] : undefined;
+                        const isLoadingImages = productId ? loadingImageCounts.has(productId) : false;
 
-                    return (
-                        <AuditTableItem
-                            key={handle}
-                            handle={handle}
-                            items={items}
-                            filter={filter}
-                            isSelected={selectedHandles.has(handle)}
-                            isOnlyVariantNotInCsv={isOnlyVariantNotInCsv}
-                            imageCount={imageCount}
-                            isLoadingImages={isLoadingImages}
-                            isFixing={isFixing}
-                            isAutoRunning={isAutoRunning}
-                            isAutoCreating={isAutoCreating}
-                            statusConfig={statusConfig}
-                            MISMATCH_FILTER_TYPES={MISMATCH_FILTER_TYPES}
-                            handleSelectHandle={handleSelectHandle}
-                            handleDeleteUnlinked={handleDeleteUnlinked}
-                            handleBulkFix={handleBulkFix}
-                            handleMarkAsCreated={handleMarkAsCreated}
-                            handleCreate={handleCreate}
-                            handleOpenMissingVariantMediaManager={handleOpenMissingVariantMediaManager}
-                            handleBulkCreateVariants={handleBulkCreateVariants}
-                            setEditingMediaFor={setEditingMediaFor}
-                            setEditingMissingMedia={setEditingMissingMedia}
-                            handleFixSingleMismatch={handleFixSingleMismatch}
-                            handleMarkAsFixed={handleMarkAsFixed}
-                            handleDeleteVariant={handleDeleteVariant}
-                            handleDeleteProduct={handleDeleteProduct}
-                            setFixDialogHandles={setFixDialogHandles}
-                            setShowFixDialog={setShowFixDialog}
-                        />
-                    );
-                })}
-            </Accordion>
+                        return (
+                            <div
+                                key={virtualRow.key}
+                                ref={rowVirtualizer.measureElement}
+                                data-index={virtualRow.index}
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    transform: `translateY(${virtualRow.start}px)`,
+                                }}
+                            >
+                                <AuditTableItem
+                                    handle={handle}
+                                    items={items}
+                                    isOnlyVariantNotInCsv={isOnlyVariantNotInCsv}
+                                    imageCount={imageCount}
+                                    isLoadingImages={isLoadingImages}
+                                    statusConfig={statusConfig}
+                                    MISMATCH_FILTER_TYPES={MISMATCH_FILTER_TYPES}
+                                    fileName={fileName}
+                                    onRefresh={onRefresh}
+                                />
+                            </div>
+                        );
+                    })}
+                </Accordion>
+            </div>
         </div>
     );
 }

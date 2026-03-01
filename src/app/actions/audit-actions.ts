@@ -54,12 +54,15 @@ export async function runAudit(
     try {
         const lastSyncDate = getLastSyncDate();
         if (lastSyncDate) {
+            const newSyncThreshold = new Date().toISOString();
             const updated = await syncUpdatedProducts(lastSyncDate, locationId);
             if (updated.length > 0) {
                 updateProductsInDb(updated);
             }
+            setLastSyncDate(newSyncThreshold);
+        } else {
+            setLastSyncDate(new Date().toISOString());
         }
-        setLastSyncDate(new Date().toISOString());
     } catch (error) {
         logger.error('Incremental sync failed during runAudit, proceeding with existing data', error);
     }
@@ -188,12 +191,15 @@ export async function runBulkAuditFromCache(
         // 1. Perform incremental sync
         const lastSyncDate = getLastSyncDate();
         if (lastSyncDate) {
+            const newSyncThreshold = new Date().toISOString();
             const updated = await syncUpdatedProducts(lastSyncDate, locationId);
             if (updated.length > 0) {
                 updateProductsInDb(updated);
             }
+            setLastSyncDate(newSyncThreshold);
+        } else {
+            setLastSyncDate(new Date().toISOString());
         }
-        setLastSyncDate(new Date().toISOString());
 
         // 2. Get data from DB
         const shopifyProducts = getProductsFromDb();

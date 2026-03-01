@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useDeferredValue } from 'react';
-import { AuditResult, MismatchDetail, Product, DuplicateSku, Summary } from '@/lib/types';
-import { getFixedMismatches, getCreatedProductHandles, clearAuditMemory, markMismatchAsFixed } from '@/lib/utils';
+import { useMemo, useEffect, useDeferredValue, useCallback } from 'react';
+import { AuditResult, MismatchDetail, Product, Summary } from '@/lib/types';
+import { getFixedMismatches, getCreatedProductHandles } from '@/lib/utils';
 import { getHandle, hasAllExpectedTags } from '@/components/audit/audit-utils';
+import { useAuditDataStore, useAuditUIStore } from '@/store/audit-store';
 
 export type FilterType =
     | 'all'
@@ -12,65 +13,80 @@ export type FilterType =
     | 'tag_updates';
 
 interface UseAuditDataProps {
-    initialData: AuditResult[];
-    initialSummary: Summary;
+    initialData?: AuditResult[];
+    initialSummary?: Summary | null;
 }
 
-export function useAuditData({ initialData, initialSummary }: UseAuditDataProps) {
-    // State
-    const [reportData, setReportData] = useState<AuditResult[]>(initialData);
-    const [reportSummary, setReportSummary] = useState<Summary>(initialSummary);
+export function useAuditData(props?: UseAuditDataProps) {
+    const { initialData, initialSummary } = props || {};
+    // Store Selectors - Data
+    const reportData = useAuditDataStore((state) => state.reportData);
+    const setReportData = useAuditDataStore((state) => state.setReportData);
+    const setReportSummary = useAuditDataStore((state) => state.setReportSummary);
+    const fixedMismatches = useAuditDataStore((state) => state.fixedMismatches);
+    const setFixedMismatches = useAuditDataStore((state) => state.setFixedMismatches);
+    const createdProductHandles = useAuditDataStore((state) => state.createdProductHandles);
+    const setCreatedProductHandles = useAuditDataStore((state) => state.setCreatedProductHandles);
+    const updatedProductHandles = useAuditDataStore((state) => state.updatedProductHandles);
+    const imageCounts = useAuditDataStore((state) => state.imageCounts);
 
-    const [filter, setFilter] = useState<FilterType>('all');
-    const [searchTerm, setSearchTerm] = useState('');
+    // Store Selectors - UI
+    const filter = useAuditUIStore((state) => state.filter) as FilterType;
+    const setFilter = useAuditUIStore((state) => state.setFilter);
+    const searchTerm = useAuditUIStore((state) => state.searchTerm);
+    const setSearchTerm = useAuditUIStore((state) => state.setSearchTerm);
+    const currentPage = useAuditUIStore((state) => state.currentPage);
+    const setCurrentPage = useAuditUIStore((state) => state.setCurrentPage);
+    const handlesPerPage = useAuditUIStore((state) => state.handlesPerPage);
+    const setHandlesPerPage = useAuditUIStore((state) => state.setHandlesPerPage);
+    const mismatchFilters = useAuditUIStore((state) => state.mismatchFilters) as Set<MismatchDetail['field']>;
+    const setMismatchFilters = useAuditUIStore((state) => state.setMismatchFilters);
+    const filterSingleSku = useAuditUIStore((state) => state.filterSingleSku);
+    const setFilterSingleSku = useAuditUIStore((state) => state.setFilterSingleSku);
+    const selectedVendor = useAuditUIStore((state) => state.selectedVendor);
+    const setSelectedVendor = useAuditUIStore((state) => state.setSelectedVendor);
+    const filterCustomTag = useAuditUIStore((state) => state.filterCustomTag);
+    const setFilterCustomTag = useAuditUIStore((state) => state.setFilterCustomTag);
+    const hideMissingVariants = useAuditUIStore((state) => state.hideMissingVariants);
+    const setHideMissingVariants = useAuditUIStore((state) => state.setHideMissingVariants);
+    const selectedHandles = useAuditUIStore((state) => state.selectedHandles);
+    const setSelectedHandles = useAuditUIStore((state) => state.setSelectedHandles);
+    const toggleHandleSelection = useAuditUIStore((state) => state.toggleHandleSelection);
+    const columnFilters = useAuditUIStore((state) => state.columnFilters);
+    const setColumnFilters = useAuditUIStore((state) => state.setColumnFilters);
+
     const deferredSearchTerm = useDeferredValue(searchTerm);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [handlesPerPage, setHandlesPerPage] = useState(10);
-
-    // Advanced filters
-    const [mismatchFilters, setMismatchFilters] = useState<Set<MismatchDetail['field']>>(new Set());
-    const [filterSingleSku, setFilterSingleSku] = useState(false);
-    const [selectedVendor, setSelectedVendor] = useState<string>('all');
-    const [filterCustomTag, setFilterCustomTag] = useState('');
-
-    // Memory / Persistence
-    const [fixedMismatches, setFixedMismatches] = useState<Set<string>>(new Set());
-    const [createdProductHandles, setCreatedProductHandles] = useState<Set<string>>(new Set());
-    const [updatedProductHandles, setUpdatedProductHandles] = useState<Set<string>>(new Set());
-    const [hideMissingVariants, setHideMissingVariants] = useState(false);
-
 
     // Initialize
     useEffect(() => {
-        setReportData(initialData);
-        setReportSummary(initialSummary);
+        if (initialData) setReportData(initialData);
+        if (initialSummary) setReportSummary(initialSummary);
         setFixedMismatches(getFixedMismatches());
         setCreatedProductHandles(getCreatedProductHandles());
-    }, [initialData, initialSummary]);
-
-    // Derived Values
-    const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+    }, [initialData, initialSummary, setReportData, setReportSummary, setFixedMismatches, setCreatedProductHandles]);
 
     // Derived Values
     const uniqueVendors = useMemo(() => {
         const vendors = new Set<string>();
-        initialData.forEach((item) => {
+        const dataToScan = initialData || reportData;
+        dataToScan.forEach((item) => {
             if (item.status === 'not_in_csv' && item.shopifyProducts[0]?.vendor) {
                 vendors.add(item.shopifyProducts[0].vendor);
             }
         });
         return ['all', ...Array.from(vendors).sort()];
-    }, [initialData]);
+    }, [initialData, reportData]);
 
     const availableCsvColumns = useMemo(() => {
         const columns = new Set<string>();
-        initialData.forEach(item => {
+        const dataToScan = initialData || reportData;
+        dataToScan.forEach(item => {
             if (item.csvProducts[0]?.rawCsvData) {
                 Object.keys(item.csvProducts[0].rawCsvData).forEach(k => columns.add(k));
             }
         });
         return Array.from(columns).sort();
-    }, [initialData]);
+    }, [initialData, reportData]);
 
     // Main Filtering Logic
     const filteredData = useMemo(() => {
@@ -215,15 +231,67 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
 
 
     // Pagination
-    const handleKeys = filter === 'duplicate_in_shopify'
-        ? Object.keys(groupedBySku)
-        : Object.keys(groupedByHandle);
+    const handleKeys = useMemo(() => {
+        return filter === 'duplicate_in_shopify'
+            ? Object.keys(groupedBySku)
+            : Object.keys(groupedByHandle);
+    }, [filter, groupedBySku, groupedByHandle]);
 
     const totalPages = Math.ceil(handleKeys.length / handlesPerPage);
-    const paginatedHandleKeys = handleKeys.slice(
-        (currentPage - 1) * handlesPerPage,
-        currentPage * handlesPerPage
-    );
+    const paginatedHandleKeys = useMemo(() => {
+        return handleKeys.slice(
+            (currentPage - 1) * handlesPerPage,
+            currentPage * handlesPerPage
+        );
+    }, [handleKeys, currentPage, handlesPerPage]);
+
+    // Selection Logic
+    const handleSelectHandle = useCallback((handle: string, checked: boolean) => {
+        toggleHandleSelection(handle);
+    }, [toggleHandleSelection]);
+
+    const isAllOnPageSelected = useMemo(() => {
+        return paginatedHandleKeys.length > 0 &&
+            paginatedHandleKeys.every((handle) => selectedHandles.has(handle));
+    }, [paginatedHandleKeys, selectedHandles]);
+
+    const isSomeOnPageSelected = useMemo(() => {
+        return paginatedHandleKeys.some((handle) => selectedHandles.has(handle)) &&
+            !isAllOnPageSelected;
+    }, [paginatedHandleKeys, selectedHandles, isAllOnPageSelected]);
+
+    const toggleSelectAllPage = useCallback(() => {
+        if (isAllOnPageSelected) {
+            setSelectedHandles((prev) => {
+                const next = new Set(prev);
+                paginatedHandleKeys.forEach((handle) => next.delete(handle));
+                return next;
+            });
+        } else {
+            setSelectedHandles((prev) => {
+                const next = new Set(prev);
+                paginatedHandleKeys.forEach((handle) => next.add(handle));
+                return next;
+            });
+        }
+    }, [isAllOnPageSelected, paginatedHandleKeys, setSelectedHandles]);
+
+    const hasSelectionWithMismatches = useMemo(() => {
+        if (selectedHandles.size === 0) return false;
+        return Array.from(selectedHandles).some(h =>
+            groupedByHandle[h]?.some(i => i.status === 'mismatched' && i.mismatches.length > 0)
+        );
+    }, [selectedHandles, groupedByHandle]);
+
+    const hasSelectionWithUnlinkedImages = useMemo(() => {
+        if (selectedHandles.size === 0) return false;
+        return Array.from(selectedHandles).some(h => {
+            const items = groupedByHandle[h];
+            const pid = items?.[0]?.shopifyProducts[0]?.id;
+            const count = pid ? imageCounts[pid] : undefined;
+            return count !== undefined && items && count > items.length;
+        });
+    }, [selectedHandles, groupedByHandle, imageCounts]);
 
     // Stats
     const currentSummary = useMemo(() => {
@@ -242,7 +310,8 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
     return {
         // State
         reportData, setReportData,
-        reportSummary, setReportSummary,
+        reportSummary: useAuditDataStore.getState().reportSummary,
+        setReportSummary,
         filter, setFilter,
         searchTerm, setSearchTerm,
         currentPage, setCurrentPage,
@@ -253,13 +322,24 @@ export function useAuditData({ initialData, initialSummary }: UseAuditDataProps)
         filterCustomTag, setFilterCustomTag,
         fixedMismatches, setFixedMismatches,
         createdProductHandles, setCreatedProductHandles,
-        updatedProductHandles, setUpdatedProductHandles,
+        updatedProductHandles,
+        setUpdatedProductHandles: useAuditDataStore.getState().setUpdatedProductHandles,
         hideMissingVariants, setHideMissingVariants,
+        selectedHandles, setSelectedHandles,
+        imageCounts,
 
         columnFilters, setColumnFilters,
         availableCsvColumns,
 
-        // Derived
+        // Derived Logic
+        handleSelectHandle,
+        toggleSelectAllPage,
+        isAllOnPageSelected,
+        isSomeOnPageSelected,
+        hasSelectionWithMismatches,
+        hasSelectionWithUnlinkedImages,
+
+        // Derived Data
         filteredData,
         uniqueVendors,
         groupedByHandle,

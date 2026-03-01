@@ -1,21 +1,25 @@
 import { CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Siren, AlertTriangle, XCircle, PlusCircle, Copy, CheckCircle2 } from 'lucide-react';
-import { DuplicateSku, Summary } from '@/lib/types';
+import { useAuditDataStore, useAuditUIStore } from '@/store/audit-store';
 
 interface AuditStatsProps {
-    reportSummary: Summary;
-    duplicates: DuplicateSku[];
-    filter: string;
-    isFixing: boolean;
-    isAutoRunning: boolean;
-    isAutoCreating: boolean;
     fileName: string;
     autoFixProgress?: { done: number; total: number } | null;
     autoCreateProgress?: { done: number; total: number } | null;
 }
 
-export function AuditStats({ reportSummary, duplicates, filter, isFixing, isAutoRunning, isAutoCreating, fileName, autoFixProgress, autoCreateProgress }: AuditStatsProps) {
+export function AuditStats({ fileName, autoFixProgress, autoCreateProgress }: AuditStatsProps) {
+    // Store Selectors
+    const reportSummary = useAuditDataStore((state) => state.reportSummary);
+    const duplicates = useAuditDataStore((state) => state.duplicates);
+    const filter = useAuditUIStore((state) => state.filter);
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const isAutoCreating = useAuditUIStore((state) => state.isAutoCreating);
+
+    if (!reportSummary) return null;
+
     const totalIssues = reportSummary.mismatched + reportSummary.missing_in_shopify +
         reportSummary.not_in_csv + (reportSummary.duplicate_in_shopify || 0);
     const totalAudited = totalIssues + reportSummary.matched;

@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useToast } from '@/hooks/use-toast';
 
 // Components
+import { useAuditDataStore, useAuditUIStore } from '@/store/audit-store';
 import { AuditStats } from './audit/audit-stats';
 import { AuditTabs } from './audit/audit-tabs';
 import { AuditToolbar } from './audit/audit-toolbar';
@@ -388,6 +389,12 @@ export default function AuditReport({
   const { toast } = useToast();
 
   // Data Logic Hook
+  // Logic from store
+  const imageCounts = useAuditDataStore((state) => state.imageCounts);
+  const setImageCounts = useAuditDataStore((state) => state.setImageCounts);
+  const loadingImageCounts = useAuditDataStore((state) => state.loadingImageCounts);
+  const setLoadingImageCounts = useAuditDataStore((state) => state.setLoadingImageCounts);
+
   const {
     reportData, setReportData,
     reportSummary, setReportSummary,
@@ -413,29 +420,38 @@ export default function AuditReport({
     columnFilters,
     setColumnFilters,
     availableCsvColumns,
-    hideMissingVariants, setHideMissingVariants
+    hideMissingVariants, setHideMissingVariants,
+
+    // Selection state and derivations
+    selectedHandles, setSelectedHandles,
+    handleSelectHandle,
+    toggleSelectAllPage,
+    isAllOnPageSelected,
+    isSomeOnPageSelected,
+    hasSelectionWithMismatches,
+    hasSelectionWithUnlinkedImages
   } = useAuditData({ initialData: data, initialSummary: summary });
 
   // Component Local State (UI)
-  // We keep selection state here because it's specific to the current view/page interactions
-  const [selectedHandles, setSelectedHandles] = useState<Set<string>>(new Set());
   const [showRefresh, setShowRefresh] = useState(false);
 
-  // Dialog State
-  const [editingMissingMedia, setEditingMissingMedia] = useState<string | null>(null);
-  const [editingMediaFor, setEditingMediaFor] = useState<string | null>(null);
-  const [editingMissingVariantMedia, setEditingMissingVariantMedia] = useState<{
-    items: AuditResult[];
-    parentProductId: string;
-  } | null>(null);
+  // Store Selectors for UI state (replaced local state)
+  const showFixDialog = useAuditUIStore((state) => state.showFixDialog);
+  const fixDialogHandles = useAuditUIStore((state) => state.fixDialogHandles);
+  const setShowFixDialog = useAuditUIStore((state) => state.setShowFixDialog);
 
-  const [showFixDialog, setShowFixDialog] = useState(false);
-  const [fixDialogHandles, setFixDialogHandles] = useState<Set<string> | null>(null);
+  const editingMediaFor = useAuditUIStore((state) => state.editingMediaFor);
+  const setEditingMediaFor = useAuditUIStore((state) => state.setEditingMediaFor);
+
+  const editingMissingMedia = useAuditUIStore((state) => state.editingMissingMedia);
+  const setEditingMissingMedia = useAuditUIStore((state) => state.setEditingMissingMedia);
+
+  const editingMissingVariantMedia = useAuditUIStore((state) => state.editingMissingVariantMedia);
+  const setEditingMissingVariantMedia = useAuditUIStore((state) => state.setEditingMissingVariantMedia);
+
   const [showUpdateTagsDialog, setShowUpdateTagsDialog] = useState(false);
   const [showAutoTagDialog, setShowAutoTagDialog] = useState(false);
   const [isAutoUpdatingTags, setIsAutoUpdatingTags] = useState(false);
-  const [imageCounts, setImageCounts] = useState<Record<string, number>>({});
-  const [loadingImageCounts, setLoadingImageCounts] = useState<Set<string>>(new Set());
 
   // Actions Hook
   const {
@@ -461,41 +477,11 @@ export default function AuditReport({
     setIsAutoRunning,
     setIsAutoCreating // Exposed for effects if needed
   } = useAuditActions({
-    reportData,
-    setReportData,
     fileName,
     onRefresh,
-    setFixedMismatches,
-    setCreatedProductHandles,
-    setUpdatedProductHandles,
-    setSelectedHandles
   });
 
-  // Derived UI State
-  const isSomeOnPageSelected =
-    paginatedHandleKeys.some((handle) => selectedHandles.has(handle)) &&
-    !paginatedHandleKeys.every((handle) => selectedHandles.has(handle));
-  const isAllOnPageSelected =
-    paginatedHandleKeys.length > 0 &&
-    paginatedHandleKeys.every((handle) => selectedHandles.has(handle));
-
-  // Selection Logic
-  const handleSelectHandle = (handle: string, checked: boolean) => {
-    const newSelected = new Set(selectedHandles);
-    if (checked) newSelected.add(handle);
-    else newSelected.delete(handle);
-    setSelectedHandles(newSelected);
-  };
-
-  const toggleSelectAllPage = useCallback(() => {
-    const newSelected = new Set(selectedHandles);
-    if (isAllOnPageSelected) {
-      paginatedHandleKeys.forEach((handle) => newSelected.delete(handle));
-    } else {
-      paginatedHandleKeys.forEach((handle) => newSelected.add(handle));
-    }
-    setSelectedHandles(newSelected);
-  }, [isAllOnPageSelected, paginatedHandleKeys, selectedHandles]);
+  // Selection logic moved to useAuditData
 
   const handleClearAuditMemory = () => {
     clearAuditMemory();
@@ -809,8 +795,7 @@ export default function AuditReport({
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFixDialogHandles(new Set([handle]));
-                          setShowFixDialog(true);
+                          setShowFixDialog(true, new Set([handle]));
                         }}
                       >
                         Custom Fix...
@@ -1149,126 +1134,35 @@ export default function AuditReport({
 
   );
 
-  const hasSelectionWithUnlinkedImages = selectedHandles.size > 0 && Array.from(selectedHandles).some(h => {
-    const items = groupedByHandle[h];
-    const pid = items?.[0]?.shopifyProducts[0]?.id;
-    const count = pid ? imageCounts[pid] : undefined;
-    return count !== undefined && items && count > items.length;
-  });
-
-
-  const hasSelectionWithMismatches = selectedHandles.size > 0 && Array.from(selectedHandles).some(h =>
-    groupedByHandle[h]?.some(i => i.status === 'mismatched' && i.mismatches.length > 0)
-  );
+  // Selection-based derivations moved to useAuditData
 
   return (
     <>
       <Card className="w-full">
         <AuditStats
-          reportSummary={currentSummary}
-          duplicates={duplicates}
-          filter={filter}
-          isFixing={isFixing}
-          isAutoRunning={isAutoRunning}
-          isAutoCreating={isAutoCreating}
           fileName={fileName}
           autoFixProgress={autoFixProgress}
           autoCreateProgress={autoCreateProgress}
         />
         <CardContent>
           <AuditTabs
-            filter={filter}
-            setFilter={setFilter}
-            reportSummary={currentSummary}
             handleKeysLength={handleKeys.length}
             onReset={onReset}
             onRefresh={onRefresh}
             handleDownload={handleDownload}
             showRefresh={showRefresh}
-            isFixing={isFixing}
-            isAutoRunning={isAutoRunning}
-            isAutoCreating={isAutoCreating}
           />
 
           <AuditToolbar
-            filter={filter}
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-            filterSingleSku={filterSingleSku}
-            setFilterSingleSku={setFilterSingleSku}
-            mismatchFilters={mismatchFilters}
-            handleMismatchFilterChange={(field, checked) => {
-              const next = new Set(mismatchFilters);
-              if (checked) next.add(field);
-              else next.delete(field);
-              setMismatchFilters(next);
-            }}
-            handleClearAuditMemory={handleClearAuditMemory}
-            selectedVendor={selectedVendor}
-            setSelectedVendor={setSelectedVendor}
-            uniqueVendors={uniqueVendors}
-            isFixing={isFixing}
-            isAutoRunning={isAutoRunning}
-            isAutoCreating={isAutoCreating}
-            selectedHandlesSize={selectedHandles.size}
-            hasSelectionWithMismatches={hasSelectionWithMismatches}
-            hasSelectionWithUnlinkedImages={hasSelectionWithUnlinkedImages}
-            handleBulkFix={(h, t) => handleBulkFix(h || selectedHandles, t)}
-            handleBulkDeleteUnlinked={() => {
-              const ids = Array.from(selectedHandles).map(h => groupedByHandle[h][0].shopifyProducts[0].id).filter(Boolean);
-              handleBulkDeleteUnlinked(ids);
-            }}
-            handleBulkCreate={() => handleBulkCreate(selectedHandles)}
-            startAutoRun={startAutoRun}
-            stopAutoRun={stopAutoRun}
-            startAutoCreate={startAutoCreate}
-            stopAutoCreate={stopAutoCreate}
-            availableMismatchTypes={new Set(MISMATCH_FILTER_TYPES)}
-            setFixDialogHandles={setFixDialogHandles}
-            setShowFixDialog={setShowFixDialog}
-            MISMATCH_FILTER_TYPES={MISMATCH_FILTER_TYPES}
-            columnFilters={columnFilters}
-            setColumnFilters={setColumnFilters}
-            availableCsvColumns={availableCsvColumns}
-            hideMissingVariants={hideMissingVariants}
-            setHideMissingVariants={setHideMissingVariants}
+            onRefresh={onRefresh}
           />
 
           <AuditTable
-            paginatedHandleKeys={paginatedHandleKeys}
-            filteredGroupedByHandle={groupedByHandle} // filteredData is flat, groupedByHandle is derived from it
-            groupedBySku={groupedBySku}
-            filter={filter}
-            selectedHandles={selectedHandles}
-            data={reportData} // needed for duplicates lookup or internal logic
-            imageCounts={imageCounts}
-            loadingImageCounts={loadingImageCounts}
-            isFixing={isFixing}
-            isAutoRunning={isAutoRunning}
-            isAutoCreating={isAutoCreating}
-
-            handleSelectHandle={handleSelectHandle}
-            handleDeleteUnlinked={handleDeleteUnlinked}
-            handleBulkFix={(h, t) => handleBulkFix(h, t)}
-            handleMarkAsCreated={handleMarkAsCreated}
-            handleCreate={handleCreate}
-            handleOpenMissingVariantMediaManager={handleOpenMissingVariantMediaManager}
-            handleBulkCreateVariants={handleBulkCreateVariants}
-            setEditingMediaFor={setEditingMediaFor}
-            setEditingMissingMedia={setEditingMissingMedia}
-            handleFixSingleMismatch={handleFixSingleMismatch}
-            handleMarkAsFixed={(sku, type) => handleMarkAsFixed(sku, type)}
-            handleDeleteVariant={handleDeleteVariant}
-            handleDeleteProduct={handleDeleteProduct}
-
             statusConfig={statusConfig}
             MISMATCH_FILTER_TYPES={MISMATCH_FILTER_TYPES}
-            setFixDialogHandles={setFixDialogHandles}
-            setShowFixDialog={setShowFixDialog}
-            onSelectAllPage={toggleSelectAllPage}
-            isAllPageSelected={isAllOnPageSelected}
+            fileName={fileName}
+            onRefresh={onRefresh}
           />
-
           {/* Pagination */}
           {totalPages > 0 && (
             <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
@@ -1311,7 +1205,7 @@ export default function AuditReport({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    onClick={() => setCurrentPage((prev: number) => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1 || isFixing || isAutoRunning || isAutoCreating}
                     className="h-8 w-8 p-0"
                     aria-label="Previous page"
@@ -1354,7 +1248,7 @@ export default function AuditReport({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    onClick={() => setCurrentPage((prev: number) => Math.min(prev + 1, totalPages))}
                     disabled={currentPage === totalPages || isFixing || isAutoRunning || isAutoCreating}
                     className="h-8 w-8 p-0"
                     aria-label="Next page"
@@ -1390,7 +1284,7 @@ export default function AuditReport({
               key={editingMediaFor}
               productId={editingMediaFor}
               onImageCountChange={(newCount: number) => {
-                setImageCounts(prev => ({ ...prev, [editingMediaFor]: newCount }));
+                setImageCounts((prev: Record<string, number>) => ({ ...prev, [editingMediaFor!]: newCount }));
               }}
             />
           )}
@@ -1410,9 +1304,7 @@ export default function AuditReport({
               key={editingMissingMedia}
               variants={editingMissingMediaVariants}
               onSave={(updatedVariants, curatedImageUrls) => {
-                // Update reportData with new media assignments
-                // Null out mediaUrl if it references an image that was deleted from the gallery
-                setReportData(prev => prev.map(item => {
+                setReportData((prev: AuditResult[]) => prev.map(item => {
                   const updated = updatedVariants.find(v => v.sku === item.sku);
                   if (updated && item.csvProducts[0]) {
                     const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
@@ -1445,10 +1337,10 @@ export default function AuditReport({
           {editingMissingVariantMedia && (
             <PreCreationMediaManagerVariant
               key={editingMissingVariantMedia.parentProductId}
-              variants={memoizedMissingVariants}
+              variants={editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter(Boolean)}
               parentProductId={editingMissingVariantMedia.parentProductId}
               onSave={(updatedVariants, curatedImageUrls) => {
-                setReportData(prev => prev.map(item => {
+                setReportData((prev: AuditResult[]) => prev.map(item => {
                   const updated = updatedVariants.find(v => v.sku === item.sku);
                   if (updated && item.csvProducts[0]) {
                     const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
@@ -1482,19 +1374,17 @@ export default function AuditReport({
         onConfirm={confirmAutoTagUpdate}
         count={reportData.filter(item => item.shopifyProducts.length > 0).length}
       />
-      <FixMismatchesDialog
-        isOpen={showFixDialog}
-        onClose={() => {
-          setShowFixDialog(false);
-          setFixDialogHandles(null);
-        }}
-        onConfirm={(types) => {
-          handleBulkFix(fixDialogHandles || selectedHandles, types);
-          setShowFixDialog(false);
-          setFixDialogHandles(null);
-        }}
-        availableTypes={new Set(MISMATCH_FILTER_TYPES)}
-      />
+      {showFixDialog && (
+        <FixMismatchesDialog
+          isOpen={showFixDialog}
+          onClose={() => setShowFixDialog(false, null)}
+          onConfirm={(types) => {
+            handleBulkFix(fixDialogHandles || selectedHandles, types);
+            setShowFixDialog(false, null);
+          }}
+          availableTypes={new Set(MISMATCH_FILTER_TYPES)}
+        />
+      )}
     </>
   );
 }

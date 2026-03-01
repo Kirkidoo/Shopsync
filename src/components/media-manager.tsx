@@ -52,11 +52,12 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  getProductWithImages,
-  addImageFromUrl,
-  assignImageToVariant,
-  deleteImage,
-} from '@/app/actions/media-actions';
+  useProductMedia,
+  useAssignImageMutation,
+  useAddImageMutation,
+  useDeleteImageMutation,
+} from '@/hooks/use-media-manager';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Product, ShopifyProductImage } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -100,17 +101,41 @@ export function MediaManager({
   missingVariants = [],
   onSaveMissingVariant,
 }: MediaManagerProps) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [variants, setVariants] = useState<Partial<Product>[]>([]);
-  const [images, setImages] = useState<ShopifyProductImage[]>([]);
+  const { data: mediaData, isLoading, error } = useProductMedia(productId);
+  const assignMutation = useAssignImageMutation(productId);
+  const addImageMutation = useAddImageMutation(productId);
+  const deleteImageMutation = useDeleteImageMutation(productId);
+
   const [newImageUrl, setNewImageUrl] = useState('');
-  const [isSubmitting, startSubmitting] = useTransition();
   const { toast } = useToast();
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
-  const [localMissingVariants, setLocalMissingVariants] = useState<Product[]>(() =>
-    JSON.parse(JSON.stringify(missingVariants))
-  );
+  const [localMissingVariants, setLocalMissingVariants] = useState<Record<string, Product>>(() => {
+    const dict: Record<string, Product> = {};
+    missingVariants.forEach(v => {
+      if (v.sku) dict[v.sku] = JSON.parse(JSON.stringify(v));
+    });
+    return dict;
+  });
+
+  // Use data from React Query or local missing variants
+  const variants = mediaData?.variants || [];
+  const variantsById = useMemo(() => {
+    const dict: Record<string, Product> = {};
+    variants.forEach(v => {
+      if (v.variantId) dict[v.variantId] = v;
+    });
+    return dict;
+  }, [variants]);
+
+  const variantsBySku = useMemo(() => {
+    const dict: Record<string, Product> = {};
+    variants.forEach(v => {
+      if (v.sku) dict[v.sku] = v;
+    });
+    return dict;
+  }, [variants]);
+
+  const images = mediaData?.images || [];
 
   // State for bulk assign dialog
   const [bulkAssignImageId, setBulkAssignImageId] = useState<string>('');
@@ -126,9 +151,6 @@ export function MediaManager({
   // State for focused variant (for gallery picking)
   const [focusedVariantSku, setFocusedVariantSku] = useState<string | null>(null);
 
-  // Revision counter to force re-renders when assignments change externally
-  const [revision, setRevision] = useState(0);
-
   // Multi-select for variants
   const [selectedVariantSkus, setSelectedVariantSkus] = useState<Set<string>>(new Set());
 
@@ -136,6 +158,7 @@ export function MediaManager({
   const [gallerySearch, setGallerySearch] = useState('');
 
   // Tracking granular loading states (e.g., "deleting-image-123", "assigning-variant-abc")
+  // Note: Mutations now handle these, but we can keep pendingActions for simulations/uploads
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
 
@@ -190,34 +213,6 @@ export function MediaManager({
     }
   }, [handleUploadFiles]);
 
-  const variantsRef = useRef(variants);
-  useEffect(() => {
-    variantsRef.current = variants;
-  }, [variants]);
-
-  const fetchMediaData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    setSelectedImageIds(new Set());
-    try {
-      const result = await getProductWithImages(productId);
-      if (result.success && result.data) {
-        setVariants(result.data.variants);
-        setImages(result.data.images);
-      } else {
-        setError(result.message || 'Failed to load media data.');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load media data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [productId]);
-
-  useEffect(() => {
-    fetchMediaData();
-  }, [fetchMediaData]);
-
   const handleImageSelection = useCallback((imageId: string, checked: boolean) => {
     setSelectedImageIds((prev) => {
       const newSet = new Set(prev);
@@ -258,154 +253,105 @@ export function MediaManager({
       return;
     }
 
-    // Note: Add image isn't easily optimistic because we need the server-assigned ID
-    // but we can still show a granular loading state in the gallery if we had a temporary ID.
-    // For now, let's just use a loading state for the "Add" button.
-    startSubmitting(async () => {
-      const result = await addImageFromUrl(productId, newImageUrl);
-      if (result.success && result.image) {
-        setImages(prev => [...prev, result.image!]);
-        onImageCountChange(images.length + 1);
+    addImageMutation.mutate(newImageUrl, {
+      onSuccess: () => {
         setNewImageUrl('');
-        toast({ title: 'Success!', description: 'Image has been added.' });
-      } else {
-        toast({ title: 'Error', description: result.message, variant: 'destructive' });
+        onImageCountChange(images.length + 1);
       }
     });
   };
 
   const handleAssignImage = useCallback(
     async (variantId: string, imageId: string | null) => {
-      const previousVariants = [...variantsRef.current];
-      const actionId = `assigning-${variantId}`;
-      addPending(actionId);
-
-      // Optimistic update
-      setVariants((prev) => prev.map((v) => (v.variantId === variantId ? { ...v, imageId: imageId } : v)));
-
-      try {
-        const result = await assignImageToVariant(variantId, imageId);
-        if (result.success) {
-          toast({ title: 'Success!', description: 'Image assigned to variant.' });
-          // No need to fetch data, state is already updated correctly
-        } else {
-          // Rollback
-          setVariants(previousVariants);
-          toast({ title: 'Error', description: result.message, variant: 'destructive' });
-        }
-      } catch (err) {
-        setVariants(previousVariants);
-        toast({ title: 'Error', description: 'Internal error during assignment.', variant: 'destructive' });
-      } finally {
-        removePending(actionId);
-      }
+      assignMutation.mutate({ variantId, imageId });
     },
-    [toast]
+    [assignMutation]
   );
 
   const handleAssignImageToMissingVariant = useCallback(
     (sku: string, imageId: string | null) => {
-      setLocalMissingVariants((prev) =>
-        prev.map((v) => {
-          if (v.sku === sku) {
-            if (imageId !== null && imageId.startsWith('ftp-')) {
-              const ftpImg = ftpImages.find((img) => img.id === imageId);
-              return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
-            }
-            return { ...v, imageId, mediaUrl: null };
-          }
-          return v;
-        })
-      );
+      setLocalMissingVariants((prev) => {
+        const variant = prev[sku];
+        if (!variant) return prev;
+
+        const next = { ...prev };
+        if (imageId !== null && imageId.startsWith('ftp-')) {
+          const ftpImg = ftpImages.find((img) => img.id === imageId);
+          next[sku] = { ...variant, imageId: null, mediaUrl: ftpImg?.src ?? variant.mediaUrl };
+        } else {
+          next[sku] = { ...variant, imageId, mediaUrl: null };
+        }
+        return next;
+      });
     },
     [ftpImages]
   );
 
   const handleAssignToAll = useCallback(async (imageId: string) => {
     if (isMissingVariantMode) {
-      setLocalMissingVariants((prev) =>
-        prev.map((v) => {
-          if (imageId.startsWith('ftp-')) {
-            const ftpImg = ftpImages.find((img) => img.id === imageId);
-            return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
+      setLocalMissingVariants((prev) => {
+        const next = { ...prev };
+        const ftpImg = imageId.startsWith('ftp-') ? ftpImages.find(img => img.id === imageId) : null;
+
+        Object.keys(next).forEach(sku => {
+          if (ftpImg) {
+            next[sku] = { ...next[sku], imageId: null, mediaUrl: ftpImg.src };
+          } else {
+            next[sku] = { ...next[sku], imageId, mediaUrl: null };
           }
-          return { ...v, imageId, mediaUrl: null };
-        })
-      );
+        });
+        return next;
+      });
     } else {
-      const previousVariants = [...variantsRef.current];
-      const targets = previousVariants;
-
-      // Optimistic
-      setVariants((prev) => prev.map((v) => ({ ...v, imageId })));
-
-      const actionIds = targets.map(v => `assigning-${v.variantId}`);
-      actionIds.forEach(addPending);
-
-      try {
-        const results = await Promise.all(targets.map((v) => assignImageToVariant(v.variantId!, imageId)));
-        const failedCount = results.filter((r) => !r.success).length;
-
-        if (failedCount > 0) {
-          // Partial failure is tricky with optimistic UI, let's fetch truth
-          await fetchMediaData();
-          toast({ title: 'Bulk Assign Failed', description: `Could not assign to ${failedCount} variants.`, variant: 'destructive' });
-        } else {
-          toast({ title: 'Assigned to All', description: `Image assigned to all ${targets.length} variants.` });
-        }
-      } catch (err) {
-        setVariants(previousVariants);
-        toast({ title: 'Error', description: 'Failed to assign images.', variant: 'destructive' });
-      } finally {
-        actionIds.forEach(removePending);
-      }
+      const targets = variants;
+      // Bulk assign using individual mutations for optimistic UI benefit or a single bulk action if available
+      // For now, we'll keep it simple and just run them in parallel
+      targets.forEach(v => assignMutation.mutate({ variantId: v.variantId!, imageId }));
     }
-  }, [isMissingVariantMode, ftpImages, fetchMediaData, toast]);
+  }, [isMissingVariantMode, ftpImages, variants, assignMutation]);
 
   const handleAssignToSelection = useCallback(async (imageId: string) => {
     if (selectedVariantSkus.size === 0) return;
 
     if (isMissingVariantMode) {
-      setLocalMissingVariants((prev) =>
-        prev.map((v) => {
-          if (selectedVariantSkus.has(v.sku)) {
-            if (imageId.startsWith('ftp-')) {
-              const ftpImg = ftpImages.find((img) => img.id === imageId);
-              return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl };
+      setLocalMissingVariants((prev) => {
+        const next = { ...prev };
+        const ftpImg = imageId.startsWith('ftp-') ? ftpImages.find(img => img.id === imageId) : null;
+
+        selectedVariantSkus.forEach(sku => {
+          if (next[sku]) {
+            if (ftpImg) {
+              next[sku] = { ...next[sku], imageId: null, mediaUrl: ftpImg.src };
+            } else {
+              next[sku] = { ...next[sku], imageId, mediaUrl: null };
             }
-            return { ...v, imageId, mediaUrl: null };
           }
-          return v;
-        })
-      );
+        });
+        return next;
+      });
     } else {
-      const previousVariants = [...variantsRef.current];
-      const variantsToUpdate = variants.filter(v => selectedVariantSkus.has(v.sku!));
-
-      // Optimistic
-      setVariants((prev) => prev.map((v) => (selectedVariantSkus.has(v.sku!) ? { ...v, imageId } : v)));
-
-      const actionIds = variantsToUpdate.map(v => `assigning-${v.variantId}`);
-      actionIds.forEach(addPending);
-
-      try {
-        const results = await Promise.all(variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, imageId)));
-        const failedCount = results.filter((r) => !r.success).length;
-
-        if (failedCount > 0) {
-          await fetchMediaData();
-          toast({ title: 'Bulk Assign Failed', description: `Could not assign to ${failedCount} variants.`, variant: 'destructive' });
-        } else {
-          toast({ title: 'Success!', description: `Assigned to ${selectedVariantSkus.size} selected variants.` });
-        }
-      } catch (err) {
-        setVariants(previousVariants);
-        toast({ title: 'Error', description: 'Failed to assign selection.', variant: 'destructive' });
-      } finally {
-        actionIds.forEach(removePending);
-      }
+      selectedVariantSkus.forEach(sku => {
+        const v = variantsBySku[sku];
+        if (v?.variantId) assignMutation.mutate({ variantId: v.variantId, imageId });
+      });
     }
-  }, [isMissingVariantMode, selectedVariantSkus, variants, ftpImages, fetchMediaData, toast]);
+  }, [isMissingVariantMode, selectedVariantSkus, variants, ftpImages, assignMutation]);
+
+  const handleQuickAssign = useCallback((imageId: string) => {
+    if (selectedVariantSkus.size > 0) {
+      handleAssignToSelection(imageId);
+    } else {
+      handleAssignToAll(imageId);
+    }
+  }, [selectedVariantSkus.size, handleAssignToSelection, handleAssignToAll]);
+
+  const handleVariantAssign = useCallback((id: string, imageId: string | null) => {
+    if (isMissingVariantMode) {
+      handleAssignImageToMissingVariant(id, imageId);
+    } else {
+      handleAssignImage(id, imageId);
+    }
+  }, [isMissingVariantMode, handleAssignImageToMissingVariant, handleAssignImage]);
 
   const toggleVariantSelection = (sku: string) => {
     setSelectedVariantSkus((prev) => {
@@ -417,13 +363,13 @@ export function MediaManager({
   };
 
   const selectAllVariants = (checked: boolean) => {
-    const dataSource = isMissingVariantMode ? localMissingVariants : variants;
+    const dataSource = isMissingVariantMode ? Object.values(localMissingVariants) : variants;
     if (checked) setSelectedVariantSkus(new Set(dataSource.map((v) => v.sku!)));
     else setSelectedVariantSkus(new Set());
   };
 
   const selectByOption = (optionName: string, value: string) => {
-    const dataSource = isMissingVariantMode ? localMissingVariants : variants;
+    const dataSource = isMissingVariantMode ? Object.values(localMissingVariants) : variants;
     const firstWithOpts = dataSource.find(v => v.option1Name === optionName || v.option2Name === optionName || v.option3Name === optionName);
     let optionKey: keyof Product | null = null;
     if (firstWithOpts?.option1Name === optionName) optionKey = 'option1Value';
@@ -443,26 +389,18 @@ export function MediaManager({
     if (mergingImageId === null || !masterImageId) return;
     const variantsToUpdate = variants.filter(v => v.imageId === mergingImageId);
 
-    startSubmitting(async () => {
-      try {
-        const results = await Promise.all(variantsToUpdate.map((v) => assignImageToVariant(v.variantId!, masterImageId)));
-        const failedCount = results.filter((r) => !r.success).length;
-        if (failedCount > 0) {
-          toast({ title: 'Merge Partially Failed', description: `Could not update ${failedCount} variants.`, variant: 'destructive' });
-        } else {
-          await deleteImage(productId, mergingImageId);
-          toast({ title: 'Images Merged', description: 'Duplicate replaced and removed.' });
-        }
-        await fetchMediaData();
-      } catch (err) {
-        toast({ title: 'Error', description: 'Failed to merge images.', variant: 'destructive' });
-      } finally {
-        setIsMergingDialogOpen(false);
-        setMergingImageId(null);
-        setMasterImageId('');
-      }
-    });
-  }, [mergingImageId, masterImageId, variants, productId, fetchMediaData, toast]);
+    try {
+      await Promise.all(variantsToUpdate.map((v) => assignMutation.mutateAsync({ variantId: v.variantId!, imageId: masterImageId })));
+      await deleteImageMutation.mutateAsync(mergingImageId);
+      toast({ title: 'Images Merged', description: 'Duplicate replaced and removed.' });
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to merge images.', variant: 'destructive' });
+    } finally {
+      setIsMergingDialogOpen(false);
+      setMergingImageId(null);
+      setMasterImageId('');
+    }
+  }, [mergingImageId, masterImageId, variants, assignMutation, deleteImageMutation, toast]);
 
   const handleDeleteImage = useCallback(async (imageId: string) => {
     if (imageId.startsWith('ftp-')) {
@@ -475,29 +413,12 @@ export function MediaManager({
       return;
     }
 
-    const previousImages = [...images];
-    const actionId = `deleting-${imageId}`;
-    addPending(actionId);
-
-    // Optimistic
-    setImages(prev => prev.filter(img => img.id !== imageId));
-
-    try {
-      const result = await deleteImage(productId, imageId);
-      if (result.success) {
-        toast({ title: 'Success!', description: 'Image has been deleted.' });
+    deleteImageMutation.mutate(imageId, {
+      onSuccess: () => {
         onImageCountChange(images.length - 1);
-      } else {
-        setImages(previousImages);
-        toast({ title: 'Error', description: result.message, variant: 'destructive' });
       }
-    } catch (err) {
-      setImages(previousImages);
-      toast({ title: 'Error', description: 'Failed to delete image.', variant: 'destructive' });
-    } finally {
-      removePending(actionId);
-    }
-  }, [images, productId, toast, onImageCountChange]);
+    });
+  }, [images, deleteImageMutation, toast, onImageCountChange]);
 
   const handleBulkDelete = async () => {
     const assignedImages = Array.from(selectedImageIds).filter((id) => {
@@ -510,41 +431,24 @@ export function MediaManager({
     }
 
     const idsToDelete = Array.from(selectedImageIds);
-    const previousImages = [...images];
-
-    // Track each deletion separately for granular loading if we wanted, 
-    // but for bulk delete let's just use the submitting state and optimistic removal
-    startSubmitting(async () => {
-      setImages(prev => prev.filter(img => !selectedImageIds.has(img.id)));
-
-      let successIds: string[] = [];
-      for (const id of idsToDelete) {
-        try {
-          const res = await deleteImage(productId, id);
-          if (res.success) successIds.push(id);
-        } catch (e) { }
-      }
-
-      if (successIds.length < idsToDelete.length) {
-        toast({ title: 'Partial Failure', description: `Some deletions failed.`, variant: 'destructive' });
-        await fetchMediaData();
-      } else {
-        toast({ title: 'Success!', description: `${successIds.length} images deleted.` });
-        onImageCountChange(images.length - successIds.length);
-      }
+    try {
+      await Promise.all(idsToDelete.map(id => deleteImageMutation.mutateAsync(id)));
+      onImageCountChange(images.length - idsToDelete.length);
       setSelectedImageIds(new Set());
-    });
+    } catch (e) {
+      // Mutations handle their own errors
+    }
   };
 
   const assignmentCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const dataSource = isMissingVariantMode ? localMissingVariants : (variants as Product[]);
+    const dataSource = isMissingVariantMode ? Object.values(localMissingVariants) : variants;
     dataSource.forEach((v) => { if (v.imageId) counts.set(v.imageId, (counts.get(v.imageId) || 0) + 1); });
     return counts;
   }, [localMissingVariants, variants, isMissingVariantMode]);
 
   const availableOptions = useMemo(() => {
-    const optionsSource = isMissingVariantMode ? localMissingVariants : (variants as Product[]);
+    const optionsSource = isMissingVariantMode ? Object.values(localMissingVariants) : (variants as Product[]);
     const options = new Map<string, Set<string>>();
     if (optionsSource.length === 0) return options;
     const first = optionsSource.find(v => v.option1Name || v.option2Name || v.option3Name);
@@ -561,21 +465,30 @@ export function MediaManager({
     const imageId = bulkAssignImageId;
     if (!imageId || !bulkAssignOption) return;
     if (isMissingVariantMode) {
-      setLocalMissingVariants(prev => prev.map(v => {
-        let match = false;
-        if (bulkAssignOption === 'All Variants') match = true;
-        else {
-          const first = localMissingVariants.find(vm => vm.option1Name === bulkAssignOption || vm.option2Name === bulkAssignOption || vm.option3Name === bulkAssignOption);
-          if (first?.option1Name === bulkAssignOption && v.option1Value === bulkAssignValue) match = true;
-          else if (first?.option2Name === bulkAssignOption && v.option2Value === bulkAssignValue) match = true;
-          else if (first?.option3Name === bulkAssignOption && v.option3Value === bulkAssignValue) match = true;
-        }
-        if (match) {
-          if (imageId.startsWith('ftp-')) { const ftpImg = ftpImages.find(img => img.id === imageId); return { ...v, imageId: null, mediaUrl: ftpImg?.src ?? v.mediaUrl }; }
-          return { ...v, imageId, mediaUrl: null };
-        }
-        return v;
-      }));
+      setLocalMissingVariants(prev => {
+        const next = { ...prev };
+        const ftpImg = imageId.startsWith('ftp-') ? ftpImages.find(img => img.id === imageId) : null;
+        const variantsList = Object.values(prev);
+
+        variantsList.forEach(v => {
+          let match = false;
+          if (bulkAssignOption === 'All Variants') match = true;
+          else {
+            const first = variantsList.find(vm => vm.option1Name === bulkAssignOption || vm.option2Name === bulkAssignOption || vm.option3Name === bulkAssignOption);
+            if (first?.option1Name === bulkAssignOption && v.option1Value === bulkAssignValue) match = true;
+            else if (first?.option2Name === bulkAssignOption && v.option2Value === bulkAssignValue) match = true;
+            else if (first?.option3Name === bulkAssignOption && v.option3Value === bulkAssignValue) match = true;
+          }
+          if (match) {
+            if (ftpImg) {
+              next[v.sku!] = { ...v, imageId: null, mediaUrl: ftpImg.src };
+            } else {
+              next[v.sku!] = { ...v, imageId, mediaUrl: null };
+            }
+          }
+        });
+        return next;
+      });
     } else {
       const targets = variants.filter(v => {
         if (bulkAssignOption === 'All Variants') return true;
@@ -585,12 +498,7 @@ export function MediaManager({
         if (first?.option3Name === bulkAssignOption) return v.option3Value === bulkAssignValue;
         return false;
       });
-      startSubmitting(async () => {
-        const res = await Promise.all(targets.map(v => assignImageToVariant(v.variantId!, imageId)));
-        if (res.filter(r => !r.success).length > 0) toast({ title: 'Partial Failure', variant: 'destructive' });
-        else toast({ title: 'Success', description: `Assigned to ${targets.length} variants.` });
-        fetchMediaData();
-      });
+      targets.forEach(v => assignMutation.mutate({ variantId: v.variantId!, imageId }));
     }
     setIsBulkAssignDialogOpen(false);
   };
@@ -611,8 +519,45 @@ export function MediaManager({
     );
   }
 
-  const handleSaveData = () => { if (isMissingVariantMode && onSaveMissingVariant) onSaveMissingVariant(localMissingVariants); };
+  if (error) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-background/50 backdrop-blur-xl -m-6 rounded-lg">
+        <div className="flex flex-col items-center gap-4 text-destructive">
+          <AlertCircle className="h-10 w-10" />
+          <p className="text-sm font-medium">{(error as Error).message || 'Failed to sync assets.'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSaveData = () => { if (isMissingVariantMode && onSaveMissingVariant) onSaveMissingVariant(Object.values(localMissingVariants)); };
   const productTitle = isMissingVariantMode ? (missingVariants[0]?.name || 'New Product') : (variants[0]?.name || 'Product Media');
+
+  const parentRef = useRef<HTMLDivElement>(null);
+  const variantParentRef = useRef<HTMLDivElement>(null);
+
+  const filteredImages = useMemo(() =>
+    allImages.filter(img => !gallerySearch || img.src.toLowerCase().includes(gallerySearch.toLowerCase()) || img.id.includes(gallerySearch)),
+    [allImages, gallerySearch]
+  );
+
+  const columns = 2; // Fixed to simplify grid virtualization, or can be dynamic based on width
+  const rowCount = Math.ceil((filteredImages.length + 1) / columns);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 200,
+    overscan: 5,
+  });
+
+  const variantList = isMissingVariantMode ? Object.values(localMissingVariants) : (variants as Product[]);
+  const variantVirtualizer = useVirtualizer({
+    count: variantList.length,
+    getScrollElement: () => variantParentRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+  });
 
   return (
     <TooltipProvider>
@@ -720,43 +665,74 @@ export function MediaManager({
               </div>
             </div>
 
-            <ScrollArea className="flex-1 p-6">
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                <AnimatePresence initial={false}>
-                  {allImages
-                    .filter(img => !gallerySearch || img.src.toLowerCase().includes(gallerySearch.toLowerCase()) || img.id.includes(gallerySearch))
-                    .map((image) => (
-                      <MediaManagerImageCard
-                        key={image.id}
-                        image={image}
-                        isSelected={selectedImageIds.has(image.id)}
-                        isAssigned={image.variant_ids.length > 0}
-                        isMissingVariantMode={isMissingVariantMode}
-                        isPending={pendingActions.has(`deleting-${image.id}`)}
-                        onSelectionChange={handleImageSelection}
-                        onDelete={handleDeleteImage}
-                        onAssign={selectedVariantSkus.size > 0 ? handleAssignToSelection : handleAssignToAll}
-                      />
-                    ))}
-                </AnimatePresence>
+            <div ref={parentRef} className="flex-1 overflow-auto p-6">
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const imagesInRow = filteredImages.slice(
+                    virtualRow.index * columns,
+                    (virtualRow.index + 1) * columns
+                  );
 
-                {/* Subtle Add Placeholder */}
-                <button
-                  onClick={() => document.getElementById('file-upload')?.click()}
-                  className="aspect-square rounded-xl border-2 border-dashed border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary group"
-                >
-                  <div className="h-10 w-10 rounded-full bg-muted group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <Plus className="h-5 w-5" />
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-tight">Add Asset</span>
-                  <input
-                    id="file-upload"
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => e.target.files && handleUploadFiles(e.target.files)}
-                  />
-                </button>
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                        gap: '1rem',
+                      }}
+                    >
+                      <AnimatePresence initial={false}>
+                        {imagesInRow.map((image) => (
+                          <MediaManagerImageCard
+                            key={image.id}
+                            image={image}
+                            isSelected={selectedImageIds.has(image.id)}
+                            isAssigned={image.variant_ids.length > 0}
+                            isMissingVariantMode={isMissingVariantMode}
+                            isPending={pendingActions.has(`deleting-${image.id}`)}
+                            onSelectionChange={handleImageSelection}
+                            onDelete={handleDeleteImage}
+                            onAssign={handleQuickAssign}
+                          />
+                        ))}
+                      </AnimatePresence>
+
+                      {/* Show Add Asset button in the first empty slot after images */}
+                      {virtualRow.index === Math.floor(filteredImages.length / columns) && (
+                        <button
+                          onClick={() => document.getElementById('file-upload')?.click()}
+                          className="aspect-square rounded-xl border-2 border-dashed border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary group"
+                          style={{ gridColumn: (filteredImages.length % columns) + 1 }}
+                        >
+                          <div className="h-10 w-10 rounded-full bg-muted group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                            <Plus className="h-5 w-5" />
+                          </div>
+                          <span className="text-[10px] font-bold uppercase tracking-tight">Add Asset</span>
+                          <input
+                            id="file-upload"
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => e.target.files && handleUploadFiles(e.target.files)}
+                          />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Show active uploads */}
@@ -776,10 +752,10 @@ export function MediaManager({
                   </div>
                 </div>
               )}
-            </ScrollArea>
+            </div>
             <div className="p-4 bg-background/80 border-t flex gap-2">
               <Input placeholder="Image URL..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} className="h-9" />
-              <Button size="sm" onClick={handleAddImage} disabled={isSubmitting}><ImagePlus className="h-4 w-4" /></Button>
+              <Button size="sm" onClick={handleAddImage} disabled={addImageMutation.isPending}><ImagePlus className="h-4 w-4" /></Button>
             </div>
           </div>
 
@@ -787,35 +763,59 @@ export function MediaManager({
           <div className="w-1/2 flex flex-col bg-background/20">
             <div className="p-4 border-b flex items-center justify-between h-[57px]">
               <div className="flex items-center gap-2">
-                <Checkbox checked={selectedVariantSkus.size === (isMissingVariantMode ? localMissingVariants : variants).length} onCheckedChange={c => selectAllVariants(!!c)} />
+                <Checkbox checked={selectedVariantSkus.size === variantList.length} onCheckedChange={c => selectAllVariants(!!c)} />
                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Select ({selectedVariantSkus.size})</span>
               </div>
             </div>
-            <ScrollArea className="flex-1">
+            <div ref={variantParentRef} className="flex-1 overflow-auto">
               <Table>
-                <TableHeader><TableRow><TableHead className="w-12"></TableHead><TableHead className="text-[10px] uppercase">Identity</TableHead><TableHead className="text-[10px] uppercase">Assignment</TableHead></TableRow></TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10"><TableRow><TableHead className="w-12"></TableHead><TableHead className="text-[10px] uppercase">Identity</TableHead><TableHead className="text-[10px] uppercase">Assignment</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {(isMissingVariantMode ? localMissingVariants : (variants as Product[])).map(variant => {
-                    const sku = variant.sku || variant.variantId || 'unknown';
-                    const isSelected = selectedVariantSkus.has(sku);
-                    return (
-                      <TableRow key={sku} className={cn(isSelected && "bg-primary/5")} onClick={() => toggleVariantSelection(sku)}>
-                        <TableCell className="w-12"><Checkbox checked={isSelected} onCheckedChange={() => toggleVariantSelection(sku)} /></TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-xs font-bold">{sku}</span>
-                            <span className="text-[10px] text-muted-foreground">{[variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join(' / ')}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <VariantRow variant={variant} images={allImages} isSubmitting={isSubmitting} onAssign={isMissingVariantMode ? handleAssignImageToMissingVariant : handleAssignImage} idType={isMissingVariantMode ? 'sku' : 'variantId'} />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  <div
+                    style={{
+                      height: `${variantVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {variantVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const variant = variantList[virtualRow.index];
+                      const sku = variant.sku || variant.variantId || 'unknown';
+                      const isSelected = selectedVariantSkus.has(sku);
+                      return (
+                        <TableRow
+                          key={virtualRow.key}
+                          data-index={virtualRow.index}
+                          ref={variantVirtualizer.measureElement}
+                          className={cn(isSelected && "bg-primary/5", "absolute w-full top-0 left-0")}
+                          style={{
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                          onClick={() => toggleVariantSelection(sku)}
+                        >
+                          <TableCell className="w-12"><Checkbox checked={isSelected} onCheckedChange={() => toggleVariantSelection(sku)} /></TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold">{sku}</span>
+                              <span className="text-[10px] text-muted-foreground">{[variant.option1Value, variant.option2Value, variant.option3Value].filter(Boolean).join(' / ')}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <VariantRow
+                              variant={variant}
+                              images={allImages}
+                              isSubmitting={assignMutation.isPending}
+                              onAssign={handleVariantAssign}
+                              idType={isMissingVariantMode ? 'sku' : 'variantId'}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </div>
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </div>
         </div>
         {/* Merge Dialog */}

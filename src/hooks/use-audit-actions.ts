@@ -1,4 +1,4 @@
-import { startTransition, useState } from 'react';
+import { startTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { AuditResult, Product, MismatchDetail } from '@/lib/types';
 import {
@@ -18,32 +18,28 @@ import {
 } from '@/lib/utils';
 import { getHandle } from '@/components/audit/audit-utils';
 import { logger } from '@/lib/logger';
+import { useAuditDataStore, useAuditUIStore } from '@/store/audit-store';
 
 interface UseAuditActionsProps {
-    reportData: AuditResult[];
-    setReportData: React.Dispatch<React.SetStateAction<AuditResult[]>>;
     fileName: string;
     onRefresh: () => void;
-    setFixedMismatches: React.Dispatch<React.SetStateAction<Set<string>>>;
-    setCreatedProductHandles: React.Dispatch<React.SetStateAction<Set<string>>>;
-    setUpdatedProductHandles: React.Dispatch<React.SetStateAction<Set<string>>>;
-    setSelectedHandles: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export function useAuditActions({
-    reportData,
-    setReportData,
     fileName,
     onRefresh,
-    setFixedMismatches,
-    setCreatedProductHandles,
-    setUpdatedProductHandles,
-    setSelectedHandles,
 }: UseAuditActionsProps) {
     const { toast } = useToast();
-    const [isFixing, setIsFixing] = useState(false);
-    const [isAutoRunning, setIsAutoRunning] = useState(false);
-    const [isAutoCreating, setIsAutoCreating] = useState(false);
+
+    // UI Store Selectors for status
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const isAutoCreating = useAuditUIStore((state) => state.isAutoCreating);
+
+    // Store Setters
+    const setIsFixing = useAuditUIStore((state) => state.setIsFixing);
+    const setIsAutoRunning = useAuditUIStore((state) => state.setIsAutoRunning);
+    const setIsAutoCreating = useAuditUIStore((state) => state.setIsAutoCreating);
 
     // --- Helpers ---
 
@@ -72,11 +68,10 @@ export function useAuditActions({
                 const result = await fixMultipleMismatches([item], [fixType]);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setFixedMismatches((prev) => {
+                    useAuditDataStore.getState().setFixedMismatches((prev) => {
                         const next = new Set(prev);
                         const key = `${item.sku}-${fixType}`;
                         next.add(key);
-                        // Persist
                         markMismatchAsFixed(item.sku, fixType);
                         return next;
                     });
@@ -93,7 +88,7 @@ export function useAuditActions({
     };
 
     const handleMarkAsFixed = (sku: string, fixType: MismatchDetail['field']) => {
-        setFixedMismatches((prev) => {
+        useAuditDataStore.getState().setFixedMismatches((prev) => {
             const next = new Set(prev);
             const key = `${sku}-${fixType}`;
             next.add(key);
@@ -110,6 +105,7 @@ export function useAuditActions({
         handleActionStart();
         startTransition(async () => {
             try {
+                const { reportData } = useAuditDataStore.getState();
                 let itemsToFix = reportData.filter(
                     (item) => item.status === 'mismatched' && item.mismatches.length > 0
                 );
@@ -132,7 +128,7 @@ export function useAuditActions({
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
 
-                    setFixedMismatches((prev) => {
+                    useAuditDataStore.getState().setFixedMismatches((prev) => {
                         const next = new Set(prev);
                         if (result.results) {
                             result.results.forEach((r: any) => {
@@ -146,7 +142,7 @@ export function useAuditActions({
                         return next;
                     });
                     if (targetHandles) {
-                        setSelectedHandles(new Set()); // Clear selection
+                        useAuditUIStore.getState().setSelectedHandles(new Set()); // Clear selection
                     }
 
                 } else {
@@ -178,6 +174,7 @@ export function useAuditActions({
         startTransition(async () => {
             try {
                 const handle = getHandle(item);
+                const { reportData } = useAuditDataStore.getState();
                 const allVariants = reportData
                     .filter(d => getHandle(d) === handle && d.csvProducts.length > 0)
                     .map(d => d.csvProducts[0]);
@@ -185,22 +182,12 @@ export function useAuditActions({
                 const result = await createInShopify(product, allVariants, fileName, missingType);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    if (missingType === 'product') {
-                        setCreatedProductHandles(prev => {
-                            const newSet = new Set(prev);
-                            newSet.add(handle);
-                            return newSet;
-                        });
+                    useAuditDataStore.getState().setCreatedProductHandles(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(handle);
                         markProductAsCreated(handle);
-                    } else {
-                        const handle = getHandle(item);
-                        setCreatedProductHandles(prev => {
-                            const newSet = new Set(prev);
-                            newSet.add(handle);
-                            return newSet;
-                        });
-                        markProductAsCreated(handle);
-                    }
+                        return newSet;
+                    });
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -214,12 +201,12 @@ export function useAuditActions({
     };
 
     const handleMarkAsCreated = (handle: string) => {
-        setCreatedProductHandles(prev => {
+        useAuditDataStore.getState().setCreatedProductHandles(prev => {
             const next = new Set(prev);
             next.add(handle);
+            markProductAsCreated(handle);
             return next;
         });
-        markProductAsCreated(handle);
         toast({ title: "Success", description: `Marked ${handle} as created.` });
     };
 
@@ -230,6 +217,7 @@ export function useAuditActions({
         handleActionStart();
         startTransition(async () => {
             try {
+                const { reportData } = useAuditDataStore.getState();
                 const itemsToCreate: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' }[] = [];
 
                 for (const handle of handlesToCreate) {
@@ -262,7 +250,7 @@ export function useAuditActions({
 
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setCreatedProductHandles(prev => {
+                    useAuditDataStore.getState().setCreatedProductHandles(prev => {
                         const next = new Set(prev);
                         result.results.forEach((r: any) => {
                             if (r.success && r.handle) {
@@ -272,7 +260,7 @@ export function useAuditActions({
                         });
                         return next;
                     });
-                    setSelectedHandles(new Set());
+                    useAuditUIStore.getState().setSelectedHandles(new Set());
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -291,18 +279,17 @@ export function useAuditActions({
         startTransition(async () => {
             try {
                 const variants = items.map(i => i.csvProducts[0]).filter(Boolean);
-                // Extract the parent product GID from shopifyProducts so the pre-upload phase can find it
                 const parentProductId = items.find(i => i.shopifyProducts.length > 0)?.shopifyProducts[0]?.id;
                 const result = await createMultipleVariantsForProduct(variants, parentProductId);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
                     const handle = getHandle(items[0]);
-                    setCreatedProductHandles(prev => {
+                    useAuditDataStore.getState().setCreatedProductHandles(prev => {
                         const next = new Set(prev);
                         next.add(handle);
+                        markProductAsCreated(handle);
                         return next;
                     });
-                    markProductAsCreated(handle);
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -330,7 +317,8 @@ export function useAuditActions({
                 const result = await deleteFromShopify(productId);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setReportData(prev => prev.filter(d => d.shopifyProducts[0]?.id !== productId));
+                    const { setReportData, reportData } = useAuditDataStore.getState();
+                    setReportData(reportData.filter(d => d.shopifyProducts[0]?.id !== productId));
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -361,7 +349,8 @@ export function useAuditActions({
                 const result = await deleteVariantFromShopify(productId, variantId);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setReportData(prev => prev.filter(d => d.shopifyProducts[0]?.variantId !== variantId));
+                    const { setReportData, reportData } = useAuditDataStore.getState();
+                    setReportData(reportData.filter(d => d.shopifyProducts[0]?.variantId !== variantId));
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -400,7 +389,7 @@ export function useAuditActions({
                 const result = await deleteUnlinkedImagesForMultipleProducts(selectedProductIds);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setSelectedHandles(new Set());
+                    useAuditUIStore.getState().setSelectedHandles(new Set());
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -422,7 +411,7 @@ export function useAuditActions({
                 const result = await bulkUpdateTags(selectedItems, customTag);
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
-                    setUpdatedProductHandles(prev => {
+                    useAuditDataStore.getState().setUpdatedProductHandles(prev => {
                         const next = new Set(prev);
                         selectedItems.forEach(i => {
                             const h = getHandle(i);
@@ -470,7 +459,7 @@ export function useAuditActions({
         stopAutoRun,
         startAutoCreate,
         stopAutoCreate,
-        setIsAutoRunning, // exposed for effect
-        setIsAutoCreating // exposed for effect
+        setIsAutoRunning,
+        setIsAutoCreating
     };
 }

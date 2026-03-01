@@ -3,26 +3,31 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Download } from 'lucide-react';
 import { FilterType } from '@/hooks/use-audit-data';
-import { Summary } from '@/lib/types';
+import { useAuditDataStore, useAuditUIStore } from '@/store/audit-store';
 
 interface AuditTabsProps {
-    filter: FilterType;
-    setFilter: (f: FilterType) => void;
-    reportSummary: Summary;
     handleKeysLength: number;
     onReset: () => void;
     onRefresh: () => void;
     handleDownload: () => void;
     showRefresh: boolean;
-    isFixing: boolean;
-    isAutoRunning: boolean;
-    isAutoCreating: boolean;
 }
 
 export function AuditTabs({
-    filter, setFilter, reportSummary, handleKeysLength, onReset, onRefresh, handleDownload, showRefresh,
-    isFixing, isAutoRunning, isAutoCreating
+    handleKeysLength, onReset, onRefresh, handleDownload, showRefresh,
 }: AuditTabsProps) {
+    // Store Selectors
+    const filter = useAuditUIStore((state) => state.filter) as FilterType;
+    const setFilter = useAuditUIStore((state) => state.setFilter);
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const isAutoCreating = useAuditUIStore((state) => state.isAutoCreating);
+    const reportSummary = useAuditDataStore((state) => state.reportSummary);
+
+    if (!reportSummary) return null;
+
+    const isDisabled = isFixing || isAutoRunning || isAutoCreating;
+
     return (
         <div className="mb-4 flex flex-col items-center justify-between gap-4 sm:flex-row">
             <Tabs
@@ -73,7 +78,7 @@ export function AuditTabs({
                 <Button
                     variant="ghost"
                     onClick={onReset}
-                    disabled={isFixing || isAutoRunning || isAutoCreating}
+                    disabled={isDisabled}
                 >
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     New Audit
@@ -82,7 +87,7 @@ export function AuditTabs({
                     <Button
                         variant="secondary"
                         onClick={onRefresh}
-                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                        disabled={isDisabled}
                     >
                         <RefreshCw className="mr-2 h-4 w-4" />
                         Refresh Data
@@ -90,7 +95,7 @@ export function AuditTabs({
                 )}
                 <Button
                     onClick={handleDownload}
-                    disabled={isFixing || isAutoRunning || isAutoCreating}
+                    disabled={isDisabled}
                 >
                     <Download className="mr-2 h-4 w-4" />
                     Download Report

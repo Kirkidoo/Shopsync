@@ -45,10 +45,6 @@ export async function seedDatabaseFromJsonl(filePath: string, locationId?: numbe
 
     // Update metadata
     setLastSyncDate(new Date().toISOString());
-    db.prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)').run(
-        'allSkusInShopify',
-        JSON.stringify(Array.from(allSkusInShopify))
-    );
 }
 
 /**
@@ -64,12 +60,6 @@ export function updateProductsInDb(products: Product[]) {
     });
 
     updateMany(products);
-
-    // Also update allSkusInShopify metadata in case new SKUs were added
-    // This is a bit expensive to do every time but keeps it synced
-    const allProducts = getProductsFromDb();
-    const skus = Array.from(new Set(allProducts.map(p => p.sku.toLowerCase()).filter(Boolean)));
-    upsertMetadata('allSkusInShopify', JSON.stringify(skus));
 }
 
 /**
@@ -84,19 +74,10 @@ export function getProductsFromDb(): Product[] {
  * Retrieves all unique SKUs from the products in the database.
  */
 export function getAllSkusFromDb(): Set<string> {
-    const row = db.prepare('SELECT value FROM metadata WHERE key = ?').get('allSkusInShopify') as { value: string } | undefined;
-    if (row) {
-        try {
-            return new Set(JSON.parse(row.value));
-        } catch (e) {
-            logger.error('Failed to parse allSkusInShopify from metadata', e);
-        }
-    }
-    // Fallback to products in DB
-    const products = getProductsFromDb();
+    const rows = db.prepare("SELECT DISTINCT json_extract(data, '$.sku') as sku FROM products WHERE json_extract(data, '$.sku') IS NOT NULL").all() as { sku: string }[];
     const skus = new Set<string>();
-    for (const p of products) {
-        if (p.sku) skus.add(p.sku.toLowerCase());
+    for (const row of rows) {
+        if (row.sku) skus.add(row.sku.toLowerCase());
     }
     return skus;
 }

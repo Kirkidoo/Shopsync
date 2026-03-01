@@ -5,15 +5,16 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { Product, AuditResult } from '@/lib/types';
+import { useAuditUIStore } from '@/store/audit-store';
+import { useAuditActions } from '@/hooks/use-audit-actions';
 
 interface DuplicateAuditTableProps {
     paginatedHandleKeys: string[];
     groupedBySku: Record<string, Product[]>;
     data: AuditResult[];
     statusConfig: any;
-    isFixing: boolean;
-    isAutoRunning: boolean;
-    handleDeleteProduct: (item: AuditResult, product?: Product) => void;
+    fileName: string;
+    onRefresh: () => void;
 }
 
 export function DuplicateAuditTable({
@@ -21,10 +22,12 @@ export function DuplicateAuditTable({
     groupedBySku,
     data,
     statusConfig,
-    isFixing,
-    isAutoRunning,
-    handleDeleteProduct,
+    fileName,
+    onRefresh,
 }: DuplicateAuditTableProps) {
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const { handleDeleteProduct } = useAuditActions({ fileName, onRefresh });
     return (
         <Accordion type="single" collapsible className="w-full">
             {paginatedHandleKeys.map((sku) => {

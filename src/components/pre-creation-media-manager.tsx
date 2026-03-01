@@ -83,7 +83,7 @@ export function PreCreationMediaManager({
   onSave,
   onCancel,
 }: PreCreationMediaManagerProps) {
-  const [localVariants, setLocalVariants] = useState<Product[]>([]);
+  const [localVariants, setLocalVariants] = useState<Record<string, Product>>({});
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl] = useState('');
   const { toast } = useToast();
@@ -113,7 +113,9 @@ export function PreCreationMediaManager({
   const [gallerySearch, setGallerySearch] = useState('');
 
   useEffect(() => {
-    setLocalVariants(JSON.parse(JSON.stringify(variants)));
+    const dict: Record<string, Product> = {};
+    variants.forEach(v => { if (v.sku) dict[v.sku] = JSON.parse(JSON.stringify(v)); });
+    setLocalVariants(dict);
     const uniqueUrls = [...new Set(variants.map((v) => v.mediaUrl).filter(Boolean) as string[])];
     setImageUrls(uniqueUrls);
     setSelectedImageUrls(new Set());
@@ -121,13 +123,13 @@ export function PreCreationMediaManager({
 
   // Reactive: recompute assigned URLs whenever localVariants changes
   const assignedUrls = useMemo(() => {
-    return new Set(localVariants.map((v) => v.mediaUrl).filter(Boolean) as string[]);
+    return new Set(Object.values(localVariants).map((v) => v.mediaUrl).filter(Boolean) as string[]);
   }, [localVariants]);
 
   // Count how many variants each URL is assigned to
   const assignmentCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    localVariants.forEach((v) => {
+    Object.values(localVariants).forEach((v) => {
       if (v.mediaUrl) {
         counts.set(v.mediaUrl, (counts.get(v.mediaUrl) || 0) + 1);
       }
@@ -177,9 +179,13 @@ export function PreCreationMediaManager({
   // Delete a single image from gallery and unassign from all variants
   const handleDeleteSingleImage = useCallback((urlToDelete: string) => {
     setImageUrls((prev) => prev.filter((url) => url !== urlToDelete));
-    setLocalVariants((prev) =>
-      prev.map((v) => (v.mediaUrl === urlToDelete ? { ...v, mediaUrl: null } : v))
-    );
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach(sku => {
+        if (next[sku].mediaUrl === urlToDelete) next[sku] = { ...next[sku], mediaUrl: null };
+      });
+      return next;
+    });
     setSelectedImageUrls((prev) => {
       const next = new Set(prev);
       next.delete(urlToDelete);
@@ -195,14 +201,15 @@ export function PreCreationMediaManager({
   const handleBulkDelete = useCallback(() => {
     const urlsToKeep = imageUrls.filter((url) => !selectedImageUrls.has(url));
     setImageUrls(urlsToKeep);
-    setLocalVariants((prev) =>
-      prev.map((v) => {
-        if (v.mediaUrl && selectedImageUrls.has(v.mediaUrl)) {
-          return { ...v, mediaUrl: null };
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach(sku => {
+        if (next[sku].mediaUrl && selectedImageUrls.has(next[sku].mediaUrl!)) {
+          next[sku] = { ...next[sku], mediaUrl: null };
         }
-        return v;
-      })
-    );
+      });
+      return next;
+    });
     setRevision((r) => r + 1);
     toast({
       title: 'Images Removed',
@@ -214,9 +221,13 @@ export function PreCreationMediaManager({
   const handleMergeImages = useCallback(() => {
     if (!mergingImageUrl || !masterImageUrl) return;
 
-    setLocalVariants((prev) =>
-      prev.map((v) => (v.mediaUrl === mergingImageUrl ? { ...v, mediaUrl: masterImageUrl } : v))
-    );
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach(sku => {
+        if (next[sku].mediaUrl === mergingImageUrl) next[sku] = { ...next[sku], mediaUrl: masterImageUrl };
+      });
+      return next;
+    });
     setImageUrls((prev) => prev.filter((url) => url !== mergingImageUrl));
 
     // Update selection if needed
@@ -238,25 +249,33 @@ export function PreCreationMediaManager({
   }, [mergingImageUrl, masterImageUrl, toast]);
 
   const handleAssignImage = useCallback((sku: string, url: string | null) => {
-    setLocalVariants((prev) => prev.map((v) => (v.sku === sku ? { ...v, mediaUrl: url } : v)));
+    setLocalVariants((prev) => ({ ...prev, [sku]: { ...prev[sku], mediaUrl: url } }));
     setRevision((r) => r + 1);
   }, []);
 
   const handleAssignToAll = useCallback((url: string) => {
-    setLocalVariants((prev) => prev.map((v) => ({ ...v, mediaUrl: url })));
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach(sku => { next[sku] = { ...next[sku], mediaUrl: url }; });
+      return next;
+    });
     setRevision((r) => r + 1);
     toast({
       title: 'Assigned to All',
-      description: `Image assigned to all ${localVariants.length} variants.`,
+      description: `Image assigned to all ${Object.keys(localVariants).length} variants.`,
     });
-  }, [localVariants.length, toast]);
+  }, [localVariants, toast]);
 
   const handleAssignToSelection = useCallback((url: string) => {
     if (selectedVariantSkus.size === 0) return;
 
-    setLocalVariants((prev) =>
-      prev.map((v) => (selectedVariantSkus.has(v.sku) ? { ...v, mediaUrl: url } : v))
-    );
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      selectedVariantSkus.forEach(sku => {
+        if (next[sku]) next[sku] = { ...next[sku], mediaUrl: url };
+      });
+      return next;
+    });
     setRevision((r) => r + 1);
     toast({
       title: 'Success!',
@@ -275,7 +294,7 @@ export function PreCreationMediaManager({
 
   const selectAllVariants = (checked: boolean) => {
     if (checked) {
-      setSelectedVariantSkus(new Set(localVariants.map((v) => v.sku)));
+      setSelectedVariantSkus(new Set(Object.keys(localVariants)));
     } else {
       setSelectedVariantSkus(new Set());
     }
@@ -289,7 +308,7 @@ export function PreCreationMediaManager({
 
     if (!optionKey) return;
 
-    const matchingSkus = localVariants
+    const matchingSkus = Object.values(localVariants)
       .filter((v) => v[optionKey!] === value)
       .map((v) => v.sku);
 
@@ -342,10 +361,11 @@ export function PreCreationMediaManager({
       return;
     }
 
-    let variantsToUpdate: Product[] = [];
+    const localVariantsList = Object.values(localVariants);
+    let skusToUpdate: string[] = [];
 
     if (bulkAssignOption === 'All Variants') {
-      variantsToUpdate = [...localVariants];
+      skusToUpdate = Object.keys(localVariants);
     } else {
       if (!bulkAssignValue) {
         toast({
@@ -363,10 +383,10 @@ export function PreCreationMediaManager({
 
       if (!optionKey) return;
 
-      variantsToUpdate = localVariants.filter((v) => v[optionKey] === bulkAssignValue);
+      skusToUpdate = localVariantsList.filter((v) => v[optionKey!] === bulkAssignValue).map(v => v.sku);
     }
 
-    if (variantsToUpdate.length === 0) {
+    if (skusToUpdate.length === 0) {
       toast({
         title: 'No variants found',
         description: 'No variants match the selected criteria.',
@@ -375,20 +395,19 @@ export function PreCreationMediaManager({
       return;
     }
 
-    setLocalVariants((prev) =>
-      prev.map((v) => {
-        if (variantsToUpdate.some((vtu) => vtu.sku === v.sku)) {
-          return { ...v, mediaUrl: bulkAssignImageUrl };
-        }
-        return v;
-      })
-    );
+    setLocalVariants((prev) => {
+      const next = { ...prev };
+      skusToUpdate.forEach(sku => {
+        if (next[sku]) next[sku] = { ...next[sku], mediaUrl: bulkAssignImageUrl };
+      });
+      return next;
+    });
 
     setRevision((r) => r + 1);
     setIsBulkAssignDialogOpen(false);
     toast({
       title: 'Success!',
-      description: `Image assigned to ${variantsToUpdate.length} variants.`,
+      description: `Image assigned to ${skusToUpdate.length} variants.`,
     });
 
     // Reset form
@@ -398,7 +417,7 @@ export function PreCreationMediaManager({
   };
 
   const handleSave = () => {
-    onSave(localVariants, imageUrls);
+    onSave(Object.values(localVariants), imageUrls);
   };
 
   if (variants.length === 0) {
@@ -740,7 +759,7 @@ export function PreCreationMediaManager({
                     id="select-all-vars"
                     className="h-4 w-4 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     onCheckedChange={(checked) => selectAllVariants(!!checked)}
-                    checked={localVariants.length > 0 && selectedVariantSkus.size === localVariants.length}
+                    checked={Object.keys(localVariants).length > 0 && selectedVariantSkus.size === Object.keys(localVariants).length}
                   />
                   <Label htmlFor="select-all-vars" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">
                     Selection ({selectedVariantSkus.size})
@@ -784,7 +803,7 @@ export function PreCreationMediaManager({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {localVariants.map((variant) => {
+                  {Object.values(localVariants).map((variant) => {
                     const isSelected = selectedVariantSkus.has(variant.sku);
                     const isFocused = focusedVariantSku === variant.sku;
 
@@ -886,7 +905,7 @@ export function PreCreationMediaManager({
                 <Separator orientation="vertical" className="h-8" />
                 <div className="flex flex-col">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Unassigned</span>
-                  <span className="text-sm font-bold text-orange-500">{localVariants.filter(v => !v.mediaUrl).length} Variants</span>
+                  <span className="text-sm font-bold text-orange-500">{Object.values(localVariants).filter(v => !v.mediaUrl).length} Variants</span>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 text-muted-foreground">

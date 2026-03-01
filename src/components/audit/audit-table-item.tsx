@@ -14,48 +14,52 @@ import { CsvShopifyComparison } from './csv-shopify-comparison';
 import { AuditResult, Product, AuditStatus, MismatchDetail } from '@/lib/types';
 import { CheckCircle2, AlertTriangle, PlusCircle, XCircle, Copy, Link, Trash2, Bot, Check, ChevronDown, ImageIcon, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuditUIStore, useAuditDataStore } from '@/store/audit-store';
+import { useAuditActions } from '@/hooks/use-audit-actions';
 
 interface AuditTableItemProps {
     handle: string;
     items: AuditResult[];
-    filter: string;
-    isSelected: boolean;
     isOnlyVariantNotInCsv: boolean;
     imageCount?: number;
     isLoadingImages: boolean;
-    isFixing: boolean;
-    isAutoRunning: boolean;
-    isAutoCreating: boolean;
     statusConfig: any;
     MISMATCH_FILTER_TYPES: MismatchDetail['field'][];
-
-    // Callbacks
-    handleSelectHandle: (handle: string, checked: boolean) => void;
-    handleDeleteUnlinked: (productId: string) => void;
-    handleBulkFix: (handles?: Set<string>, types?: MismatchDetail['field'][]) => void;
-    handleMarkAsCreated: (handle: string) => void;
-    handleCreate: (item: AuditResult) => void;
-    handleOpenMissingVariantMediaManager: (items: AuditResult[]) => void;
-    handleBulkCreateVariants: (items: AuditResult[]) => void;
-    setEditingMediaFor: (id: string) => void;
-    setEditingMissingMedia: (handle: string) => void;
-    handleFixSingleMismatch: (item: AuditResult, fixType: MismatchDetail['field']) => void;
-    handleMarkAsFixed: (sku: string, fixType: MismatchDetail['field']) => void;
-    handleDeleteVariant: (item: AuditResult) => void;
-    handleDeleteProduct: (item: AuditResult, product?: Product) => void;
-    setFixDialogHandles: (s: Set<string>) => void;
-    setShowFixDialog: (b: boolean) => void;
+    fileName: string;
+    onRefresh: () => void;
 }
 
 const AuditTableItem = React.memo(function AuditTableItem({
-    handle, items, filter, isSelected, isOnlyVariantNotInCsv,
-    imageCount, isLoadingImages, isFixing, isAutoRunning, isAutoCreating,
+    handle, items, isOnlyVariantNotInCsv,
+    imageCount, isLoadingImages,
     statusConfig, MISMATCH_FILTER_TYPES,
-    handleSelectHandle, handleDeleteUnlinked, handleBulkFix, handleMarkAsCreated, handleCreate,
-    handleOpenMissingVariantMediaManager, handleBulkCreateVariants, setEditingMediaFor, setEditingMissingMedia,
-    handleFixSingleMismatch, handleMarkAsFixed, handleDeleteVariant, handleDeleteProduct,
-    setFixDialogHandles, setShowFixDialog
+    fileName, onRefresh
 }: AuditTableItemProps) {
+    // UI Store Selectors
+    const filter = useAuditUIStore((state) => state.filter);
+    const isSelected = useAuditUIStore((state) => state.selectedHandles).has(handle);
+    const toggleHandleSelection = useAuditUIStore((state) => state.toggleHandleSelection);
+    const isFixing = useAuditUIStore((state) => state.isFixing);
+    const isAutoRunning = useAuditUIStore((state) => state.isAutoRunning);
+    const isAutoCreating = useAuditUIStore((state) => state.isAutoCreating);
+    const setShowFixDialog = useAuditUIStore((state) => state.setShowFixDialog);
+    const setEditingMediaFor = useAuditUIStore((state) => state.setEditingMediaFor);
+    const setEditingMissingMedia = useAuditUIStore((state) => state.setEditingMissingMedia);
+    const setEditingMissingVariantMedia = useAuditUIStore((state) => state.setEditingMissingVariantMedia);
+
+    // Actions Hook
+    const {
+        handleDeleteUnlinked,
+        handleBulkFix,
+        handleMarkAsCreated,
+        handleCreate,
+        handleBulkCreateVariants,
+        handleFixSingleMismatch,
+        handleMarkAsFixed,
+        handleDeleteVariant,
+        handleDeleteProduct,
+        setIsAutoRunning, // Reusing for some local toggles if needed
+    } = useAuditActions({ fileName, onRefresh });
 
     if (!items) return null;
 
@@ -94,7 +98,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                         <div className="p-3 pl-4">
                             <Checkbox
                                 checked={isSelected}
-                                onCheckedChange={(checked) => handleSelectHandle(handle, !!checked)}
+                                onCheckedChange={() => toggleHandleSelection(handle)}
                                 aria-label={`Select product ${handle} `}
                                 disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
                             />
@@ -198,8 +202,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                 <DropdownMenuItem
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setFixDialogHandles(new Set([handle]));
-                                        setShowFixDialog(true);
+                                        setShowFixDialog(true, new Set([handle]));
                                     }}
                                 >
                                     Custom Fix...
@@ -251,7 +254,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                 variant="outline"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    handleOpenMissingVariantMediaManager(items);
+                                    setEditingMissingVariantMedia({ parentProductId: items[0].shopifyProducts[0]?.id || '', items });
                                 }}
                             >
                                 <ImageIcon className="mr-2 h-4 w-4" /> Manage Media
