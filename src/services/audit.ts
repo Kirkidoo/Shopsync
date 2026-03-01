@@ -4,6 +4,21 @@ import { parseCsvFromStream } from './csv';
 import { getShopifyProductsBySku, getShopifyProductsByTag } from '@/lib/shopify';
 import { logger } from '@/lib/logger';
 
+/**
+ * Robustly parses a price value (string, number, null, undefined) to a rounded float.
+ * This ensures that comparisons between "389.95" and 389.95 always succeed.
+ */
+function safeParsePrice(val: any): number | null {
+  if (val === null || val === undefined || val === '') return null;
+  const num = parseFloat(val);
+  if (isNaN(num)) return null;
+  // Round to 2 decimals to avoid float precision issues
+  return Math.round(num * 100) / 100;
+}
+
+/**
+ * Checks for mismatches between a CSV product and its Shopify counterpart.
+ */
 export function findMismatches(
   csvProduct: Product,
   shopifyProduct: Product,
@@ -12,9 +27,11 @@ export function findMismatches(
 ): MismatchDetail[] {
   const mismatches: MismatchDetail[] = [];
 
-  // Mismatch Logic
   // 1. Price
-  if (csvProduct.price !== shopifyProduct.price) {
+  const csvPrice = safeParsePrice(csvProduct.price);
+  const shopifyPrice = safeParsePrice(shopifyProduct.price);
+
+  if (csvPrice !== shopifyPrice) {
     mismatches.push({
       field: 'price',
       csvValue: csvProduct.price,
@@ -24,9 +41,12 @@ export function findMismatches(
 
   // 1.5 Compare At Price
   const isClearanceFile = csvFileName.toLowerCase().includes('clearance');
+  const csvCompareAt = safeParsePrice(csvProduct.compareAtPrice);
+  const shopifyCompareAt = safeParsePrice(shopifyProduct.compareAtPrice);
+
   if (isClearanceFile) {
     // Standard comparison for clearance files
-    if (csvProduct.compareAtPrice !== shopifyProduct.compareAtPrice) {
+    if (csvCompareAt !== shopifyCompareAt) {
       mismatches.push({
         field: 'compare_at_price',
         csvValue: csvProduct.compareAtPrice,
@@ -35,10 +55,11 @@ export function findMismatches(
     }
   } else {
     // Non-clearance files: Check for "Sticky Sale" (On sale when it shouldn't be)
-    // Rule: Compare at price should be NULL or equal to Price.
+    // Rule: Compare at price should be EMPTY/NULL or equal to Price.
+
     const isEffectiveSale =
-      shopifyProduct.compareAtPrice !== null &&
-      shopifyProduct.compareAtPrice !== shopifyProduct.price;
+      shopifyCompareAt !== null &&
+      shopifyCompareAt !== shopifyPrice;
 
     if (isEffectiveSale) {
       mismatches.push({
@@ -104,7 +125,7 @@ export function findMismatches(
   // 4. Clearance Logic
   else if (csvFileName.toLowerCase().includes('clearance')) {
     // Exception: compare_at_price == price -> Not clearance
-    if (csvProduct.compareAtPrice !== null && csvProduct.price === csvProduct.compareAtPrice) {
+    if (csvCompareAt !== null && csvPrice === csvCompareAt) {
       if (isUseParentClearanceOverride) {
         // This variant has no discount, BUT a sibling variant does.
         // So we ALLOW the parent to have 'clearance' template/tag.
@@ -311,11 +332,19 @@ export async function runAuditComparison(
       // If ANY sibling (including self) has a valid discount (price < compareAt),
       // then the parent is legitimately "Clearance".
       const hasDiscountedCsvVariant = csvSiblings.some(
-        (sib) => sib.compareAtPrice !== null && sib.price < sib.compareAtPrice
+        (sib) => {
+          const p = safeParsePrice(sib.price);
+          const cp = safeParsePrice(sib.compareAtPrice);
+          return cp !== null && p !== null && p < cp;
+        }
       );
 
       const hasDiscountedShopifyVariant = shopifySiblings.some(
-        (sib) => sib.compareAtPrice !== null && sib.price < sib.compareAtPrice
+        (sib) => {
+          const p = safeParsePrice(sib.price);
+          const cp = safeParsePrice(sib.compareAtPrice);
+          return cp !== null && p !== null && p < cp;
+        }
       );
 
       if (hasDiscountedCsvVariant || hasDiscountedShopifyVariant) {

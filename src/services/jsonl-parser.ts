@@ -154,9 +154,10 @@ export async function* parseJsonlGenerator(
                 if (!parent) continue;
 
                 const variantId = obj.id;
-                if (!variantId || !inventoryMap.has(variantId)) continue;
+                if (!variantId) continue;
 
-                yield variantToProduct(obj, parentId, parent, inventoryMap.get(variantId)!);
+                const inventory = inventoryMap.get(variantId) || 0;
+                yield variantToProduct(obj, parentId, parent, inventory);
             }
         } catch (e) {
             logger.error('Error parsing JSONL line:', e);
@@ -202,9 +203,10 @@ export async function parseJsonlWithAllSkus(
                 if (!parent) continue;
 
                 const variantId = obj.id;
-                if (!variantId || !inventoryMap.has(variantId)) continue;
+                if (!variantId) continue;
 
-                products.push(variantToProduct(obj, parentId, parent, inventoryMap.get(variantId)!));
+                const inventory = inventoryMap.get(variantId) || 0;
+                products.push(variantToProduct(obj, parentId, parent, inventory));
             }
         } catch (e) {
             logger.error('Error parsing JSONL line:', e);

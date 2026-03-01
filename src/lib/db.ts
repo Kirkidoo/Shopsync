@@ -31,6 +31,9 @@ db.exec(`
 export async function seedDatabaseFromJsonl(filePath: string, locationId?: number) {
     const { products, allSkusInShopify } = await parseJsonlWithAllSkus(filePath, locationId);
 
+    // Clear existing products to ensure a clean sync for "Full Fresh Sync"
+    db.prepare('DELETE FROM products').run();
+
     const insert = db.prepare('INSERT OR REPLACE INTO products (variantId, data) VALUES (?, ?)');
 
     const insertMany = db.transaction((productsToInsert: Product[]) => {
@@ -95,6 +98,14 @@ export function getLastSyncDate(): string | null {
  */
 export function setLastSyncDate(dateStr: string) {
     upsertMetadata('lastSyncDate', dateStr);
+}
+
+/**
+ * Checks if the database is populated with products.
+ */
+export function isDatabasePopulated(): boolean {
+    const row = db.prepare('SELECT COUNT(*) as count FROM products').get() as { count: number };
+    return row.count > 0;
 }
 
 /**

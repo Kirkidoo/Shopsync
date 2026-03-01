@@ -19,15 +19,16 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function _fixSingleMismatch(
     fixType: MismatchDetail['field'],
-    csvProduct: Product,
+    csvProduct: Product | undefined,
     shopifyProduct: Product,
     targetValue?: string | number | null
 ): Promise<{ success: boolean; message: string }> {
-    logger.info(`Attempting to fix '${fixType}' for SKU: ${csvProduct.sku}`);
-    await log('INFO', `Attempting to fix '${fixType}' for SKU: ${csvProduct.sku}`);
+    const sku = csvProduct?.sku || shopifyProduct.sku;
+    logger.info(`Attempting to fix '${fixType}' for SKU: ${sku}`);
+    await log('INFO', `Attempting to fix '${fixType}' for SKU: ${sku}`);
 
     const fixPayload: Product = {
-        ...csvProduct,
+        ...(csvProduct || shopifyProduct),
         id: shopifyProduct.id,
         variantId: shopifyProduct.variantId,
         inventoryItemId: shopifyProduct.inventoryItemId,
@@ -37,15 +38,15 @@ async function _fixSingleMismatch(
     try {
         switch (fixType) {
             case 'price':
-                if (fixPayload.variantId) {
-                    await updateProductVariant(fixPayload.variantId, { price: csvProduct.price });
+                if (fixPayload.variantId && csvProduct) {
+                    await updateProductVariant(fixPayload.id, fixPayload.variantId, { price: csvProduct.price });
                 }
                 break;
             case 'compare_at_price':
                 if (fixPayload.variantId) {
                     // For "Sticky Sale" (compare_at_price mismatch), the fix is to remove the sale
                     // by setting compare_at_price to null.
-                    await updateProductVariant(fixPayload.variantId, { compare_at_price: null });
+                    await updateProductVariant(fixPayload.id, fixPayload.variantId, { compare_at_price: null });
                 }
                 break;
             case 'missing_clearance_tag':
@@ -82,15 +83,15 @@ async function _fixSingleMismatch(
             case 'duplicate_handle':
                 return {
                     success: true,
-                    message: `SKU ${csvProduct.sku} is a warning, no server action taken.`,
+                    message: `SKU ${sku} is a warning, no server action taken.`,
                 };
         }
-        await log('SUCCESS', `Successfully fixed ${fixType} for ${csvProduct.sku}`);
-        return { success: true, message: `Successfully fixed ${fixType} for ${csvProduct.sku}` };
+        await log('SUCCESS', `Successfully fixed ${fixType} for ${sku}`);
+        return { success: true, message: `Successfully fixed ${fixType} for ${sku}` };
     } catch (error) {
         const message = getErrorMessage(error);
-        logger.error(`Failed to fix ${fixType} for SKU ${csvProduct.sku}:`, error);
-        await log('ERROR', `Failed to fix ${fixType} for SKU ${csvProduct.sku}: ${message}`);
+        logger.error(`Failed to fix ${fixType} for SKU ${sku}:`, error);
+        await log('ERROR', `Failed to fix ${fixType} for SKU ${sku}: ${message}`);
         return { success: false, message };
     }
 }
@@ -139,44 +140,35 @@ export async function fixMultipleMismatches(
             await sleep(1000);
 
             const productId = productItems[0].shopifyProducts[0].id;
-            const fixPromises: Promise<{
-                sku: string;
-                field: MismatchDetail['field'];
-                success: boolean;
-                message: string;
-            }>[] = [];
-
             for (const item of productItems) {
                 const csvProduct = item.csvProducts[0];
                 const shopifyProduct = item.shopifyProducts[0];
 
                 for (const mismatch of item.mismatches) {
-                    fixPromises.push(
-                        _fixSingleMismatch(mismatch.field, csvProduct, shopifyProduct, mismatch.csvValue).then(
-                            (result) => ({
-                                sku: item.sku,
-                                field: mismatch.field,
-                                ...result,
-                            })
-                        )
-                    );
-                }
-            }
+                    try {
+                        const result = await _fixSingleMismatch(
+                            mismatch.field,
+                            csvProduct,
+                            shopifyProduct,
+                            mismatch.csvValue
+                        );
 
-            try {
-                const results = await Promise.all(fixPromises);
-                allResults.push(...results);
-                const successfulFixesInBatch = results.filter((r) => r.success).length;
-                fixCount += successfulFixesInBatch;
+                        allResults.push({
+                            sku: item.sku,
+                            field: mismatch.field,
+                            ...result,
+                        });
 
-                if (successfulFixesInBatch < results.length) {
-                    logger.warn(`Some fixes failed for product ID ${productId}`);
+                        if (result.success) {
+                            fixCount++;
+                        }
+                    } catch (error) {
+                        logger.error(
+                            `An error occurred during sequential fix execution for SKU ${item.sku} on product ID ${productId}:`,
+                            error
+                        );
+                    }
                 }
-            } catch (error) {
-                logger.error(
-                    `An error occurred during parallel fix execution for product ID ${productId}:`,
-                    error
-                );
             }
         }
     };

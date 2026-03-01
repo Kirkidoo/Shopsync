@@ -17,7 +17,7 @@ export default function Home() {
         </p>
       </header>
 
-      <main className="w-full max-w-6xl">
+      <main className="w-full max-w-[98%] px-4 xl:px-8">
         <AuditStepper />
       </main>
 

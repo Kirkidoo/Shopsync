@@ -109,7 +109,7 @@ export async function createInShopify(
                     logger.info(
                         ` - Assigning image ID ${imageIdToAssign} to variant ID ${createdVariant.id}...`
                     );
-                    await updateProductVariant(createdVariant.id, { image_id: imageIdToAssign });
+                    await updateProductVariant(productGid, createdVariant.id, { image_id: imageIdToAssign });
                 } else if (sourceVariant.mediaUrl || sourceVariant.imageId) {
                     logger.warn(` - Could not find a matching image for SKU: ${sourceVariant.sku}`);
                 }

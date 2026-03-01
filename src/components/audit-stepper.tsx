@@ -203,7 +203,7 @@ export default function AuditStepper() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
-  const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null } | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<{ lastModified: string | null; isPopulated: boolean } | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isCheckingCache, setIsCheckingCache] = useState(false);
@@ -282,12 +282,12 @@ export default function AuditStepper() {
     const fetchLocations = async () => {
       try {
         const locs = await getAvailableLocations();
-        setLocations(locs);
+        setLocations(locs as any);
         // Restore saved location or default to Gamma
         if (session?.lastLocationId) {
           setSelectedLocationId(session.lastLocationId);
         } else {
-          const gamma = locs.find(l => l.id === 93998154045);
+          const gamma = locs.find(l => l.id.toString() === '93998154045');
           if (gamma) setSelectedLocationId(gamma.id.toString());
           else if (locs.length > 0) setSelectedLocationId(locs[0].id.toString());
         }
@@ -309,7 +309,7 @@ export default function AuditStepper() {
           setCacheStatus(status);
         } catch (error) {
           console.error('Failed to check cache status', error);
-          setCacheStatus({ lastModified: null });
+          setCacheStatus({ lastModified: null, isPopulated: false });
         } finally {
           setIsCheckingCache(false);
         }
@@ -400,6 +400,13 @@ export default function AuditStepper() {
           addLog('Using cached Shopify data...');
           addLog('Running audit comparison on server...');
           result = await runBulkAuditFromCache(csvProducts, selectedCsv, locationId);
+
+          if (result && 'error' in result && result.error) {
+            setErrorMessage(result.error as string);
+            setStep('error');
+            return;
+          }
+
           if (!result) {
             addLog('Cache miss or error. Fetching fresh data...');
             useCache = false; // Force fetch
@@ -802,19 +809,19 @@ export default function AuditStepper() {
                           <Loader2 className="h-3 w-3 animate-spin" />
                           <span>Checking cache availability...</span>
                         </div>
-                      ) : cacheStatus?.lastModified ? (
+                      ) : cacheStatus?.isPopulated ? (
                         <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
-                          Last full sync was {formatDistanceToNow(new Date(cacheStatus.lastModified), { addSuffix: true })}.
+                          Last full sync was {cacheStatus.lastModified ? formatDistanceToNow(new Date(cacheStatus.lastModified), { addSuffix: true }) : 'N/A'}.
                         </span>
                       ) : (
                         <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
-                          No cache found. A Full Fresh Sync is required first.
+                          No local database found. A Full Fresh Sync is required first.
                         </span>
                       )}
                     </div>
                     <Button
                       onClick={() => handleRunBulkAudit(true)}
-                      disabled={isPending || isCheckingCache || !cacheStatus?.lastModified}
+                      disabled={isPending || isCheckingCache || !cacheStatus?.isPopulated}
                       className="w-full mt-auto"
                     >
                       Use Fast Sync

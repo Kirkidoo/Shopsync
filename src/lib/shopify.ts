@@ -577,7 +577,6 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
 
           if (variant && variant.sku && product) {
             let locationInventory = 0;
-            let isAtGamma = false;
             // Gamma Warehouse ID: 93998154045
             const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
             const TARGET_LOCATION_GID = `gid://shopify/Location/${GAMMA_LOCATION_ID}`;
@@ -589,13 +588,10 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
                   if (available) {
                     locationInventory = available.quantity;
                   }
-                  isAtGamma = true;
                   break; // Found the location, no need to continue
                 }
               }
             }
-
-            if (!isAtGamma) continue;
 
             batchProducts.push({
               id: product.id,
@@ -708,20 +704,21 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
           await sleep(250);
           const node = await verifySku(sku);
           if (node && node.product && node.sku) {
-            let isAtGamma = false;
+            let locationInventory = 0;
             const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
             const TARGET_LOCATION_GID = `gid://shopify/Location/${GAMMA_LOCATION_ID}`;
 
             if (node.inventoryItem?.inventoryLevels?.edges) {
               for (const levelEdge of node.inventoryItem.inventoryLevels.edges) {
                 if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
-                  isAtGamma = true;
+                  const available = levelEdge.node.quantities?.find((q: any) => q.name === 'available');
+                  if (available) {
+                    locationInventory = available.quantity;
+                  }
                   break;
                 }
               }
             }
-
-            if (!isAtGamma) continue;
 
             const product = node.product;
             verifiedProducts.push({
@@ -732,7 +729,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
               sku: node.sku,
               name: product.title,
               price: parseFloat(node.price),
-              inventory: node.inventoryQuantity || 0,
+              inventory: locationInventory,
               descriptionHtml: product.bodyHtml || null,
               productType: null,
               vendor: null,
@@ -884,7 +881,7 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
           seenSkus.add(variant.sku.toLowerCase());
 
           let locationInventory = 0;
-          let isAtLocation = false;
+          // let isAtLocation = false; // No longer needed as we include 0 inventory
           const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
           const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
 
@@ -895,13 +892,13 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
                 if (available) {
                   locationInventory = available.quantity;
                 }
-                isAtLocation = true;
+                // isAtLocation = true; // No longer needed
                 break;
               }
             }
           }
 
-          if (!isAtLocation) continue;
+          // if (!isAtLocation) continue; // Removed to include variants with 0 inventory at location
 
           allProducts.push({
             id: product.id,
@@ -964,14 +961,18 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
 /**
  * Fetches Shopify products updated since the given lastSyncDate.
  */
-export async function syncUpdatedProducts(lastSyncDate: string, locationId?: number): Promise<Product[]> {
+export async function syncUpdatedProducts(
+  lastSyncDate: string,
+  locationId?: number,
+  abortThreshold: number = 2000
+): Promise<Product[]> {
   const shopifyClient = getShopifyGraphQLClient();
   const allProducts: Product[] = [];
   const query = `updated_at:>='${lastSyncDate}'`;
   let cursor: string | null = null;
   let hasNextPage = true;
 
-  logger.info(`Starting incremental sync for products updated since ${lastSyncDate}`);
+  logger.info(`Starting incremental sync for products updated since ${lastSyncDate} (Threshold: ${abortThreshold})`);
 
   while (hasNextPage) {
     try {
@@ -993,7 +994,6 @@ export async function syncUpdatedProducts(lastSyncDate: string, locationId?: num
           const variant = variantEdge.node;
 
           let locationInventory = 0;
-          let isAtLocation = false;
           const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
           const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
 
@@ -1004,13 +1004,10 @@ export async function syncUpdatedProducts(lastSyncDate: string, locationId?: num
                 if (available) {
                   locationInventory = available.quantity;
                 }
-                isAtLocation = true;
                 break;
               }
             }
           }
-
-          if (!isAtLocation) continue;
 
           allProducts.push({
             id: productNode.id,
@@ -1050,10 +1047,19 @@ export async function syncUpdatedProducts(lastSyncDate: string, locationId?: num
         }
       }
 
+      // Circuit Breaker Check
+      if (allProducts.length > abortThreshold) {
+        logger.warn(`Incremental sync aborted: ${allProducts.length} updates encountered, exceeding threshold of ${abortThreshold}.`);
+        throw new Error('TOO_MANY_UPDATES');
+      }
+
       hasNextPage = parsedResponse.data?.products?.pageInfo.hasNextPage || false;
       cursor = parsedResponse.data?.products?.pageInfo.endCursor || null;
 
     } catch (error) {
+      if (error instanceof Error && error.message === 'TOO_MANY_UPDATES') {
+        throw error;
+      }
       logger.error('Error during incremental sync:', error);
       throw error;
     }
@@ -1191,11 +1197,30 @@ export async function createProduct(
   }
 
   const optionNames: string[] = [];
-  if (firstVariant.option1Name && !isSingleDefaultVariant) optionNames.push(firstVariant.option1Name);
-  if (firstVariant.option2Name) optionNames.push(firstVariant.option2Name);
-  if (firstVariant.option3Name) optionNames.push(firstVariant.option3Name);
+  if (isSingleDefaultVariant) {
+    optionNames.push('Title');
+  } else {
+    if (firstVariant.option1Name) optionNames.push(firstVariant.option1Name);
+    if (firstVariant.option2Name) optionNames.push(firstVariant.option2Name);
+    if (firstVariant.option3Name) optionNames.push(firstVariant.option3Name);
+  }
 
-  const gqlOptions = optionNames.length > 0 ? optionNames : undefined;
+  const gqlOptions = optionNames.length > 0
+    ? optionNames.map(name => {
+      // Collect all unique string values for this option across all variants
+      const values = new Set<string>();
+      if (isSingleDefaultVariant) {
+        values.add('Default Title');
+      } else {
+        for (const p of processedVariants) {
+          if (name === firstVariant.option1Name) values.add(getOptionValue(p.option1Value, p.sku || 'Default')!);
+          if (name === firstVariant.option2Name) values.add(getOptionValue(p.option2Value, 'Default')!);
+          if (name === firstVariant.option3Name) values.add(getOptionValue(p.option3Value, 'Default')!);
+        }
+      }
+      return { name, values: Array.from(values).map(v => ({ name: v })) };
+    })
+    : undefined;
 
   const gqlVariants = processedVariants.map((p: Product) => {
     const variantInput: any = {
@@ -1218,13 +1243,15 @@ export async function createProduct(
       variantInput.inventoryItem.cost = p.costPerItem.toString();
     }
 
-    if (!isSingleDefaultVariant) {
-      const optionValues = [];
-      if (p.option1Name) optionValues.push({ name: p.option1Name, value: getOptionValue(p.option1Value, p.sku) });
-      if (p.option2Name) optionValues.push({ name: p.option2Name, value: getOptionValue(p.option2Value, null) });
-      if (p.option3Name) optionValues.push({ name: p.option3Name, value: getOptionValue(p.option3Value, null) });
-      variantInput.optionValues = optionValues;
+    const optionValues = [];
+    if (isSingleDefaultVariant) {
+      optionValues.push({ optionName: 'Title', name: 'Default Title' });
+    } else {
+      if (firstVariant.option1Name) optionValues.push({ optionName: firstVariant.option1Name, name: getOptionValue(p.option1Value, p.sku || 'Default') });
+      if (firstVariant.option2Name) optionValues.push({ optionName: firstVariant.option2Name, name: getOptionValue(p.option2Value, 'Default') });
+      if (firstVariant.option3Name) optionValues.push({ optionName: firstVariant.option3Name, name: getOptionValue(p.option3Value, 'Default') });
     }
+    variantInput.optionValues = optionValues;
 
     return variantInput;
   });
@@ -1233,7 +1260,7 @@ export async function createProduct(
   const uniqueImageUrls = [...new Set(processedVariants.map((p: Product) => p.mediaUrl).filter(Boolean) as string[])];
   const gqlFiles = uniqueImageUrls.map((url) => ({
     originalSource: url,
-    mediaContentType: "IMAGE"
+    contentType: "IMAGE"
   }));
 
   let tags = firstVariant.tags || '';
@@ -1260,7 +1287,7 @@ export async function createProduct(
     variants: gqlVariants,
   };
 
-  if (gqlOptions) productSetInput.productOptions = gqlOptions.map(name => ({ name, values: [] }));
+  if (gqlOptions) productSetInput.productOptions = gqlOptions;
   if (gqlFiles.length > 0) productSetInput.files = gqlFiles;
   if (templateSuffix) productSetInput.templateSuffix = templateSuffix;
 
@@ -1451,9 +1478,9 @@ export async function updateProduct(
 }
 
 const UPDATE_PRODUCT_VARIANT_MUTATION = `
-  mutation productVariantUpdate($input: ProductVariantInput!) {
-    productVariantUpdate(input: $input) {
-      productVariant {
+  mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+      productVariants {
         id
       }
       userErrors {
@@ -1465,6 +1492,7 @@ const UPDATE_PRODUCT_VARIANT_MUTATION = `
 `;
 
 export async function updateProductVariant(
+  productId: string,
   variantId: string | number,
   input: { image_id?: string | null; price?: number; compare_at_price?: number | null; weight?: number; weight_unit?: 'g' | 'lb' }
 ) {
@@ -1492,16 +1520,19 @@ export async function updateProductVariant(
   try {
     const response = await retryOperation(async () => {
       return await shopifyClient.request(UPDATE_PRODUCT_VARIANT_MUTATION, {
-        variables: { input: payload },
+        variables: {
+          productId: productId.includes('gid://') ? productId : `gid://shopify/Product/${productId}`,
+          variants: [payload]
+        },
       });
     });
 
-    const userErrors = (response as any).data?.productVariantUpdate?.userErrors;
+    const userErrors = (response as any).data?.productVariantsBulkUpdate?.userErrors;
     if (userErrors && userErrors.length > 0) {
-      throw new Error(`GraphQL productVariantUpdate userErrors: ${JSON.stringify(userErrors)}`);
+      throw new Error(`GraphQL productVariantsBulkUpdate userErrors: ${JSON.stringify(userErrors)}`);
     }
 
-    return (response as any).data?.productVariantUpdate?.productVariant;
+    return (response as any).data?.productVariantsBulkUpdate?.productVariants?.[0];
   } catch (error: unknown) {
     console.error('Error updating variant:', error);
     throw new Error(`Failed to update variant`);
@@ -1576,8 +1607,8 @@ export async function deleteProductVariant(productId: string, variantId: string)
 // --- Inventory and Collection Functions ---
 
 const INVENTORY_BULK_TOGGLE_MUTATION = `
-  mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemAdjustments: [InventoryItemAdjustmentInput!]!) {
-    inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemAdjustments: $inventoryItemAdjustments) {
+  mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemUpdates: [InventoryBulkToggleActivationInput!]!) {
+    inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemUpdates: $inventoryItemUpdates) {
       userErrors {
         field
         message
@@ -1598,7 +1629,7 @@ export async function connectInventoryToLocation(inventoryItemId: string, locati
       const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
         variables: {
           inventoryItemId,
-          inventoryItemAdjustments: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: true }]
+          inventoryItemUpdates: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: true }]
         }
       });
       const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;
@@ -1627,7 +1658,7 @@ export async function disconnectInventoryFromLocation(inventoryItemId: string, l
       const response = await shopifyClient.request(INVENTORY_BULK_TOGGLE_MUTATION, {
         variables: {
           inventoryItemId,
-          inventoryItemAdjustments: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: false }]
+          inventoryItemUpdates: [{ locationId: locationId.toString().includes('gid://') ? locationId.toString() : `gid://shopify/Location/${locationId}`, activate: false }]
         }
       });
       const userErrors = (response as any).data?.inventoryBulkToggleActivation?.userErrors;

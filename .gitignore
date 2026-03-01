@@ -48,7 +48,6 @@ firestore-debug.log
 .cache/
 test_output.txt
 shopsync.db*
-.agent/
 CatalogApi.postman_collection.json
 jest_out.txt
 script.js

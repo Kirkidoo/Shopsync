@@ -107,11 +107,12 @@ export async function addImageFromUrl(
 }
 
 export async function assignImageToVariant(
+    productId: string,
     variantId: string,
     imageId: string | null
 ): Promise<{ success: boolean; message: string }> {
     try {
-        await updateProductVariant(variantId, { image_id: imageId });
+        await updateProductVariant(productId, variantId, { image_id: imageId });
         return { success: true, message: 'Image assigned successfully.' };
     } catch (error) {
         return handleActionError(`Failed to assign image ${imageId} to variant ${variantId}`, error);

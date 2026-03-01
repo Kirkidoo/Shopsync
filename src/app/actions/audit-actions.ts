@@ -11,7 +11,7 @@ import {
     downloadBulkOperationResultToFile,
     syncUpdatedProducts
 } from '@/lib/shopify';
-import fsPromises from 'fs/promises';
+import fs from 'fs';
 import path from 'path';
 import * as csvService from '@/services/csv';
 import * as auditService from '@/services/audit';
@@ -22,7 +22,8 @@ import {
     getAllSkusFromDb,
     getLastSyncDate,
     setLastSyncDate,
-    updateProductsInDb
+    updateProductsInDb,
+    isDatabasePopulated
 } from '@/lib/db';
 
 // ── Cache helpers (private to this module) ──────────────────────────
@@ -33,9 +34,9 @@ const CACHE_INFO_PATH = path.join(CACHE_DIR, 'cache-info.json');
 
 async function ensureCacheDirExists() {
     try {
-        await fsPromises.access(CACHE_DIR);
+        await fs.promises.access(CACHE_DIR);
     } catch {
-        await fsPromises.mkdir(CACHE_DIR, { recursive: true });
+        await fs.promises.mkdir(CACHE_DIR, { recursive: true });
     }
 }
 
@@ -64,10 +65,22 @@ export async function runAudit(
             setLastSyncDate(new Date().toISOString());
         }
     } catch (error) {
+        if (error instanceof Error && error.message === 'TOO_MANY_UPDATES') {
+            return {
+                report: [],
+                summary: {},
+                duplicates: [],
+                error: "Over 2,000 products have been updated since your last sync. Please run a Full Shopify Sync to update your database."
+            } as any;
+        }
         logger.error('Incremental sync failed during runAudit, proceeding with existing data', error);
     }
 
     // 3. Get all products from DB for audit
+    if (!isDatabasePopulated()) {
+        throw new Error('No local database found. Please run a Full Shopify Sync first.');
+    }
+
     const shopifyProducts = getProductsFromDb();
     const allSkusInShopify = getAllSkusFromDb();
 
@@ -80,8 +93,11 @@ export async function runAudit(
     );
 }
 
-export async function checkBulkCacheStatus(): Promise<{ lastModified: string | null }> {
-    return { lastModified: getLastSyncDate() };
+export async function checkBulkCacheStatus(): Promise<{ lastModified: string | null; isPopulated: boolean }> {
+    return {
+        lastModified: getLastSyncDate(),
+        isPopulated: isDatabasePopulated()
+    };
 }
 
 export async function getCsvProducts(
@@ -202,6 +218,10 @@ export async function runBulkAuditFromCache(
         }
 
         // 2. Get data from DB
+        if (!isDatabasePopulated()) {
+            throw new Error('No local database found. Please run a Full Shopify Sync first.');
+        }
+
         const shopifyProducts = getProductsFromDb();
         const allSkusInShopify = getAllSkusFromDb();
 
@@ -215,6 +235,14 @@ export async function runBulkAuditFromCache(
             allSkusInShopify
         );
     } catch (error) {
+        if (error instanceof Error && error.message === 'TOO_MANY_UPDATES') {
+            return {
+                report: [],
+                summary: {},
+                duplicates: [],
+                error: "Over 2,000 products have been updated since your last sync. Please run a Full Shopify Sync to update your database."
+            } as any;
+        }
         logger.error('Failed to run bulk audit from database', error);
         return null;
     }
@@ -230,6 +258,13 @@ export async function runBulkAuditFromDownload(
     try {
         await downloadBulkOperationResultToFile(resultUrl, CACHE_FILE_PATH);
         await seedDatabaseFromJsonl(CACHE_FILE_PATH, locationId);
+
+        // Cleanup: remove the large JSONL file after it's been seeded into the DB
+        try {
+            await fs.promises.unlink(CACHE_FILE_PATH);
+        } catch (e) {
+            logger.warn(`Failed to cleanup bulk export file: ${CACHE_FILE_PATH}`, e);
+        }
 
         const shopifyProducts = getProductsFromDb();
         const allSkusInShopify = getAllSkusFromDb();

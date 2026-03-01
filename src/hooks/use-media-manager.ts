@@ -35,7 +35,7 @@ export function useAssignImageMutation(productId: string) {
 
     return useMutation({
         mutationFn: async ({ variantId, imageId }: { variantId: string; imageId: string | null }) => {
-            const result = await assignImageToVariant(variantId, imageId);
+            const result = await assignImageToVariant(productId, variantId, imageId);
             if (!result.success) throw new Error(result.message);
             return result;
         },

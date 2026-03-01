@@ -1133,7 +1133,28 @@ export default function AuditReport({
 
   );
 
-  // Selection-based derivations moved to useAuditData
+  const availableTypesForSelection = useMemo(() => {
+    const targetHandles = fixDialogHandles || selectedHandles;
+    if (targetHandles.size === 0) return new Set<MismatchDetail['field']>();
+
+    const types = new Set<MismatchDetail['field']>();
+    Array.from(targetHandles).forEach((handle) => {
+      const items = groupedByHandle[handle] || [];
+      items.forEach((item) => {
+        item.mismatches.forEach((m) => {
+          // Only include fixable types (per original MISMATCH_FILTER_TYPES minus excludes)
+          if (
+            m.field !== 'duplicate_in_shopify' &&
+            m.field !== 'heavy_product_flag' &&
+            MISMATCH_FILTER_TYPES.includes(m.field)
+          ) {
+            types.add(m.field);
+          }
+        });
+      });
+    });
+    return types;
+  }, [fixDialogHandles, selectedHandles, groupedByHandle]);
 
   return (
     <>
@@ -1381,7 +1402,7 @@ export default function AuditReport({
             handleBulkFix(fixDialogHandles || selectedHandles, types);
             setShowFixDialog(false, null);
           }}
-          availableTypes={new Set(MISMATCH_FILTER_TYPES)}
+          availableTypes={availableTypesForSelection}
         />
       )}
     </>

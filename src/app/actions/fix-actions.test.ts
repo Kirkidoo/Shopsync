@@ -91,6 +91,6 @@ describe('fixMultipleMismatches - compare_at_price', () => {
         const result = await fixMultipleMismatches([mockAuditResult], ['compare_at_price']);
 
         expect(result.success).toBe(true);
-        expect(updateProductVariant).toHaveBeenCalledWith(12345, { compare_at_price: null });
+        expect(updateProductVariant).toHaveBeenCalledWith('gid://shopify/Product/1', 'gid://shopify/ProductVariant/12345', { compare_at_price: null });
     });
 });
