@@ -346,7 +346,6 @@ const ProductDetails = ({ product }: { product: Product | null }) => {
 };
 const MISMATCH_FILTER_TYPES: MismatchDetail['field'][] = [
   'price',
-  'inventory',
   'missing_clearance_tag',
   'stale_clearance_tag',
   'incorrect_template_suffix',

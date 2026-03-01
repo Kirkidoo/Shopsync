@@ -40,7 +40,6 @@ export type AuditStatus =
 export interface MismatchDetail {
   field:
   | 'price'
-  | 'inventory'
   | 'missing_in_shopify'
   | 'duplicate_in_shopify'
   | 'duplicate_handle'

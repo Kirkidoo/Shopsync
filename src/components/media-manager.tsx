@@ -508,6 +508,36 @@ export function MediaManager({
     return unlinkedImages.every((img) => selectedImageIds.has(img.id));
   }, [unlinkedImages, selectedImageIds]);
 
+  const handleSaveData = () => { if (isMissingVariantMode && onSaveMissingVariant) onSaveMissingVariant(Object.values(localMissingVariants)); };
+  const productTitle = isMissingVariantMode ? (missingVariants[0]?.name || 'New Product') : (variants[0]?.name || 'Product Media');
+
+  const parentRef = useRef<HTMLDivElement>(null);
+  const variantParentRef = useRef<HTMLDivElement>(null);
+
+  const filteredImages = useMemo(() =>
+    allImages.filter(img => !gallerySearch || img.src.toLowerCase().includes(gallerySearch.toLowerCase()) || img.id.includes(gallerySearch)),
+    [allImages, gallerySearch]
+  );
+
+  const columns = 2; // Fixed to simplify grid virtualization, or can be dynamic based on width
+  const rowCount = Math.ceil((filteredImages.length + 1) / columns);
+
+  const variantList = isMissingVariantMode ? Object.values(localMissingVariants) : (variants as Product[]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 200,
+    overscan: 5,
+  });
+
+  const variantVirtualizer = useVirtualizer({
+    count: variantList.length,
+    getScrollElement: () => variantParentRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+  });
+
   if (isLoading && images.length === 0) {
     return (
       <div className="flex h-[80vh] items-center justify-center bg-background/50 backdrop-blur-xl -m-6 rounded-lg">
@@ -529,35 +559,6 @@ export function MediaManager({
       </div>
     );
   }
-
-  const handleSaveData = () => { if (isMissingVariantMode && onSaveMissingVariant) onSaveMissingVariant(Object.values(localMissingVariants)); };
-  const productTitle = isMissingVariantMode ? (missingVariants[0]?.name || 'New Product') : (variants[0]?.name || 'Product Media');
-
-  const parentRef = useRef<HTMLDivElement>(null);
-  const variantParentRef = useRef<HTMLDivElement>(null);
-
-  const filteredImages = useMemo(() =>
-    allImages.filter(img => !gallerySearch || img.src.toLowerCase().includes(gallerySearch.toLowerCase()) || img.id.includes(gallerySearch)),
-    [allImages, gallerySearch]
-  );
-
-  const columns = 2; // Fixed to simplify grid virtualization, or can be dynamic based on width
-  const rowCount = Math.ceil((filteredImages.length + 1) / columns);
-
-  const rowVirtualizer = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 200,
-    overscan: 5,
-  });
-
-  const variantList = isMissingVariantMode ? Object.values(localMissingVariants) : (variants as Product[]);
-  const variantVirtualizer = useVirtualizer({
-    count: variantList.length,
-    getScrollElement: () => variantParentRef.current,
-    estimateSize: () => 64,
-    overscan: 10,
-  });
 
   return (
     <TooltipProvider>

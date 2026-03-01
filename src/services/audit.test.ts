@@ -61,16 +61,6 @@ describe('Audit Service', () => {
     expect(result.report[0].mismatches).toContainEqual(expect.objectContaining({ field: 'price' }));
   });
 
-  it('should identify a mismatch in inventory', async () => {
-    const modifiedShopifyProduct = { ...mockShopifyProduct, inventory: 5 };
-    const result = await runAuditComparison([mockCsvProduct], [modifiedShopifyProduct], 'test.csv');
-
-    expect(result.summary.mismatched).toBe(1);
-    expect(result.report[0].status).toBe('mismatched');
-    expect(result.report[0].mismatches).toContainEqual(
-      expect.objectContaining({ field: 'inventory' })
-    );
-  });
 
   it('should identify missing in Shopify', async () => {
     const result = await runAuditComparison([mockCsvProduct], [], 'test.csv');

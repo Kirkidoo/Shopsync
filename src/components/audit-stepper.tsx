@@ -12,7 +12,6 @@ import { logger } from '@/lib/logger';
 import {
   connectToFtp,
   listCsvFiles,
-  runAudit,
   checkBulkCacheStatus,
   getCsvProducts,
   startBulkOperation,
@@ -373,49 +372,7 @@ export default function AuditStepper() {
     setActivityLog((prev: string[]) => [...prev, `[${ts}] ${message}`]);
   };
 
-  const handleRunStandardAudit = () => {
-    if (!selectedCsv) {
-      toast({
-        title: 'No File Selected',
-        description: 'Please select a CSV file to start.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setStep('auditing');
-    setActivityLog([]);
-    addLog('Starting standard audit...');
 
-    startTransition(async () => {
-      try {
-        const values = ftpForm.getValues();
-        const ftpData = new FormData();
-        ftpData.append('host', values.host);
-        ftpData.append('username', values.username);
-        ftpData.append('password', values.password);
-
-        addLog(`Downloading and parsing ${selectedCsv}...`);
-        const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
-        const result = await runAudit(selectedCsv, ftpData, locationId);
-
-        if (!result || !result.report || !result.summary || !result.duplicates) {
-          throw new Error('An unexpected response was received from the server.');
-        }
-
-        addLog('Audit complete!');
-        setAuditData(result);
-        cacheAudit({ ...result, fileName: selectedCsv, cachedAt: new Date().toISOString() });
-        setTimeout(() => setStep('report'), 500);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'An unexpected response was received from the server during the audit.';
-        setErrorMessage(message);
-        setStep('error');
-      }
-    });
-  };
 
   const handleRunBulkAudit = (useCache: boolean) => {
     setStep('auditing');
@@ -821,84 +778,68 @@ export default function AuditStepper() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
                   <Database className="h-5 w-5" />
-                  Choose Audit Method
+                  Shopify Data Synchronization
                 </CardTitle>
                 <CardDescription>
-                  Select how you want to compare the CSV against Shopify.
+                  Choose how you want to load Shopify data for this audit.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid gap-6 md:grid-cols-2">
-                  {/* Option 1: Bulk / Cache */}
-                  <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
+                  {/* Card 1: Fast Sync */}
+                  <div className={cn(
+                    "flex flex-col space-y-4 rounded-lg border p-4 transition-colors",
+                    (!cacheStatus?.lastModified && !isCheckingCache) ? "opacity-50 grayscale bg-muted/50" : "hover:bg-accent/5"
+                  )}>
                     <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Database className="h-4 w-4 text-blue-500" />
-                      Bulk Audit (Recommended)
+                      <Zap className="h-4 w-4 text-blue-500" />
+                      Use Fast Sync (Recommended)
                     </div>
-                    <div className="text-sm text-muted-foreground min-h-[40px]">
+                    <div className="text-sm text-muted-foreground min-h-[60px] flex-grow">
+                      Instantly audits your CSV using the previously downloaded Shopify catalog. It automatically checks for minor updates.
                       {isCheckingCache ? (
-                        <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="mt-2 flex items-center gap-2 text-muted-foreground">
                           <Loader2 className="h-3 w-3 animate-spin" />
                           <span>Checking cache availability...</span>
                         </div>
+                      ) : cacheStatus?.lastModified ? (
+                        <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
+                          Last full sync was {formatDistanceToNow(new Date(cacheStatus.lastModified), { addSuffix: true })}.
+                        </span>
                       ) : (
-                        <>
-                          Uses Shopify&apos;s Bulk API. Best for large files and 100% accuracy.
-                          {cacheStatus?.lastModified ? (
-                            <span className="mt-2 block font-medium text-green-600 dark:text-green-400">
-                              Cache available from{' '}
-                              {formatDistanceToNow(new Date(cacheStatus.lastModified), {
-                                addSuffix: true,
-                              })}
-                              .
-                            </span>
-                          ) : (
-                            <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
-                              No cache found. Will start a new export (takes time).
-                            </span>
-                          )}
-                        </>
+                        <span className="mt-2 block font-medium text-orange-600 dark:text-orange-400">
+                          No cache found. A Full Fresh Sync is required first.
+                        </span>
                       )}
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        onClick={() => handleRunBulkAudit(true)}
-                        disabled={isPending || !cacheStatus?.lastModified || isCheckingCache}
-                        variant={cacheStatus?.lastModified ? 'default' : 'secondary'}
-                        className="w-full"
-                      >
-                        Use Cached Data
-                      </Button>
-                      <Button
-                        onClick={() => handleRunBulkAudit(false)}
-                        disabled={isPending || isCheckingCache}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        Start New Bulk Export
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => handleRunBulkAudit(true)}
+                      disabled={isPending || isCheckingCache || !cacheStatus?.lastModified}
+                      className="w-full mt-auto"
+                    >
+                      Use Fast Sync
+                    </Button>
                   </div>
 
-                  {/* Option 2: Live Audit */}
-                  <div className="space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
+                  {/* Card 2: Full Fresh Sync */}
+                  <div className="flex flex-col space-y-4 rounded-lg border p-4 transition-colors hover:bg-accent/5">
                     <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Server className="h-4 w-4 text-green-500" />
-                      Live Audit
+                      <Database className="h-4 w-4 text-green-500" />
+                      Full Fresh Sync
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Queries Shopify in real-time. Good for small files or quick checks.
-                      <span className="mt-2 block text-muted-foreground">
-                        Now includes verification step to prevent false positives.
+                    <div className="text-sm text-muted-foreground min-h-[60px] flex-grow">
+                      Triggers a completely new Bulk Export from Shopify. This guarantees 100% accuracy but can take a few minutes depending on your catalog size.
+                      <span className="mt-2 block">
+                        Use this if you have recently made massive changes to your Shopify store.
                       </span>
-                    </p>
+                    </div>
                     <Button
-                      onClick={handleRunStandardAudit}
-                      disabled={isPending}
-                      variant="secondary"
-                      className="mt-auto w-full"
+                      onClick={() => handleRunBulkAudit(false)}
+                      disabled={isPending || isCheckingCache}
+                      variant="outline"
+                      className="w-full mt-auto"
                     >
-                      Run Live Audit
+                      Start Full Sync
                     </Button>
                   </div>
                 </div>

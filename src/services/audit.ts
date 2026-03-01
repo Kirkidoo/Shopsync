@@ -49,18 +49,6 @@ export function findMismatches(
     }
   }
 
-  // 2. Inventory
-  if (csvProduct.inventory !== null && csvProduct.inventory !== shopifyProduct.inventory) {
-    const isCappedInventory = csvProduct.inventory > 10 && shopifyProduct.inventory === 10;
-    if (!isCappedInventory) {
-      mismatches.push({
-        field: 'inventory',
-        csvValue: csvProduct.inventory,
-        shopifyValue: shopifyProduct.inventory,
-      });
-    }
-  }
-
   // Tags preprocessing
   const tags = shopifyProduct.tags
     ? shopifyProduct.tags
@@ -311,18 +299,26 @@ export async function runAuditComparison(
   for (const csvProduct of csvProducts) {
     const shopifyVariants = shopifyProductMap.get(csvProduct.sku.toLowerCase());
 
-    // Check for sibling clearance status in CSV
+    // Use CSV handle, or fallback to Shopify's handle to ensure we can find siblings
+    const handleToUse = csvProduct.handle || (shopifyVariants && shopifyVariants.length > 0 ? shopifyVariants[0].handle : null);
+
+    // Check for sibling clearance status in CSV AND Shopify
     let isUseParentClearanceOverride = false;
-    if (csvProduct.handle) {
-      const siblings = csvHandleMap.get(csvProduct.handle) || [];
+    if (handleToUse) {
+      const csvSiblings = csvHandleMap.get(handleToUse) || [];
+      const shopifySiblings = shopifyHandleMap.get(handleToUse) || [];
+
       // If ANY sibling (including self) has a valid discount (price < compareAt),
       // then the parent is legitimately "Clearance".
-      const hasDiscountedVariant = siblings.some(
-        (sib) =>
-          sib.compareAtPrice !== null &&
-          sib.price < sib.compareAtPrice
+      const hasDiscountedCsvVariant = csvSiblings.some(
+        (sib) => sib.compareAtPrice !== null && sib.price < sib.compareAtPrice
       );
-      if (hasDiscountedVariant) {
+
+      const hasDiscountedShopifyVariant = shopifySiblings.some(
+        (sib) => sib.compareAtPrice !== null && sib.price < sib.compareAtPrice
+      );
+
+      if (hasDiscountedCsvVariant || hasDiscountedShopifyVariant) {
         isUseParentClearanceOverride = true;
       }
     }

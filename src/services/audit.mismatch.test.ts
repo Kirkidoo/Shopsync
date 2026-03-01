@@ -56,12 +56,6 @@ describe('findMismatches', () => {
         expect(result).toContainEqual(expect.objectContaining({ field: 'price', csvValue: 200, shopifyValue: 100 }));
     });
 
-    it('detects inventory mismatch', () => {
-        const csv = createProduct({ inventory: 50 });
-        const shopify = createProduct({ inventory: 40 });
-        const result = findMismatches(csv, shopify, 'regular.csv');
-        expect(result).toContainEqual(expect.objectContaining({ field: 'inventory', csvValue: 50, shopifyValue: 40 }));
-    });
 
     describe('Clearance Logic', () => {
         const filename = 'clearance_update.csv';

@@ -4,7 +4,6 @@ import { Product, AuditResult, MismatchDetail } from '@/lib/types';
 import {
     updateProduct,
     updateProductVariant,
-    inventorySetQuantities,
     addProductTags,
     removeProductTags,
 } from '@/lib/shopify';
@@ -49,16 +48,6 @@ async function _fixSingleMismatch(
                     await updateProductVariant(fixPayload.variantId, { compare_at_price: null });
                 }
                 break;
-            case 'inventory':
-                if (fixPayload.inventoryItemId && fixPayload.inventory !== null) {
-                    await inventorySetQuantities(
-                        fixPayload.inventoryItemId,
-                        fixPayload.inventory,
-                        GAMMA_WAREHOUSE_LOCATION_ID
-                    );
-                }
-                break;
-
             case 'missing_clearance_tag':
                 await addProductTags(fixPayload.id, ['Clearance']);
                 break;
