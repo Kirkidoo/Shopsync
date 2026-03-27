@@ -5,6 +5,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { fetchActivityLogs, clearActivityLogs } from '@/app/actions';
 import { Loader2, Trash2, RefreshCw, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { logger } from '@/lib/logger';
@@ -28,7 +39,7 @@ const getVariant = (level: string) => {
     case 'ERROR':
       return 'destructive';
     case 'SUCCESS':
-      return 'default'; // Greenish usually, or use custom class
+      return 'default';
     case 'WARN':
       return 'secondary';
     default:
@@ -64,9 +75,8 @@ export function ActivityLogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const logsRef = useRef(logs); // Optimization: Store latest logs for polling without stale closures
+  const logsRef = useRef(logs);
 
-  // Keep ref in sync
   useEffect(() => {
     logsRef.current = logs;
   }, [logs]);
@@ -78,16 +88,14 @@ export function ActivityLogViewer() {
         const lastId = isPoll ? logsRef.current[0]?.id : undefined;
         const result = await fetchActivityLogs(lastId);
 
-        if (!result) return; // No changes or null
+        if (!result) return;
 
         if (Array.isArray(result)) {
-          // Full replace
           setLogs(result as LogEntry[]);
         } else if (result && 'method' in result) {
           if (result.method === 'replace') {
             setLogs(result.logs as LogEntry[]);
           } else if (result.method === 'incremental') {
-            // Deduplicate by ID when merging incrementally
             setLogs((prev) => {
               const existingIds = new Set(prev.map(log => log.id));
               const newLogs = (result.logs as LogEntry[]).filter(log => !existingIds.has(log.id));
@@ -101,14 +109,12 @@ export function ActivityLogViewer() {
         if (!isPoll) setLoading(false);
       }
     },
-    [] // Dependencies are intentionally empty or stable; using ref for mutable data
+    []
   );
 
   const handleClearLogs = async () => {
-    if (confirm('Are you sure you want to clear all logs?')) {
-      await clearActivityLogs();
-      setLogs([]);
-    }
+    await clearActivityLogs();
+    setLogs([]);
   };
 
   useEffect(() => {
@@ -136,19 +142,51 @@ export function ActivityLogViewer() {
             {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => loadLogs(false)} disabled={loading}>
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
             Refresh
           </Button>
-          <Button variant="destructive" size="sm" onClick={handleClearLogs}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={loading || logs.length === 0}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all activity logs?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently remove all activity logs from the server.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleClearLogs}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Yes, Clear Logs
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[400px] w-full rounded-md border p-4">
           {logs.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              No logs found.
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Info className="h-8 w-8 opacity-50" />
+              <p>No activity logs found.</p>
             </div>
           ) : (
             <div className="space-y-4">
