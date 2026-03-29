@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Check, CircleDot, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,7 +15,15 @@ interface StepperProps {
     className?: string;
 }
 
-export function Stepper({ steps, currentStepId, onStepClick, className }: StepperProps) {
+/**
+ * Stepper Component
+ *
+ * Optimized with React.memo to prevent unnecessary re-renders.
+ * The Stepper often sits in a layout that re-renders frequently (e.g., due to timers or progress updates in AuditStepper).
+ * Since the steps configuration and current step change much less frequently than the parent's state,
+ * memoization prevents expensive DOM diffing for the list of steps and their icons.
+ */
+export const Stepper = memo(function Stepper({ steps, currentStepId, onStepClick, className }: StepperProps) {
     const currentStepIndex = steps.findIndex((s) => s.id === currentStepId);
 
     return (
@@ -40,7 +49,7 @@ export function Stepper({ steps, currentStepId, onStepClick, className }: Steppe
                                 "group flex flex-col items-center gap-2 bg-background px-2",
                                 isClickable && "cursor-pointer"
                             )}
-                            onClick={() => isClickable && onStepClick(step.id)}
+                            onClick={() => isClickable && onStepClick && onStepClick(step.id)}
                         >
                             <div
                                 className={cn(
@@ -80,4 +89,4 @@ export function Stepper({ steps, currentStepId, onStepClick, className }: Steppe
             </div>
         </div>
     );
-}
+});
