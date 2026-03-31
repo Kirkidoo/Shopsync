@@ -60,7 +60,7 @@ const ActivityLogItem = memo(({ log }: { log: LogEntry }) => {
 
 ActivityLogItem.displayName = 'ActivityLogItem';
 
-export function ActivityLogViewer() {
+const ActivityLogViewerComponent = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -161,4 +161,7 @@ export function ActivityLogViewer() {
       </CardContent>
     </Card>
   );
-}
+};
+
+export const ActivityLogViewer = memo(ActivityLogViewerComponent);
+ActivityLogViewer.displayName = 'ActivityLogViewer';
