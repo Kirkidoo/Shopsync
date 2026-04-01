@@ -9,6 +9,17 @@ import { fetchActivityLogs, clearActivityLogs } from '@/app/actions';
 import { Loader2, Trash2, RefreshCw, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { LogEntry } from '@/lib/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const getIcon = (level: string) => {
   switch (level) {
@@ -64,6 +75,7 @@ export function ActivityLogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [clearing, setClearing] = useState(false);
   const logsRef = useRef(logs); // Optimization: Store latest logs for polling without stale closures
 
   // Keep ref in sync
@@ -105,9 +117,14 @@ export function ActivityLogViewer() {
   );
 
   const handleClearLogs = async () => {
-    if (confirm('Are you sure you want to clear all logs?')) {
+    setClearing(true);
+    try {
       await clearActivityLogs();
       setLogs([]);
+    } catch (error) {
+      logger.error('Failed to clear logs', error);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -138,10 +155,37 @@ export function ActivityLogViewer() {
           <Button variant="ghost" size="sm" onClick={() => loadLogs(false)} disabled={loading}>
             Refresh
           </Button>
-          <Button variant="destructive" size="sm" onClick={handleClearLogs}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={clearing || loading}
+                aria-label="Clear all activity logs"
+              >
+                {clearing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Clear
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all logs?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete all activity logs from the system.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearLogs} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Yes, Clear All
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </CardHeader>
       <CardContent>
