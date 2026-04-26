@@ -1,6 +1,5 @@
 import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Accordion } from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DuplicateAuditTable } from './duplicate-audit-table';
 import { AuditResult, Product, AuditStatus, MismatchDetail } from '@/lib/types';
@@ -124,7 +123,7 @@ export function AuditTable({
                     position: 'relative',
                 }}
             >
-                <Accordion type="single" collapsible className="w-full">
+                <div className="w-full">
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                         const handle = paginatedHandleKeys[virtualRow.index];
                         const items = groupedByHandle[handle];
@@ -146,6 +145,7 @@ export function AuditTable({
                                 key={virtualRow.key}
                                 ref={rowVirtualizer.measureElement}
                                 data-index={virtualRow.index}
+                                className="pb-6"
                                 style={{
                                     position: 'absolute',
                                     top: 0,
@@ -168,7 +168,7 @@ export function AuditTable({
                             </div>
                         );
                     })}
-                </Accordion>
+                </div>
             </div>
         </div>
     );

@@ -1,6 +1,4 @@
 import React from 'react';
-import { AccordionItem, AccordionHeader, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,11 +6,9 @@ import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/comp
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { MismatchDetails } from './mismatch-details';
-import { ProductDetails } from './product-details';
 import { MissingProductDetailsDialog } from './missing-product-details-dialog';
-import { CsvShopifyComparison } from './csv-shopify-comparison';
 import { AuditResult, Product, AuditStatus, MismatchDetail } from '@/lib/types';
-import { CheckCircle2, AlertTriangle, PlusCircle, XCircle, Copy, Link, Trash2, Bot, Check, ChevronDown, ImageIcon, Loader2, X } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, PlusCircle, XCircle, Copy, Link, Trash2, Bot, Check, ChevronDown, ImageIcon, Loader2, X, CornerDownRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuditUIStore, useAuditDataStore } from '@/store/audit-store';
 import { useAuditActions } from '@/hooks/use-audit-actions';
@@ -58,7 +54,6 @@ const AuditTableItem = React.memo(function AuditTableItem({
         handleMarkAsFixed,
         handleDeleteVariant,
         handleDeleteProduct,
-        setIsAutoRunning, // Reusing for some local toggles if needed
     } = useAuditActions({ fileName, onRefresh });
 
     if (!items) return null;
@@ -89,46 +84,66 @@ const AuditTableItem = React.memo(function AuditTableItem({
         isMissing && items.every((i) => i.mismatches.some((m) => m.missingType === 'product'));
     const isMissingVariantCase = isMissing && !isMissingProductCase;
 
+    const getUniqueMismatches = () => {
+        const mismatchNames = new Set<string>();
+        items.forEach((item) => {
+            if (item.status === 'mismatched') {
+                item.mismatches.forEach((m) => mismatchNames.add(m.field.replace(/_/g, ' ')));
+            }
+        });
+        return Array.from(mismatchNames);
+    };
+    const uniqueMismatchFields = getUniqueMismatches();
+
     return (
-        <AccordionItem value={handle} className="border-b last:border-b-0">
-            <AccordionHeader className="flex items-center p-0">
-                {(filter === 'mismatched' ||
-                    (filter === 'missing_in_shopify' && isMissingProductCase) ||
-                    filter === 'all') && (
-                        <div className="p-3 pl-4">
-                            <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleHandleSelection(handle)}
-                                aria-label={`Select product ${handle} `}
-                                disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
-                            />
-                        </div>
-                    )}
-                <AccordionTrigger
-                    className="flex-grow p-3 text-left"
-                    disabled={isFixing || isAutoRunning || isAutoCreating}
-                >
-                    <div className="flex flex-grow items-center gap-4">
-                        <config.icon
-                            className={cn("h-5 w-5 shrink-0",
-                                overallStatus === 'mismatched' ? 'text-yellow-500' :
-                                    overallStatus === 'missing_in_shopify' ? 'text-red-500' : 'text-blue-500'
-                            )}
-                        />
-                        <div className="flex-grow text-left">
-                            <p className="font-semibold">{productTitle}</p>
-                            <p className="text-sm text-muted-foreground">{handle}</p>
-                        </div>
+        <div className="flex flex-col w-full">
+            {/* Parent Level (Product Context) */}
+            <div className={cn(
+                "flex items-center justify-between p-3 rounded-lg border",
+                overallStatus === 'mismatched' ? 'bg-yellow-50/40 border-yellow-200/60 dark:bg-yellow-900/20 dark:border-yellow-900/50' :
+                    overallStatus === 'missing_in_shopify' ? 'bg-red-50/40 border-red-200/60 dark:bg-red-900/20 dark:border-red-900/50' :
+                        overallStatus === 'not_in_csv' ? 'bg-blue-50/40 border-blue-200/60 dark:bg-blue-900/20 dark:border-blue-900/50' :
+                            'bg-muted/10 border-muted'
+            )}>
+                <div className="flex items-center gap-4 flex-grow overflow-hidden pr-4">
+                    {(filter === 'mismatched' ||
+                        (filter === 'missing_in_shopify' && isMissingProductCase) ||
+                        filter === 'all') && (
+                            <div className="shrink-0">
+                                <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleHandleSelection(handle)}
+                                    aria-label={`Select product ${handle} `}
+                                    disabled={isFixing || isAutoRunning || isAutoCreating || isMissingVariantCase}
+                                />
+                            </div>
+                        )}
+                    <config.icon
+                        className={cn("h-5 w-5 shrink-0",
+                            overallStatus === 'mismatched' ? 'text-yellow-600 dark:text-yellow-500' :
+                                overallStatus === 'missing_in_shopify' ? 'text-red-500' : 'text-blue-500'
+                        )}
+                    />
+                    <div className="flex items-center gap-3 shrink-0 truncate">
+                        <span className="font-semibold text-foreground truncate">{productTitle}</span>
                     </div>
-                </AccordionTrigger>
-                <div className="flex items-center gap-2 p-3">
+
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        {uniqueMismatchFields.map(field => (
+                            <Badge key={field} variant="secondary" className="text-[10px] uppercase font-semibold text-muted-foreground bg-muted/50 border-transparent hover:bg-muted/50">
+                                {field}
+                            </Badge>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
                     {canHaveUnlinkedImages && (
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
                                 <Button
                                     size="sm"
                                     variant="destructive"
-                                    onClick={(e) => e.stopPropagation()}
                                     disabled={isFixing || isAutoRunning || isAutoCreating}
                                 >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -148,10 +163,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteUnlinked(productId!);
-                                        }}
+                                        onClick={() => handleDeleteUnlinked(productId!)}
                                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                     >
                                         Yes, Delete Images
@@ -165,8 +177,8 @@ const AuditTableItem = React.memo(function AuditTableItem({
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     size="sm"
+                                    variant="default"
                                     disabled={isFixing || isAutoRunning || isAutoCreating}
-                                    onClick={(e) => e.stopPropagation()}
                                 >
                                     <Bot className="mr-2 h-4 w-4" />
                                     Fix Selected
@@ -175,12 +187,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleBulkFix(new Set([handle]));
-                                    }}
-                                >
+                                <DropdownMenuItem onClick={() => handleBulkFix(new Set([handle]))}>
                                     Fix All Mismatches
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
@@ -190,21 +197,13 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                 ).map((type) => (
                                     <DropdownMenuItem
                                         key={type}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleBulkFix(new Set([handle]), [type]);
-                                        }}
+                                        onClick={() => handleBulkFix(new Set([handle]), [type])}
                                     >
                                         Fix {type.replace(/_/g, ' ')} Only
                                     </DropdownMenuItem>
                                 ))}
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowFixDialog(true, new Set([handle]));
-                                    }}
-                                >
+                                <DropdownMenuItem onClick={() => setShowFixDialog(true, new Set([handle]))}>
                                     Custom Fix...
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -219,10 +218,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                                             size="icon"
                                             variant="ghost"
                                             className="h-8 w-8"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleMarkAsCreated(handle);
-                                            }}
+                                            onClick={() => handleMarkAsCreated(handle)}
                                             disabled={isFixing || isAutoRunning || isAutoCreating}
                                             aria-label="Mark as created"
                                         >
@@ -236,10 +232,7 @@ const AuditTableItem = React.memo(function AuditTableItem({
                             </TooltipProvider>
                             <Button
                                 size="sm"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCreate(items[0]);
-                                }}
+                                onClick={() => handleCreate(items[0])}
                                 disabled={isFixing || isAutoRunning || isAutoCreating}
                             >
                                 <PlusCircle className="mr-2 h-4 w-4" />
@@ -252,38 +245,29 @@ const AuditTableItem = React.memo(function AuditTableItem({
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingMissingVariantMedia({ parentProductId: items[0].shopifyProducts[0]?.id || '', items });
-                                }}
+                                onClick={() => setEditingMissingVariantMedia({ parentProductId: items[0].shopifyProducts[0]?.id || '', items })}
                             >
                                 <ImageIcon className="mr-2 h-4 w-4" /> Manage Media
                             </Button>
                             <Button
                                 size="sm"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleBulkCreateVariants(items);
-                                }}
+                                onClick={() => handleBulkCreateVariants(items)}
                                 disabled={isFixing}
                             >
                                 <PlusCircle className="mr-2 h-4 w-4" /> Add All {items.length} Variants
                             </Button>
                         </>
                     )}
-                    <Badge variant="outline" className="w-[80px] justify-center">
+
+                    <Badge variant="outline" className="justify-center shrink-0 ml-1">
                         {items.length} SKU{items.length > 1 ? 's' : ''}
                     </Badge>
 
                     {productId && !isMissingVariantCase && (
                         <Button
                             size="sm"
-                            variant="outline"
-                            className="w-[180px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingMediaFor(productId);
-                            }}
+                            variant="secondary"
+                            onClick={() => setEditingMediaFor(productId)}
                             disabled={isAutoRunning || isAutoCreating}
                         >
                             {isLoadingImages ? (
@@ -291,11 +275,9 @@ const AuditTableItem = React.memo(function AuditTableItem({
                             ) : (
                                 <ImageIcon className="mr-2 h-4 w-4" />
                             )}
-                            Manage Media{' '}
+                            Media{' '}
                             {imageCount !== undefined && (
-                                <span
-                                    className={cn(imageCount > items.length ? 'font-bold text-yellow-400' : '')}
-                                >
+                                <span className={cn("ml-1", imageCount > items.length ? 'font-bold text-yellow-500' : '')}>
                                     ({imageCount})
                                 </span>
                             )}
@@ -304,206 +286,145 @@ const AuditTableItem = React.memo(function AuditTableItem({
                     {isMissingProductCase && (
                         <Button
                             size="sm"
-                            variant="outline"
-                            className="w-[160px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingMissingMedia(handle);
-                            }}
+                            variant="secondary"
+                            onClick={() => setEditingMissingMedia(handle)}
                             disabled={isAutoRunning || isAutoCreating}
                         >
                             <ImageIcon className="mr-2 h-4 w-4" />
-                            Manage Media
+                            Media
                         </Button>
                     )}
-
                 </div>
-            </AccordionHeader>
+            </div>
 
-            <AccordionContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-[150px]">SKU</TableHead>
-                            <TableHead className="w-[180px]">Status</TableHead>
-                            <TableHead>Details</TableHead>
-                            <TableHead className="w-[240px] text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {items.map((item) => {
-                            let itemConfig = statusConfig[item.status as Exclude<AuditStatus, 'matched'>];
+            {/* Child Level (Variant/SKU Details) */}
+            <div className="flex flex-col gap-3 mt-4 ml-8 pl-6 border-l-2 border-muted/50">
+                {items.map((item) => {
+                    let itemConfig = statusConfig[item.status as Exclude<AuditStatus, 'matched'>];
 
-                            if (!itemConfig) {
-                                itemConfig = {
-                                    icon: CheckCircle2,
-                                    text: 'Matched',
-                                    badgeClass:
-                                        'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
-                                };
-                            }
-                            const productForDetails = item.csvProducts[0] || item.shopifyProducts[0];
+                    if (!itemConfig) {
+                        itemConfig = {
+                            icon: CheckCircle2,
+                            text: 'Matched',
+                            badgeClass:
+                                'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                        };
+                    }
 
-                            if (item.status === 'mismatched' && item.mismatches.length === 0) return null;
-                            if (
-                                item.status === 'missing_in_shopify' &&
-                                !item.mismatches.some((m) => m.field === 'missing_in_shopify')
-                            )
-                                return null;
+                    if (item.status === 'mismatched' && item.mismatches.length === 0) return null;
+                    if (
+                        item.status === 'missing_in_shopify' &&
+                        !item.mismatches.some((m) => m.field === 'missing_in_shopify')
+                    )
+                        return null;
 
-                            return (
-                                <TableRow
-                                    key={item.sku}
-                                    className={
-                                        item.status === 'mismatched'
-                                            ? 'bg-yellow-50/50 dark:bg-yellow-900/10'
-                                            : item.status === 'missing_in_shopify'
-                                                ? 'bg-red-50/50 dark:bg-red-900/10'
-                                                : item.status === 'not_in_csv'
-                                                    ? 'bg-blue-50/50 dark:bg-blue-900/10'
-                                                    : ''
-                                    }
-                                >
-                                    <TableCell className="font-medium">{item.sku}</TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            variant="outline"
-                                            className={cn("whitespace-nowrap", itemConfig.badgeClass)}
-                                        >
-                                            <itemConfig.icon className="mr-1.5 h-3.5 w-3.5" />
-                                            {itemConfig.text}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div>
-                                            {item.status === 'mismatched' && item.mismatches.length > 0 && (
-                                                <MismatchDetails
-                                                    sku={item.sku}
-                                                    mismatches={item.mismatches}
-                                                    onFix={(fixType) => handleFixSingleMismatch(item, fixType)}
-                                                    onMarkAsFixed={(fixType) => handleMarkAsFixed(item.sku, fixType)}
+                    return (
+                        <div key={item.sku} className="flex flex-col gap-1.5 p-3 rounded-md bg-card border shadow-sm w-full transition-all hover:border-yellow-200">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <CornerDownRight className="h-4 w-4 text-muted-foreground/50" />
+                                    <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                                        SKU: <span className="text-foreground tracking-tight font-mono">{item.sku}</span>
+                                    </span>
+                                    <Badge
+                                        variant="outline"
+                                        className={cn("whitespace-nowrap px-2 py-0 h-5 text-[10px]", itemConfig.badgeClass)}
+                                    >
+                                        <itemConfig.icon className="mr-1 h-3 w-3" />
+                                        {itemConfig.text}
+                                    </Badge>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {item.status === 'missing_in_shopify' && item.csvProducts[0] && (
+                                        <MissingProductDetailsDialog product={item.csvProducts[0]} />
+                                    )}
+
+                                    {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                                                     disabled={isFixing || isAutoRunning || isAutoCreating}
-                                                />
-                                            )}
-                                            {item.status === 'missing_in_shopify' && (
-                                                <p className="text-sm text-muted-foreground">
-                                                    This SKU is a{' '}
-                                                    <span className="font-semibold text-foreground">
-                                                        {item.mismatches.find((m) => m.field === 'missing_in_shopify')
-                                                            ?.missingType === 'product'
-                                                            ? 'Missing Product'
-                                                            : 'Missing Variant'}
-                                                    </span>
-                                                    .
-                                                    {item.mismatches.some((m) => m.field === 'heavy_product_flag') && (
-                                                        <span className="mt-1 block">
-                                                            {' '}
-                                                            <AlertTriangle className="mr-1 inline-block h-4 w-4 text-yellow-500" />{' '}
-                                                            This is a heavy product.
-                                                        </span>
-                                                    )}
-                                                </p>
-                                            )}
-                                            {item.status === 'not_in_csv' && (
-                                                <p className="text-sm text-muted-foreground">
-                                                    This product exists in Shopify but not in your CSV file.
-                                                </p>
-                                            )}
-                                            <ProductDetails product={productForDetails} />
-                                            {item.csvProducts[0] && (
-                                                <CsvShopifyComparison
-                                                    csvProduct={item.csvProducts[0]}
-                                                    shopifyProduct={item.shopifyProducts[0]}
-                                                />
-                                            )}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            {item.status === 'missing_in_shopify' && (
-                                                <div className="flex items-center gap-2">
-                                                    {item.csvProducts[0] && (
-                                                        <MissingProductDetailsDialog product={item.csvProducts[0]} />
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {item.status === 'not_in_csv' && !isOnlyVariantNotInCsv && (
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            disabled={isFixing || isAutoRunning || isAutoCreating}
-                                                        >
-                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Variant
-                                                        </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                This will permanently delete the variant with SKU &quot;{item.sku}&quot;
-                                                                from Shopify. This action cannot be undone.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction
-                                                                onClick={() => handleDeleteVariant(item)}
-                                                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                            >
-                                                                Yes, delete variant
-                                                            </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            )}
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })}
-                        {notInCsv && isOnlyVariantNotInCsv && (
-                            <TableRow>
-                                <TableCell colSpan={4} className="p-2 text-right">
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button
-                                                size="sm"
-                                                variant="destructive"
-                                                disabled={isFixing || isAutoRunning || isAutoCreating}
-                                            >
-                                                <Trash2 className="mr-2 h-4 w-4" /> Delete Entire Product
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                    All variants for &quot;{productTitle}&quot; are not in the CSV. This will
-                                                    permanently delete the entire product and its {items.length}{' '}
-                                                    variants from Shopify. This action cannot be undone.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                <AlertDialogAction
-                                                    onClick={() => handleDeleteProduct(items[0])}
-                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                                 >
-                                                    Yes, delete product
-                                                </AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </AccordionContent>
-        </AccordionItem>
+                                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Variant
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Delete this variant?</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                        This will permanently delete the variant with SKU &quot;{item.sku}&quot;
+                                                        from Shopify. This action cannot be undone.
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                    <AlertDialogAction
+                                                        onClick={() => handleDeleteVariant(item)}
+                                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                    >
+                                                        Yes, delete variant
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="pl-7 w-full flex flex-col gap-2">
+                                {item.status === 'mismatched' && item.mismatches.length > 0 && (
+                                    <MismatchDetails
+                                        sku={item.sku}
+                                        mismatches={item.mismatches}
+                                        onFix={(fixType) => handleFixSingleMismatch(item, fixType)}
+                                        onMarkAsFixed={(fixType) => handleMarkAsFixed(item.sku, fixType)}
+                                        disabled={isFixing || isAutoRunning || isAutoCreating}
+                                    />
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+
+                {notInCsv && isOnlyVariantNotInCsv && (
+                    <div className="flex justify-end mt-1 pr-1">
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={isFixing || isAutoRunning || isAutoCreating}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Entire Product
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this entire product?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        All variants for &quot;{productTitle}&quot; are not in the CSV. This will
+                                        permanently delete the entire product and its {items.length}{' '}
+                                        variants from Shopify. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={() => handleDeleteProduct(items[0])}
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                        Yes, delete product
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 });
 

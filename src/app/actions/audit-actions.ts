@@ -22,6 +22,8 @@ import {
     getAllSkusFromDb,
     getLastSyncDate,
     setLastSyncDate,
+    getSyncLocationId,
+    setSyncLocationId,
     updateProductsInDb,
     isDatabasePopulated
 } from '@/lib/db';
@@ -51,7 +53,20 @@ export async function runAudit(
     const csvProducts = await csvService.getCsvProducts(csvFileName, ftpData);
     if (!csvProducts) return null;
 
-    // 2. Perform incremental sync
+    // 2. Validate Location Change
+    const dbLocationId = getSyncLocationId();
+    const targetedLocationId = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+
+    if (dbLocationId && dbLocationId !== targetedLocationId) {
+        return {
+            report: [],
+            summary: {},
+            duplicates: [],
+            error: "You have selected a different location than what is cached. Please run a Full Shopify Sync to update your database for this new location."
+        } as any;
+    }
+
+    // 3. Perform incremental sync
     try {
         const lastSyncDate = getLastSyncDate();
         if (lastSyncDate) {
@@ -63,6 +78,7 @@ export async function runAudit(
             setLastSyncDate(newSyncThreshold);
         } else {
             setLastSyncDate(new Date().toISOString());
+            setSyncLocationId(targetedLocationId.toString());
         }
     } catch (error) {
         if (error instanceof Error && error.message === 'TOO_MANY_UPDATES') {
@@ -76,7 +92,7 @@ export async function runAudit(
         logger.error('Incremental sync failed during runAudit, proceeding with existing data', error);
     }
 
-    // 3. Get all products from DB for audit
+    // 4. Get all products from DB for audit
     if (!isDatabasePopulated()) {
         throw new Error('No local database found. Please run a Full Shopify Sync first.');
     }
@@ -204,7 +220,20 @@ export async function runBulkAuditFromCache(
     locationId?: number
 ): Promise<{ report: AuditResult[]; summary: any; duplicates: DuplicateSku[] } | null> {
     try {
-        // 1. Perform incremental sync
+        // 1. Validate Location Change
+        const dbLocationId = getSyncLocationId();
+        const targetedLocationId = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+
+        if (dbLocationId && dbLocationId !== targetedLocationId) {
+            return {
+                report: [],
+                summary: {},
+                duplicates: [],
+                error: "You have selected a different location than what is cached. Please run a Full Shopify Sync to update your database for this new location."
+            } as any;
+        }
+
+        // 2. Perform incremental sync
         const lastSyncDate = getLastSyncDate();
         if (lastSyncDate) {
             const newSyncThreshold = new Date().toISOString();
@@ -215,9 +244,10 @@ export async function runBulkAuditFromCache(
             setLastSyncDate(newSyncThreshold);
         } else {
             setLastSyncDate(new Date().toISOString());
+            setSyncLocationId(targetedLocationId);
         }
 
-        // 2. Get data from DB
+        // 3. Get data from DB
         if (!isDatabasePopulated()) {
             throw new Error('No local database found. Please run a Full Shopify Sync first.');
         }

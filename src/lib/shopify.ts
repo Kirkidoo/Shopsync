@@ -576,6 +576,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
           const product = variant.product;
 
           if (variant && variant.sku && product) {
+            let isAtLocation = false;
             let locationInventory = 0;
             // Gamma Warehouse ID: 93998154045
             const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
@@ -584,6 +585,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
             if (variant.inventoryItem?.inventoryLevels?.edges) {
               for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
                 if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                  isAtLocation = true;
                   const available = levelEdge.node.quantities?.find(q => q.name === 'available');
                   if (available) {
                     locationInventory = available.quantity;
@@ -592,6 +594,8 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
                 }
               }
             }
+
+            if (!isAtLocation) continue;
 
             batchProducts.push({
               id: product.id,
@@ -704,6 +708,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
           await sleep(250);
           const node = await verifySku(sku);
           if (node && node.product && node.sku) {
+            let isAtLocation = false;
             let locationInventory = 0;
             const GAMMA_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
             const TARGET_LOCATION_GID = `gid://shopify/Location/${GAMMA_LOCATION_ID}`;
@@ -711,6 +716,7 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
             if (node.inventoryItem?.inventoryLevels?.edges) {
               for (const levelEdge of node.inventoryItem.inventoryLevels.edges) {
                 if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                  isAtLocation = true;
                   const available = levelEdge.node.quantities?.find((q: any) => q.name === 'available');
                   if (available) {
                     locationInventory = available.quantity;
@@ -719,6 +725,8 @@ export async function getShopifyProductsBySku(skus: string[], locationId?: numbe
                 }
               }
             }
+
+            if (!isAtLocation) continue;
 
             const product = node.product;
             verifiedProducts.push({
@@ -880,25 +888,25 @@ export async function getShopifyProductsByTag(tag: string, locationId?: number):
           if (seenSkus.has(variant.sku.toLowerCase())) continue;
           seenSkus.add(variant.sku.toLowerCase());
 
+          let isAtLocation = false;
           let locationInventory = 0;
-          // let isAtLocation = false; // No longer needed as we include 0 inventory
           const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
           const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
 
           if (variant.inventoryItem?.inventoryLevels?.edges) {
             for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
               if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                isAtLocation = true;
                 const available = levelEdge.node.quantities?.find(q => q.name === 'available');
                 if (available) {
                   locationInventory = available.quantity;
                 }
-                // isAtLocation = true; // No longer needed
                 break;
               }
             }
           }
 
-          // if (!isAtLocation) continue; // Removed to include variants with 0 inventory at location
+          if (!isAtLocation) continue;
 
           allProducts.push({
             id: product.id,
@@ -993,6 +1001,7 @@ export async function syncUpdatedProducts(
         for (const variantEdge of variantEdges) {
           const variant = variantEdge.node;
 
+          let isAtLocation = false;
           let locationInventory = 0;
           const TARGET_LOCATION_ID = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
           const TARGET_LOCATION_GID = `gid://shopify/Location/${TARGET_LOCATION_ID}`;
@@ -1000,6 +1009,7 @@ export async function syncUpdatedProducts(
           if (variant.inventoryItem?.inventoryLevels?.edges) {
             for (const levelEdge of variant.inventoryItem.inventoryLevels.edges) {
               if (levelEdge.node.location.id === TARGET_LOCATION_GID) {
+                isAtLocation = true;
                 const available = levelEdge.node.quantities?.find((q: any) => q.name === 'available');
                 if (available) {
                   locationInventory = available.quantity;
@@ -1008,6 +1018,8 @@ export async function syncUpdatedProducts(
               }
             }
           }
+
+          if (!isAtLocation) continue;
 
           allProducts.push({
             id: productNode.id,

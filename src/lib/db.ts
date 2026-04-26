@@ -48,6 +48,12 @@ export async function seedDatabaseFromJsonl(filePath: string, locationId?: numbe
 
     // Update metadata
     setLastSyncDate(new Date().toISOString());
+    if (locationId) {
+        setSyncLocationId(locationId.toString());
+    } else {
+        const fallBackDir = process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+        setSyncLocationId(fallBackDir);
+    }
 }
 
 /**
@@ -98,6 +104,21 @@ export function getLastSyncDate(): string | null {
  */
 export function setLastSyncDate(dateStr: string) {
     upsertMetadata('lastSyncDate', dateStr);
+}
+
+/**
+ * Retrieves the location ID for which the database was synced.
+ */
+export function getSyncLocationId(): string | null {
+    const row = db.prepare('SELECT value FROM metadata WHERE key = ?').get('syncLocationId') as { value: string } | undefined;
+    return row ? row.value : null;
+}
+
+/**
+ * Updates the location ID used for the database sync.
+ */
+export function setSyncLocationId(locationId: string) {
+    upsertMetadata('syncLocationId', locationId);
 }
 
 /**

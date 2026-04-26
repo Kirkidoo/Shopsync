@@ -393,7 +393,8 @@ export default function AuditStepper() {
         }
         addLog(`Found ${csvProducts.length} products in CSV.`);
 
-        const locationId = selectedLocationId ? parseInt(selectedLocationId, 10) : undefined;
+        const parsedId = parseInt(selectedLocationId.split('/').pop() || '', 10);
+        const locationId = selectedLocationId && !isNaN(parsedId) ? parsedId : undefined;
         let result;
 
         if (useCache) {

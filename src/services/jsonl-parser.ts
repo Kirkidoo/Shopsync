@@ -156,6 +156,9 @@ export async function* parseJsonlGenerator(
                 const variantId = obj.id;
                 if (!variantId) continue;
 
+                // Only process variants that are stocked at the target location
+                if (!inventoryMap.has(variantId)) continue;
+
                 const inventory = inventoryMap.get(variantId) || 0;
                 yield variantToProduct(obj, parentId, parent, inventory);
             }
@@ -204,6 +207,9 @@ export async function parseJsonlWithAllSkus(
 
                 const variantId = obj.id;
                 if (!variantId) continue;
+
+                // Only process variants that are stocked at the target location
+                if (!inventoryMap.has(variantId)) continue;
 
                 const inventory = inventoryMap.get(variantId) || 0;
                 products.push(variantToProduct(obj, parentId, parent, inventory));
