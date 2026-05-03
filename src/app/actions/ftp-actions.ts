@@ -3,6 +3,8 @@
 import * as ftpService from '@/services/ftp';
 import { getShopifyLocations } from '@/lib/shopify';
 
+import { env } from '@/lib/env';
+
 export async function connectToFtp(data: FormData) {
     return await ftpService.connectToFtp(data);
 }
@@ -14,9 +16,9 @@ export async function listCsvFiles(data: FormData) {
 export async function getFtpCredentials() {
     const defaultHost = 'ftp.gammapowersports.com';
     return {
-        host: process.env.FTP_HOST || process.env.NEXT_PUBLIC_FTP_HOST || defaultHost,
-        username: process.env.FTP_USER || process.env.NEXT_PUBLIC_FTP_USERNAME || '',
-        password: process.env.FTP_PASSWORD || process.env.NEXT_PUBLIC_FTP_PASSWORD || '',
+        host: env.FTP_HOST || env.NEXT_PUBLIC_FTP_HOST || defaultHost,
+        username: env.FTP_USER || env.NEXT_PUBLIC_FTP_USERNAME || '',
+        password: env.FTP_PASSWORD || env.NEXT_PUBLIC_FTP_PASSWORD || '',
     };
 }
 

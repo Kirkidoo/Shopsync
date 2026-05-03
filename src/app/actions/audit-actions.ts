@@ -27,6 +27,7 @@ import {
     updateProductsInDb,
     isDatabasePopulated
 } from '@/lib/db';
+import { env } from '@/lib/env';
 
 // ── Cache helpers (private to this module) ──────────────────────────
 
@@ -55,7 +56,7 @@ export async function runAudit(
 
     // 2. Validate Location Change
     const dbLocationId = getSyncLocationId();
-    const targetedLocationId = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+    const targetedLocationId = locationId?.toString() || env.GAMMA_WAREHOUSE_LOCATION_ID.toString();
 
     if (dbLocationId && dbLocationId !== targetedLocationId) {
         return {
@@ -222,7 +223,7 @@ export async function runBulkAuditFromCache(
     try {
         // 1. Validate Location Change
         const dbLocationId = getSyncLocationId();
-        const targetedLocationId = locationId?.toString() || process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+        const targetedLocationId = locationId?.toString() || env.GAMMA_WAREHOUSE_LOCATION_ID.toString();
 
         if (dbLocationId && dbLocationId !== targetedLocationId) {
             return {

@@ -1,5 +1,6 @@
 export const maxDuration = 300; // Allow up to 5 minutes for long audits
-import { ShoppingBasket } from 'lucide-react';
+import { Suspense } from 'react';
+import { ShoppingBasket, Loader2 } from 'lucide-react';
 import AuditStepper from '@/components/audit-stepper';
 import Footer from '@/components/footer';
 
@@ -18,7 +19,9 @@ export default function Home() {
       </header>
 
       <main className="w-full max-w-[98%] px-4 xl:px-8">
-        <AuditStepper />
+        <Suspense fallback={<div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+          <AuditStepper />
+        </Suspense>
       </main>
 
       <Footer />

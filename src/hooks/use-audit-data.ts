@@ -20,7 +20,8 @@ interface UseAuditDataProps {
 export function useAuditData(props?: UseAuditDataProps) {
     const { initialData, initialSummary } = props || {};
     // Store Selectors - Data
-    const reportData = useAuditDataStore((state) => state.reportData);
+    const reportDataRecord = useAuditDataStore((state) => state.reportData);
+    const reportData = useMemo(() => Object.values(reportDataRecord), [reportDataRecord]);
     const setReportData = useAuditDataStore((state) => state.setReportData);
     const setReportSummary = useAuditDataStore((state) => state.setReportSummary);
     const fixedMismatches = useAuditDataStore((state) => state.fixedMismatches);

@@ -26,8 +26,9 @@ export function AuditTable({
         paginatedHandleKeys,
         groupedByHandle,
         groupedBySku,
-        reportData
+        reportData: reportDataArray
     } = useAuditData();
+    const reportData = useAuditDataStore((state) => state.reportData);
 
     // UI Store Selectors
     const filter = useAuditUIStore((state) => state.filter);
@@ -83,7 +84,7 @@ export function AuditTable({
             <DuplicateAuditTable
                 paginatedHandleKeys={paginatedHandleKeys}
                 groupedBySku={groupedBySku}
-                data={reportData}
+                reportData={reportData}
                 statusConfig={statusConfig}
                 fileName={fileName}
                 onRefresh={onRefresh}
@@ -129,7 +130,7 @@ export function AuditTable({
                         const items = groupedByHandle[handle];
 
                         // Optimization: calculate these here instead of inside the item or passing large data
-                        const allVariantsForHandleInShopify = reportData.filter(
+                        const allVariantsForHandleInShopify = reportDataArray.filter(
                             (d) => d.shopifyProducts[0]?.handle === handle
                         );
                         const notInCsv = items?.every((i) => i.status === 'not_in_csv');

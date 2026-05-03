@@ -1324,19 +1324,22 @@ export default function AuditReport({
               key={editingMissingMedia}
               variants={editingMissingMediaVariants}
               onSave={(updatedVariants, curatedImageUrls) => {
-                setReportData((prev: AuditResult[]) => prev.map(item => {
-                  const updated = updatedVariants.find(v => v.sku === item.sku);
-                  if (updated && item.csvProducts[0]) {
-                    const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
-                      ? updated.mediaUrl
-                      : null;
-                    return {
-                      ...item,
-                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
-                    };
-                  }
-                  return item;
-                }));
+                setReportData((prev: Record<string, AuditResult>) => {
+                  const next = { ...prev };
+                  updatedVariants.forEach(updated => {
+                    const item = next[updated.sku];
+                    if (item && item.csvProducts[0]) {
+                      const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
+                        ? updated.mediaUrl
+                        : null;
+                      next[updated.sku] = {
+                        ...item,
+                        csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
+                      };
+                    }
+                  });
+                  return next;
+                });
                 setEditingMissingMedia(null);
                 toast({ title: "Media Updated", description: `Image assignments saved for ${updatedVariants.length} variants.` });
               }}
@@ -1360,19 +1363,22 @@ export default function AuditReport({
               variants={editingMissingVariantMedia.items.map(i => i.csvProducts[0]).filter(Boolean)}
               parentProductId={editingMissingVariantMedia.parentProductId}
               onSave={(updatedVariants, curatedImageUrls) => {
-                setReportData((prev: AuditResult[]) => prev.map(item => {
-                  const updated = updatedVariants.find(v => v.sku === item.sku);
-                  if (updated && item.csvProducts[0]) {
-                    const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
-                      ? updated.mediaUrl
-                      : null;
-                    return {
-                      ...item,
-                      csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
-                    };
-                  }
-                  return item;
-                }));
+                setReportData((prev: Record<string, AuditResult>) => {
+                  const next = { ...prev };
+                  updatedVariants.forEach(updated => {
+                    const item = next[updated.sku];
+                    if (item && item.csvProducts[0]) {
+                      const finalMediaUrl = updated.mediaUrl && curatedImageUrls.includes(updated.mediaUrl)
+                        ? updated.mediaUrl
+                        : null;
+                      next[updated.sku] = {
+                        ...item,
+                        csvProducts: [{ ...item.csvProducts[0], mediaUrl: finalMediaUrl }]
+                      };
+                    }
+                  });
+                  return next;
+                });
                 setEditingMissingVariantMedia(null);
                 toast({ title: "Media Updated", description: `Assignments saved for ${updatedVariants.length} variants.` });
               }}

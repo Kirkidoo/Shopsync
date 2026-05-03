@@ -1,3 +1,5 @@
+import { env } from './env';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 class Logger {
@@ -7,7 +9,7 @@ class Logger {
 
         switch (level) {
             case 'debug':
-                if (process.env.NODE_ENV === 'development') {
+                if (env.NODE_ENV === 'development') {
                     console.debug(prefix, message, ...args);
                 }
                 break;

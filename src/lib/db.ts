@@ -3,6 +3,7 @@ import path from 'path';
 import { Product } from './types';
 import { parseJsonlWithAllSkus } from '@/services/jsonl-parser';
 import { logger } from './logger';
+import { env } from '@/lib/env';
 
 // Initialize the database connection
 // The database file will be created in the project root
@@ -51,7 +52,7 @@ export async function seedDatabaseFromJsonl(filePath: string, locationId?: numbe
     if (locationId) {
         setSyncLocationId(locationId.toString());
     } else {
-        const fallBackDir = process.env.GAMMA_WAREHOUSE_LOCATION_ID || '93998154045';
+        const fallBackDir = env.GAMMA_WAREHOUSE_LOCATION_ID.toString();
         setSyncLocationId(fallBackDir);
     }
 }
@@ -134,6 +135,29 @@ export function isDatabasePopulated(): boolean {
  */
 export function upsertMetadata(key: string, value: string) {
     db.prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)').run(key, value);
+}
+
+/**
+ * Retrieves the rate limit state for a given shop.
+ */
+export function getRateLimitState(shopName: string): { currentlyAvailable: number, restoreRate: number } | null {
+    const row = db.prepare('SELECT value FROM metadata WHERE key = ?').get(`rateLimit_${shopName}`) as { value: string } | undefined;
+    if (row) {
+        try {
+            return JSON.parse(row.value);
+        } catch (e) {
+            logger.error(`Error parsing rate limit state for ${shopName}:`, e);
+            return null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Updates the rate limit state for a given shop.
+ */
+export function setRateLimitState(shopName: string, state: { currentlyAvailable: number, restoreRate: number }) {
+    upsertMetadata(`rateLimit_${shopName}`, JSON.stringify(state));
 }
 
 export default db;

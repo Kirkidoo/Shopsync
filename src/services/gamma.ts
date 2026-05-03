@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 
 export interface GammaInventoryLevel {
     quantity: number;
@@ -6,8 +7,8 @@ export interface GammaInventoryLevel {
 }
 
 export async function getLiveInventory(sku: string): Promise<GammaInventoryLevel | null> {
-    const url = process.env.GAMMA_API_URL;
-    const token = process.env.GAMMA_API_TOKEN;
+    const url = env.GAMMA_API_URL;
+    const token = env.GAMMA_API_TOKEN;
 
     if (!url || !token) {
         logger.error('Missing Gamma API URL or Token in environment variables');

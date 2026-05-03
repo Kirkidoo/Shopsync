@@ -1,9 +1,9 @@
+import { env } from './env';
+
 // --- Shopify & Warehouse Constants ---
 
 /** Gamma Warehouse location ID (Shopify) */
-export const GAMMA_WAREHOUSE_LOCATION_ID = process.env.GAMMA_WAREHOUSE_LOCATION_ID
-    ? parseInt(process.env.GAMMA_WAREHOUSE_LOCATION_ID, 10)
-    : 93998154045;
+export const GAMMA_WAREHOUSE_LOCATION_ID = env.GAMMA_WAREHOUSE_LOCATION_ID;
 
 /** Name of the secondary location to disconnect new products from */
 export const GARAGE_LOCATION_NAME = 'Garage Harry Stanley';

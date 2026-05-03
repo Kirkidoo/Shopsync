@@ -2,6 +2,7 @@ import { Product } from '@/lib/types';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 
 /**
  * Shared JSONL parsing logic.
@@ -111,8 +112,7 @@ function variantToProduct(
 function resolveTargetLocationSuffix(locationId?: number): string {
     const id =
         locationId?.toString() ||
-        process.env.GAMMA_WAREHOUSE_LOCATION_ID ||
-        '93998154045';
+        env.GAMMA_WAREHOUSE_LOCATION_ID.toString();
     return `Location/${id}`;
 }
 

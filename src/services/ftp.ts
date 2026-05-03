@@ -1,8 +1,9 @@
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 
-const FTP_DIRECTORY = process.env.FTP_DIRECTORY || '/Gamma_Product_Files/Shopify_Files/';
+const FTP_DIRECTORY = env.FTP_DIRECTORY;
 
 export async function getFtpClient(data: FormData) {
   const host = data.get('host') as string;
@@ -10,7 +11,7 @@ export async function getFtpClient(data: FormData) {
   const password = data.get('password') as string;
 
   // Sentinel Security Fix: Allow insecure FTP only if explicitly enabled.
-  const allowInsecure = process.env.ALLOW_INSECURE_FTP === 'true';
+  const allowInsecure = env.ALLOW_INSECURE_FTP;
 
   const client = new Client(30000); // 30 second timeout
   // client.ftp.verbose = true;

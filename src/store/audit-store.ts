@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { AuditResult, AuditStatus, DuplicateSku, Summary, MismatchDetail } from '@/lib/types';
 
 interface AuditDataState {
-    reportData: AuditResult[];
+    reportData: Record<string, AuditResult>;
     reportSummary: Summary | null;
     duplicates: DuplicateSku[];
     imageCounts: Record<string, number>;
@@ -12,7 +12,7 @@ interface AuditDataState {
     updatedProductHandles: Set<string>;
 
     // Actions
-    setReportData: (data: AuditResult[] | ((prev: AuditResult[]) => AuditResult[])) => void;
+    setReportData: (data: AuditResult[] | ((prev: Record<string, AuditResult>) => Record<string, AuditResult>)) => void;
     setReportSummary: (summary: Summary | ((prev: Summary | null) => Summary)) => void;
     setImageCounts: (counts: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => void;
     setLoadingImageCounts: (handles: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
@@ -24,7 +24,7 @@ interface AuditDataState {
 }
 
 export const useAuditDataStore = create<AuditDataState>((set) => ({
-    reportData: [],
+    reportData: {},
     reportSummary: null,
     duplicates: [],
     imageCounts: {},
@@ -33,9 +33,19 @@ export const useAuditDataStore = create<AuditDataState>((set) => ({
     createdProductHandles: new Set(),
     updatedProductHandles: new Set(),
 
-    setReportData: (data) => set((state) => ({
-        reportData: typeof data === 'function' ? data(state.reportData) : data
-    })),
+    setReportData: (data) => set((state) => {
+        let newData: Record<string, AuditResult>;
+        if (typeof data === 'function') {
+            newData = data(state.reportData);
+        } else {
+            // Convert array to Record
+            newData = data.reduce((acc, item) => {
+                acc[item.sku] = item;
+                return acc;
+            }, {} as Record<string, AuditResult>);
+        }
+        return { reportData: newData };
+    }),
     setReportSummary: (summary) => set((state) => ({
         reportSummary: typeof summary === 'function' ? summary(state.reportSummary) : summary
     })),
@@ -55,11 +65,16 @@ export const useAuditDataStore = create<AuditDataState>((set) => ({
         updatedProductHandles: typeof updated === 'function' ? updated(state.updatedProductHandles) : updated
     })),
     updateItemStatus: (sku, status, mismatches = []) =>
-        set((state) => ({
-            reportData: state.reportData.map((item) =>
-                item.sku === sku ? { ...item, status, mismatches } : item
-            ),
-        })),
+        set((state) => {
+            const item = state.reportData[sku];
+            if (!item) return state;
+            return {
+                reportData: {
+                    ...state.reportData,
+                    [sku]: { ...item, status, mismatches }
+                }
+            };
+        }),
     removeImageCount: (productId) =>
         set((state) => {
             const newCounts = { ...state.imageCounts };

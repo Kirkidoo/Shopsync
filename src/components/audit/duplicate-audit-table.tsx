@@ -11,7 +11,7 @@ import { useAuditActions } from '@/hooks/use-audit-actions';
 interface DuplicateAuditTableProps {
     paginatedHandleKeys: string[];
     groupedBySku: Record<string, Product[]>;
-    data: AuditResult[];
+    reportData: Record<string, AuditResult>;
     statusConfig: any;
     fileName: string;
     onRefresh: () => void;
@@ -20,7 +20,7 @@ interface DuplicateAuditTableProps {
 export function DuplicateAuditTable({
     paginatedHandleKeys,
     groupedBySku,
-    data,
+    reportData,
     statusConfig,
     fileName,
     onRefresh,
@@ -34,10 +34,8 @@ export function DuplicateAuditTable({
                 const products = groupedBySku[sku];
                 if (!products || products.length === 0) return null;
 
-                const issueItem = data.find(
-                    (item) => item.sku === sku && item.status === 'duplicate_in_shopify'
-                );
-                if (!issueItem) return null;
+                const issueItem = reportData[sku];
+                if (!issueItem || issueItem.status !== 'duplicate_in_shopify') return null;
 
                 const config = statusConfig.duplicate_in_shopify;
 
@@ -67,8 +65,9 @@ export function DuplicateAuditTable({
                                 </TableHeader>
                                 <TableBody>
                                     {products.map((product) => {
-                                        const auditInfo = data.find(
-                                            (r) => r.shopifyProducts[0]?.variantId === product.variantId
+                                        const auditResults = Object.values(reportData);
+                                        const auditInfo = auditResults.find(
+                                            (r: AuditResult) => r.shopifyProducts[0]?.variantId === product.variantId
                                         );
                                         const hasMismatches =
                                             auditInfo &&

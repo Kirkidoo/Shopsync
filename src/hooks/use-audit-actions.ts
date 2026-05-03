@@ -106,7 +106,7 @@ export function useAuditActions({
         startTransition(async () => {
             try {
                 const { reportData } = useAuditDataStore.getState();
-                let itemsToFix = reportData.filter(
+                let itemsToFix = Object.values(reportData).filter(
                     (item) => item.status === 'mismatched' && item.mismatches.length > 0
                 );
 
@@ -175,7 +175,7 @@ export function useAuditActions({
             try {
                 const handle = getHandle(item);
                 const { reportData } = useAuditDataStore.getState();
-                const allVariants = reportData
+                const allVariants = Object.values(reportData)
                     .filter(d => getHandle(d) === handle && d.csvProducts.length > 0)
                     .map(d => d.csvProducts[0]);
 
@@ -220,8 +220,9 @@ export function useAuditActions({
                 const { reportData } = useAuditDataStore.getState();
                 const itemsToCreate: { product: Product; allVariants: Product[]; missingType: 'product' | 'variant' }[] = [];
 
+                const reportDataArray = Object.values(reportData);
                 for (const handle of handlesToCreate) {
-                    const handleItems = reportData.filter(d => getHandle(d) === handle);
+                    const handleItems = reportDataArray.filter(d => getHandle(d) === handle);
                     if (handleItems.length === 0) continue;
 
                     const mainItem = handleItems[0];
@@ -318,7 +319,7 @@ export function useAuditActions({
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
                     const { setReportData, reportData } = useAuditDataStore.getState();
-                    setReportData(reportData.filter(d => d.shopifyProducts[0]?.id !== productId));
+                    setReportData(Object.values(reportData).filter(d => d.shopifyProducts[0]?.id !== productId));
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
@@ -350,7 +351,7 @@ export function useAuditActions({
                 if (result.success) {
                     toast({ title: "Success", description: result.message });
                     const { setReportData, reportData } = useAuditDataStore.getState();
-                    setReportData(reportData.filter(d => d.shopifyProducts[0]?.variantId !== variantId));
+                    setReportData(Object.values(reportData).filter(d => d.shopifyProducts[0]?.variantId !== variantId));
                 } else {
                     toast({ title: "Error", description: result.message, variant: "destructive" });
                 }
